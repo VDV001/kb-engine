@@ -196,14 +196,17 @@ func (w *mailWorker) useChat(d *chatDesk) {
 	w.answer = chatAnswerer(d)
 	w.find = newPhoneFinder(d.find, d.openFound) // ставит useSources в main до старта окна
 	w.quiet = func() bool { return d.config().MemoryQuiet }
-	w.desk = phoneDesk{settings: d.settings}
+	w.desk = phoneDesk{settings: d.settings, hear: w.hearLabel}
 }
 
 // phoneDesk tells the phone the window's state (#647): модель настроек — для
 // чата без ответа, и названия источников — для галочек чата. Телефон только
 // показывает, менять — в окне (решение 16.11): выбор с двух устройств требует
 // явных прав.
-type phoneDesk struct{ settings *folderSettings }
+type phoneDesk struct {
+	settings *folderSettings
+	hear     func() string // кто распознает голос телефона (#648); nil — голоса нет
+}
 
 // State lists what the chat searches: включенные источники, которые окно
 // читает, и подключения, которые человек разрешил чату («Чату: разрешить»), —
@@ -250,6 +253,11 @@ var chatConnKinds = map[desktopconfig.ConnKind]string{desktopconfig.ConnOzon: "O
 
 // useVoice wires the phone's voice (#648): распознает то, что выбрано в «Чат и
 // модель → Слушает»; Apple Speech — помощником kb-listen --file, только на Маке.
+// hearLabel says who hears the phone's voice: mailrelay.Hear*; пусто — никто.
+func (w *mailWorker) hearLabel() string {
+	return ""
+}
+
 func (w *mailWorker) useVoice(listen *dictation) {
 	w.hear = func(ctx context.Context, wav []byte) (string, error) {
 		tr, err := w.settings.listenTranscriber()

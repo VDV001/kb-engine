@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync/atomic"
@@ -464,5 +466,62 @@ for a; do [ "$prev" = "--file" ] && f="$a"; prev="$a"; done
 	}
 	if _, err := phone.MailFileGet(t.Context(), id); !errors.Is(err, kbserver.ErrNoSuchMailFile) {
 		t.Errorf("the recording stays on the server: %v", err)
+	}
+}
+
+// Телефон знает, кто распознает его голос (ревью безопасности #660): звук
+// уходит дальше компьютера всюду, кроме Apple Speech без сети.
+func TestPhoneDeskSaysWhoHears(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Apple Speech — только на Маке")
+	}
+	d, _, _, _ := newTestChatDesk(t)
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	w := newMailWorker(d.settings, chatAsker(d), t.TempDir())
+	w.useChat(d)
+	hear := func() string {
+		st, err := w.desk.State(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return st.Hear
+	}
+	if got := hear(); got != "" {
+		t.Errorf("before voice is wired: %q", got)
+	}
+	check := func(onDevice bool) string {
+		return fakeListen(t, fmt.Sprintf(`echo '{"auth":"authorized","onDevice":%t,"available":true}'`, onDevice))
+	}
+	w.useVoice(&dictation{bin: check(true)})
+	if got := hear(); got != mailrelay.HearDevice {
+		t.Errorf("on the device: %q", got)
+	}
+	w.useVoice(&dictation{bin: check(false)})
+	if got := hear(); got != mailrelay.HearApple {
+		t.Errorf("through Apple: %q", got)
+	}
+	d.settings.mu.Lock()
+	d.settings.cfg.Chat.Listen = "cloud:mini"
+	d.settings.mu.Unlock()
+	if got := hear(); got != mailrelay.HearCloud {
+		t.Errorf("cloud: %q", got)
+	}
+}
+
+// Окно, упавшее посреди распознавания, оставило расшифрованную запись во
+// временной папке: при старте голоса она убирается (ревью безопасности #660).
+func TestUseVoiceSweepsRecordings(t *testing.T) {
+	tmp := t.TempDir()
+	for _, n := range []string{"kb-phone-1.wav", "kb-listen-2.wav", "other.wav"} {
+		if err := os.WriteFile(filepath.Join(tmp, n), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	newMailWorker(nil, nil, t.TempDir()).useVoice(&dictation{tmpDir: tmp})
+	left, _ := os.ReadDir(tmp)
+	if len(left) != 1 || left[0].Name() != "other.wav" {
+		t.Errorf("left %v", left)
 	}
 }

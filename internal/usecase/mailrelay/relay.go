@@ -112,7 +112,19 @@ type Hearer interface {
 type DeskState struct {
 	Model   string       `json:"model"`
 	Sources []DeskSource `json:"sources"`
+	// Hear — кто распознает голос телефона (#648): HearDevice, HearApple,
+	// HearCloud, HearServer; пусто — голоса нет. Телефон говорит это человеку:
+	// звук уходит дальше компьютера всюду, кроме HearDevice.
+	Hear string `json:"hear,omitempty"`
 }
+
+// Кто распознает голос телефона.
+const (
+	HearDevice = "device" // Apple Speech на Маке, без сети
+	HearApple  = "apple"  // Apple Speech через серверы Apple
+	HearCloud  = "cloud"  // облако из «Слушает»
+	HearServer = "server" // свой сервер распознавания
+)
 
 // DeskSource is a source or a connection the chat can search.
 type DeskSource struct {
