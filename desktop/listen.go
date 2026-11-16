@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -247,11 +249,58 @@ func (d *dictation) Check() listenStatus {
 	if d.bin == "" {
 		return listenStatus{}
 	}
-	out, err := exec.Command(d.bin, "--check").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second) // зовется и работником ящика: не держать его
+	defer cancel()
+	out, err := exec.CommandContext(ctx, d.bin, "--check").Output()
 	st := listenStatus{Helper: true}
 	if err == nil {
 		_ = json.Unmarshal(out, &st)
 		st.Helper = true
 	}
 	return st
+}
+
+// TranscribeFile recognizes a ready recording with Apple Speech (kb-listen
+// --file): голос с телефона (#648). Запись — во временный файл и обратно не
+// живет: удаляется при любом исходе.
+func (d *dictation) TranscribeFile(ctx context.Context, wav []byte) (string, error) {
+	if d.bin == "" {
+		return "", errors.New("распознавание без сервера работает только в собранном окне: нет помощника kb-listen")
+	}
+	f, err := os.CreateTemp(d.tmpDir, "kb-phone-*.wav")
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = os.Remove(f.Name()) }()
+	if _, err := f.Write(wav); err != nil {
+		_ = f.Close()
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		return "", err
+	}
+	ctx, cancel := context.WithTimeout(ctx, transcribeTimeout)
+	defer cancel()
+	out, _ := exec.CommandContext(ctx, d.bin, "--lang", "ru-RU", "--file", f.Name()).Output() // код выхода сказан строкой error
+	var last listenEvent
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+		var ev listenEvent
+		if json.Unmarshal([]byte(line), &ev) == nil {
+			last = ev
+		}
+	}
+	switch {
+	case last.Error != "":
+		return "", errors.New(last.Error)
+	case !last.Final:
+		return "", fmt.Errorf("kb-listen --file: нет итога%s", ctxNote(ctx))
+	}
+	return last.Text, nil
+}
+
+func ctxNote(ctx context.Context) string {
+	if ctx.Err() != nil {
+		return ": " + ctx.Err().Error()
+	}
+	return ""
 }

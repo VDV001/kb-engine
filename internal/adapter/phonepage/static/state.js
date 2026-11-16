@@ -52,16 +52,32 @@ export function take(st, m, o) {
     c.step = p.text; // подпись — как в окне, ее строит окно
     return true;
   }
+  if (m.from === "desk" && p.kind === "heard") { // диктовка (#648): текст — в поле ввода чата
+    const c = st.chats[m.chat];
+    if (!c) return false;
+    delete c.listening; // «heard» — ответ только диктовке: «ждет» вопроса не трогает (повторное ревью #660)
+    c.heard = p.text || "";
+    return true;
+  }
   const answer = m.from === "desk" && (p.kind === "answer" || p.kind === "error");
   if (!answer && !(m.from === "phone" && p.kind === "question")) return false; // чат не заводится
   const c = (st.chats[m.chat] ||= { title: "Чат", msgs: [], updated: 0 });
   if (answer) {
-    c.msgs.push({ who: p.kind === "error" ? "error" : "desk", text: p.text, at, sources: p.sources || [] });
+    const text = p.kind === "error" ? VOICE_WORDS[p.text] || p.text : p.text;
+    c.msgs.push({ who: p.kind === "error" ? "error" : "desk", text, at, sources: p.sources || [] });
     c.pending = false;
     delete c.step;
     delete c.accepted;
     // Без счета провайдера — без круга, как в окне; сбой хода круг не трогает:
     // в окне он ничего не сохраняет и прежний счет остается (ревью #654).
+    delete c.listening;
+    const q = [...c.msgs].reverse().find((x) => x.who === "me" && x.voice);
+    if (q) { // голосовой вопрос (#648): заглушка получает слова; отказ — просто снимает признак
+      if (p.heard) q.text = p.heard;
+      delete q.voice;
+    }
+    // Читать вслух — пока свежий: по времени сообщения, а не приема (повторное ревью #660).
+    if (p.heard && p.kind === "answer") c.say = { text: p.text, at };
     if (p.context?.used > 0) c.context = { used: p.context.used, window: p.context.window || 0 };
     else if (p.kind === "answer") delete c.context;
     if (p.kind === "answer") c.only = p.only?.length ? p.only : undefined; // источники чата — от окна (#647); нет — все
@@ -299,3 +315,48 @@ export function themeColor(t, systemDark) {
   const dark = t === "dark" || (t !== "light" && systemDark);
   return dark ? "#0b0b0c" : "#ffffff";
 }
+
+// wavOf builds a WAV 16 кГц моно 16 бит from the microphone's float samples
+// at rate (#648): то, что понимает любой распознаватель окна, Apple Speech тоже.
+export function wavOf(samples, rate) {
+  const step = rate / 16000, n = Math.floor(samples.length / step);
+  const out = new Uint8Array(44 + n * 2), v = new DataView(out.buffer);
+  const tag = (at, t) => { for (let i = 0; i < 4; i++) out[at + i] = t.charCodeAt(i); };
+  tag(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); tag(8, "WAVE");
+  tag(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, 16000, true); v.setUint32(28, 32000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  tag(36, "data"); v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) { // среднее по окну: без него высокие частоты завернулись бы в речь
+    const a = Math.floor(i * step), b = Math.min(samples.length, Math.max(a + 1, Math.floor((i + 1) * step)));
+    let sum = 0;
+    for (let j = a; j < b; j++) sum += samples[j];
+    v.setInt16(44 + i * 2, Math.round(Math.max(-1, Math.min(1, sum / (b - a))) * 0x7fff), true);
+  }
+  return out;
+}
+
+// voiceLimit is how long one recording may be (мс); hearNote says who hears it.
+// Apple Speech через сеть берет запись до минуты: дальше конец пропал бы.
+export function voiceLimit(desk) {
+  return desk?.hear === "apple" ? 55_000 : 90_000;
+}
+
+const HEAR_NOTE = {
+  device: "распознает компьютер без сети",
+  apple: "распознает Apple через интернет",
+  cloud: "распознает облако из настроек окна",
+  server: "распознает Ваш сервер распознавания",
+};
+
+export function hearNote(hear) {
+  return HEAR_NOTE[hear] || "";
+}
+
+// VOICE_WORDS — коды отказа голоса (mailrelay.Voice*) словами человеку.
+const VOICE_WORDS = {
+  unsupported: "Окно DVK на компьютере старше голоса с телефона — обновите его.",
+  mismatch: "Запись подменили по дороге, компьютер ее не взял — скажите еще раз.",
+  gone: "Запись не дошла до компьютера — скажите еще раз.",
+  unheard: "Компьютер не смог распознать запись — проверьте «Слушает» в настройках окна.",
+  silent: "Компьютер не расслышал вопрос — скажите еще раз.",
+};

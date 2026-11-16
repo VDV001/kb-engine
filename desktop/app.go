@@ -538,6 +538,7 @@ func (a *App) startup(ctx context.Context) {
 	if a.chat != nil && a.settings != nil {
 		w := newMailWorker(a.settings, chatAsker(a.chat), filepath.Dir(a.settings.path))
 		w.useChat(a.chat)
+		w.useVoice(a.listen)
 		w.changed = func(chat string) { runtime.EventsEmit(ctx, "chats:changed", chat) }
 		w.turn = func(t phoneTurn) { runtime.EventsEmit(ctx, "phone:turn", t) }
 		// «Запомнить о Вас?» и на телефоне (#647): найденное в ответе — и странице,

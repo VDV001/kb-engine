@@ -2,11 +2,16 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -45,7 +50,7 @@ func newWorkerSettingsSeeing(t *testing.T, seen func(path string)) (*folderSetti
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: store}, Phones: userauth.Phones{Store: store}, Now: time.Now},
+	h := httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: store}, Phones: userauth.Phones{Store: store}, Files: mailbox.Files{Blob: store, Del: store}, Now: time.Now},
 		func(string, ...any) {})
 	var hits atomic.Int64
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -422,5 +427,152 @@ func TestPhoneTurnKeepsTheChatSources(t *testing.T) {
 	}
 	if strings.Join(a.Only, ",") != "srv1" {
 		t.Errorf("the phone is told sources %v", a.Only)
+	}
+}
+
+// Голос телефона настоящим кругом (#648): запись лежит в файлах ящика,
+// сообщение называет ее хешем; окно забирает, расшифровывает ключом чата,
+// распознает (Apple Speech — kb-listen --file) и удаляет.
+func TestMailWorkerHearsThePhone(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Apple Speech — только на Маке")
+	}
+	s, tok, srv, _ := newWorkerSettings(t)
+	key := mailcrypt.NewKey()
+	tok.m[mailKeyAccount("srv1")] = key.Encode()
+	phone := kbserver.Client{URL: srv.URL, Token: phoneToken, HTTP: srv.Client()}
+	sealed, err := mailcrypt.SealFile(key, []byte("RIFF-wav"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := phone.MailFilePut(t.Context(), sealed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(sealed)
+	phoneSends(t, srv, key, "c-1", 1, mailrelay.Payload{Kind: mailrelay.KindVoice, Text: mailrelay.VoiceDictate,
+		File: &mailrelay.FileRef{ID: id, SHA256: hex.EncodeToString(sum[:]), Size: len(sealed)}})
+	w := newMailWorker(s, func(context.Context, string, string) (string, string, error) { return "w", "ok", nil }, t.TempDir())
+	w.useVoice(&dictation{tmpDir: t.TempDir(), bin: fakeListen(t, `prev=""; f=""
+for a; do [ "$prev" = "--file" ] && f="$a"; prev="$a"; done
+[ "$(cat "$f")" = "RIFF-wav" ] && echo '{"text":"срок поставки","final":true}' || echo '{"error":"не та запись"}'
+`)})
+	if err := w.tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	got := phoneReads(t, srv, key)
+	if len(got) != 1 || got[0].Kind != mailrelay.KindHeard || got[0].Text != "срок поставки" {
+		t.Fatalf("phone got %+v", got)
+	}
+	if _, err := phone.MailFileGet(t.Context(), id); !errors.Is(err, kbserver.ErrNoSuchMailFile) {
+		t.Errorf("the recording stays on the server: %v", err)
+	}
+}
+
+// Телефон знает, кто распознает его голос (ревью безопасности #660): звук
+// уходит дальше компьютера всюду, кроме Apple Speech без сети.
+func TestPhoneDeskSaysWhoHears(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Apple Speech — только на Маке")
+	}
+	d, _, _, _ := newTestChatDesk(t)
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	w := newMailWorker(d.settings, chatAsker(d), t.TempDir())
+	w.useChat(d)
+	hear := func() string {
+		st, err := w.desk.State(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return st.Hear
+	}
+	if got := hear(); got != "" {
+		t.Errorf("before voice is wired: %q", got)
+	}
+	check := func(onDevice bool) string {
+		return fakeListen(t, fmt.Sprintf(`echo '{"auth":"authorized","onDevice":%t,"available":true}'`, onDevice))
+	}
+	w.useVoice(&dictation{bin: check(true)})
+	if got := hear(); got != mailrelay.HearDevice {
+		t.Errorf("on the device: %q", got)
+	}
+	w.useVoice(&dictation{bin: check(false)})
+	if got := hear(); got != mailrelay.HearApple {
+		t.Errorf("through Apple: %q", got)
+	}
+	d.settings.mu.Lock()
+	d.settings.cfg.Chat.Listen = "cloud:mini"
+	d.settings.mu.Unlock()
+	if got := hear(); got != mailrelay.HearCloud {
+		t.Errorf("cloud: %q", got)
+	}
+}
+
+// Окно, упавшее посреди распознавания, оставило расшифрованную запись во
+// временной папке: при старте голоса она убирается (ревью безопасности #660).
+func TestUseVoiceSweepsRecordings(t *testing.T) {
+	tmp := t.TempDir()
+	old := time.Now().Add(-time.Hour)
+	for _, n := range []string{"kb-phone-1.wav", "kb-listen-2.wav", "other.wav"} {
+		if err := os.WriteFile(filepath.Join(tmp, n), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(filepath.Join(tmp, n), old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	newMailWorker(nil, nil, t.TempDir()).useVoice(&dictation{tmpDir: tmp})
+	left, _ := os.ReadDir(tmp)
+	if len(left) != 1 || left[0].Name() != "other.wav" {
+		t.Errorf("left %v", left)
+	}
+}
+
+// Окно называет телефону слушателя, только когда распознавание сработает
+// (повторное ревью #660): выключенное подключение и запрет Apple Speech —
+// голоса нет, а не «распознает Ваш сервер» с отказом на каждую запись.
+func TestPhoneDeskHearsOnlyWhatWorks(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Apple Speech — только на Маке")
+	}
+	d, _, _, _ := newTestChatDesk(t)
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	w := newMailWorker(d.settings, chatAsker(d), t.TempDir())
+	w.useChat(d)
+	hear := func() string {
+		st, err := w.desk.State(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return st.Hear
+	}
+	w.useVoice(&dictation{bin: fakeListen(t, `echo '{"auth":"denied","onDevice":true,"available":true}'`)})
+	if got := hear(); got != "" {
+		t.Errorf("Apple Speech denied: %q", got)
+	}
+	d.settings.mu.Lock()
+	d.settings.cfg.Chat.Listen = "speech-off"
+	d.settings.cfg.Connections = append(d.settings.cfg.Connections, desktopconfig.Connection{ID: "speech-off", Kind: desktopconfig.ConnSpeech, Name: "whisper", Enabled: false})
+	d.settings.mu.Unlock()
+	if got := hear(); got != "" {
+		t.Errorf("disabled speech server: %q", got)
+	}
+}
+
+// Уборка при старте трогает только старые записи: свежая — запись другого
+// окна (отладочная сборка рядом), ее удаление сломало бы чужую диктовку.
+func TestUseVoiceKeepsFreshRecordings(t *testing.T) {
+	tmp := t.TempDir()
+	fresh := filepath.Join(tmp, "kb-listen-live.wav")
+	if err := os.WriteFile(fresh, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	newMailWorker(nil, nil, t.TempDir()).useVoice(&dictation{tmpDir: tmp})
+	if _, err := os.Stat(fresh); err != nil {
+		t.Errorf("a fresh recording was swept: %v", err)
 	}
 }

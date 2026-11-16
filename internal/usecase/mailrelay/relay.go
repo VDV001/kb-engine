@@ -24,7 +24,10 @@ package mailrelay
 
 import (
 	"bytes"
+	"cmp"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -79,6 +82,29 @@ type Payload struct {
 	Only []string `json:"only,omitempty"`
 	// Desk — состояние окна для телефона (#647), ответ на desk.
 	Desk *DeskState `json:"desk,omitempty"`
+	// File — запись телефона в файлах ящика (#648, KindVoice).
+	File *FileRef `json:"file,omitempty"`
+	// Heard — что окно расслышало в голосовом вопросе (#648, ответ на KindVoice).
+	Heard string `json:"heard,omitempty"`
+}
+
+// FileRef names a piece in the mailbox files (#658): id выдал сервер, sha256 —
+// запечатанного куска, сообщение аутентично — сервер кусок не подменит.
+type FileRef struct {
+	ID     string `json:"id"`
+	SHA256 string `json:"sha256"`
+	Size   int    `json:"size"`
+}
+
+// VoiceFiles reads and removes the phone's recordings in the mailbox files.
+type VoiceFiles interface {
+	Get(ctx context.Context, id string) ([]byte, error)
+	Delete(ctx context.Context, id string) error
+}
+
+// Hearer opens a sealed recording and turns it into text.
+type Hearer interface {
+	Hear(ctx context.Context, sealed []byte) (string, error)
 }
 
 // DeskState is what the phone shows by its input: модель настроек окна и
@@ -86,7 +112,19 @@ type Payload struct {
 type DeskState struct {
 	Model   string       `json:"model"`
 	Sources []DeskSource `json:"sources"`
+	// Hear — кто распознает голос телефона (#648): HearDevice, HearApple,
+	// HearCloud, HearServer; пусто — голоса нет. Телефон говорит это человеку:
+	// звук уходит дальше компьютера всюду, кроме HearDevice.
+	Hear string `json:"hear,omitempty"`
 }
+
+// Кто распознает голос телефона.
+const (
+	HearDevice = "device" // Apple Speech на Маке, без сети
+	HearApple  = "apple"  // Apple Speech через серверы Apple
+	HearCloud  = "cloud"  // облако из «Слушает»
+	HearServer = "server" // свой сервер распознавания
+)
 
 // DeskSource is a source or a connection the chat can search.
 type DeskSource struct {
@@ -126,6 +164,21 @@ const (
 	// DeskUnsupported — код отказа на desk (Text у KindError): окно собрано без
 	// Desk. Слова человеку — у телефона.
 	DeskUnsupported = "unsupported"
+	// KindVoice — голос телефона (#648): File — запись, Text — VoiceDictate или VoiceAsk.
+	KindVoice = "voice"
+	// KindHeard — ответ на диктовку: Text — расслышанное (пусто — тишина).
+	KindHeard = "heard"
+	// VoiceDictate — текст в поле ввода; VoiceAsk — вопрос голосом, ответ модели.
+	VoiceDictate = "dictate"
+	VoiceAsk     = "ask"
+	// VoiceMismatch — код отказа: запись не та, что назвало сообщение (хеш).
+	VoiceMismatch = "mismatch"
+	// VoiceGone — код: запись не забралась (нет, истекла, сбой сети).
+	VoiceGone = "gone"
+	// VoiceUnheard — код: распознавание не удалось; причина — в журнале окна.
+	VoiceUnheard = "unheard"
+	// VoiceSilent — код: в вопросе голосом не расслышано слов (тишина).
+	VoiceSilent = "silent"
 	// KindRemember — окно предлагает запомнить факты о человеке (#647, Facts).
 	KindRemember = "remember"
 	// KindMemory — решение телефона по факту (Text yes/no, Facts[0]) и ответ окна
@@ -303,6 +356,11 @@ type Relay struct {
 	Memory Memory
 	// Desk — состояние окна для телефона (nil — отказ словами).
 	Desk DeskInfo
+	// Files и Hear — голос телефона (#648); nil — отказ DeskUnsupported.
+	Files VoiceFiles
+	Hear  Hearer
+	// HearTimeout bounds one recognition; 0 — DefaultHearTimeout.
+	HearTimeout time.Duration
 }
 
 // Notifier tells the phones an answer is waiting (kb-сервер, /api/mail/notify).
@@ -401,6 +459,8 @@ func (r Relay) request(st *State, m Message) (Payload, bool) {
 	switch p.Kind {
 	case KindQuestion, KindSearch, KindOpen, KindMemory, KindDesk:
 		return p, true
+	case KindVoice: // режим — только известный, запись — названа
+		return p, (p.Text == VoiceDictate || p.Text == VoiceAsk) && p.File != nil
 	}
 	return Payload{}, false
 }
@@ -424,12 +484,17 @@ func (r Relay) handle(ctx context.Context, st *State, m Message) (bool, error) {
 		reply = r.decide(ctx, st, m.Chat, req)
 	case KindDesk:
 		reply = r.desk(ctx)
+	case KindVoice:
+		reply = r.voice(ctx, st, m.Chat, req)
 	default:
 		reply = r.find(ctx, req)
 	}
 	reply.Text = trim(reply.Text, r.MaxText)
 	st.DeskCounter++
-	out := Outgoing{Chat: m.Chat, Counter: st.DeskCounter, Payload: reply, Notify: req.Kind == KindQuestion}
+	// Push — итогу хода модели, и отказу модели тоже; тишина и отказ голоса —
+	// не ход (ревью #660): расслышанное есть только у хода.
+	asked := req.Kind == KindQuestion || req.Kind == KindVoice && reply.Heard != ""
+	out := Outgoing{Chat: m.Chat, Counter: st.DeskCounter, Payload: reply, Notify: asked}
 	var err error
 	if out.Sealed, err = r.sealFitting(&out); err != nil {
 		return false, err
@@ -681,6 +746,57 @@ func clip(text string, limit int) string {
 		cut--
 	}
 	return text[:max(cut, 0)] + "…"
+}
+
+// DefaultHearTimeout bounds one recognition: повисший сервер распознавания не
+// держит ящик телефона — работник один на все серверы (ревью #660).
+const DefaultHearTimeout = 2 * time.Minute
+
+// voice hears the phone's recording (#648): кусок — из файлов ящика, сверка
+// id, размера и хеша из аутентичного сообщения до расшифровки; совпал —
+// удаляется сразу, до хода модели (не совпал — не удаляется: это могла быть
+// ждущая запись другого телефона). Отказы — кодами, причины — в журнал окна:
+// в них пути компьютера (ревью #660). Диктовка — текст телефону; вопрос
+// голосом — ход модели с расслышанным; тишина — «не расслышал».
+func (r Relay) voice(ctx context.Context, st *State, chat string, req Payload) Payload {
+	if r.Files == nil || r.Hear == nil {
+		return Payload{Kind: KindError, Text: DeskUnsupported}
+	}
+	if domain.ValidateMailFileID(req.File.ID) != nil {
+		return Payload{Kind: KindError, Text: VoiceGone}
+	}
+	sealed, err := r.Files.Get(ctx, req.File.ID)
+	if err != nil {
+		r.logf("mailrelay: voice: get %s: %v", req.File.ID, err)
+		return Payload{Kind: KindError, Text: VoiceGone}
+	}
+	sum := sha256.Sum256(sealed)
+	if len(sealed) != req.File.Size || hex.EncodeToString(sum[:]) != req.File.SHA256 {
+		return Payload{Kind: KindError, Text: VoiceMismatch}
+	}
+	// Свой срок, а не срок круга: закрытие окна посреди хода не оставит запись.
+	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	if err := r.Files.Delete(dctx, req.File.ID); err != nil {
+		r.logf("mailrelay: voice: delete %s: %v", req.File.ID, err)
+	}
+	cancel()
+	hctx, cancel := context.WithTimeout(ctx, cmp.Or(r.HearTimeout, DefaultHearTimeout))
+	text, err := r.Hear.Hear(hctx, sealed)
+	cancel()
+	if err != nil {
+		r.logf("mailrelay: voice: hear: %v", err)
+		return Payload{Kind: KindError, Text: VoiceUnheard}
+	}
+	text = strings.TrimSpace(text)
+	switch {
+	case req.Text != VoiceAsk:
+		return Payload{Kind: KindHeard, Text: text}
+	case text == "": // тишина вопроса — свой код: «heard» — ответ диктовке (повторное ревью #660)
+		return Payload{Kind: KindError, Text: VoiceSilent}
+	}
+	reply := r.ask(ctx, st, chat, text)
+	reply.Heard = text
+	return reply
 }
 
 // desk tells the phone the window's state (#647): модель и названия источников.

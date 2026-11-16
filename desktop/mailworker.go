@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"sync"
 	"time"
 
@@ -49,6 +50,10 @@ type mailWorker struct {
 	turn     func(phoneTurn)    // ход по вопросу с телефона — странице (#646)
 	memory   mailrelay.Memory   // решения телефона по «Запомнить о Вас?» (#647); nil — отказ словами
 	desk     mailrelay.DeskInfo // модель и источники окна для телефона (#647); nil — отказ словами
+	hear     transcriber        // голос телефона (#648): запись → текст; nil — отказ кодом
+	listen   *dictation         // помощник kb-listen для Apple Speech (#648)
+	apple    string             // что сказал kb-listen --check: mailrelay.Hear* или ""
+	appleAt  time.Time          // когда спрашивали: не чаще раза в 5 минут
 
 	notesMu sync.Mutex
 	notes   []mailrelay.Note // «Запомнить о Вас?» для телефонов: пишет разбор ответа, забирает круг
@@ -177,8 +182,12 @@ func (w *mailWorker) tickServer(ctx context.Context, id string, notes []mailrela
 		Notes:     notes,
 		Memory:    w.memory,
 		Desk:      w.desk,
+		Files:     mailVoiceFiles{c.client},
 
 		FindTimeout: phoneFindTimeout,
+	}
+	if w.hear != nil { // без распознавания — отказ кодом, не интерфейс с nil внутри
+		relay.Hear = phoneHearer{key: c.key, hear: w.hear}
 	}
 	return relay.Tick(ctx)
 }
@@ -190,14 +199,17 @@ func (w *mailWorker) useChat(d *chatDesk) {
 	w.answer = chatAnswerer(d)
 	w.find = newPhoneFinder(d.find, d.openFound) // ставит useSources в main до старта окна
 	w.quiet = func() bool { return d.config().MemoryQuiet }
-	w.desk = phoneDesk{settings: d.settings}
+	w.desk = phoneDesk{settings: d.settings, hear: w.hearLabel}
 }
 
 // phoneDesk tells the phone the window's state (#647): модель настроек — для
 // чата без ответа, и названия источников — для галочек чата. Телефон только
 // показывает, менять — в окне (решение 16.11): выбор с двух устройств требует
 // явных прав.
-type phoneDesk struct{ settings *folderSettings }
+type phoneDesk struct {
+	settings *folderSettings
+	hear     func() string // кто распознает голос телефона (#648); nil — голоса нет
+}
 
 // State lists what the chat searches: включенные источники, которые окно
 // читает, и подключения, которые человек разрешил чату («Чату: разрешить»), —
@@ -209,6 +221,9 @@ func (d phoneDesk) State(context.Context) (mailrelay.DeskState, error) {
 	d.settings.mu.Unlock()
 	c := cfg.Chat.WithDefaults()
 	st := mailrelay.DeskState{Model: c.Model, Sources: []mailrelay.DeskSource{}}
+	if d.hear != nil {
+		st.Hear = d.hear()
+	}
 	for _, s := range cfg.WithSources().Sources {
 		if s.Enabled && searched(cfg, s) {
 			st.Sources = append(st.Sources, mailrelay.DeskSource{ID: s.ID, Name: sourceLabel(s)})
@@ -241,6 +256,105 @@ func searched(cfg desktopconfig.Config, s desktopconfig.Source) bool {
 
 // chatConnKinds are the connections a chat can ask (CHAT_CONN в frontend/app.js).
 var chatConnKinds = map[desktopconfig.ConnKind]string{desktopconfig.ConnOzon: "Ozon", desktopconfig.ConnMPStats: "MPStats"}
+
+// hearLabel says who hears the phone's voice: mailrelay.Hear*; пусто — никто.
+// Только то, что сработает: выключенное или чужое подключение, запрет Apple
+// Speech — голоса нет (повторное ревью #660). Проверка Apple — раз в 5 минут.
+func (w *mailWorker) hearLabel() string {
+	if w.hear == nil {
+		return ""
+	}
+	w.settings.mu.Lock()
+	cfg := w.settings.cfg
+	w.settings.mu.Unlock()
+	id := cfg.Chat.Listen
+	switch {
+	case id != "" && cloudListen[id] != "":
+		return mailrelay.HearCloud
+	case id != "":
+		c, ok := cfg.Connection(id)
+		if !ok || !c.Enabled || c.Kind != desktopconfig.ConnSpeech {
+			return ""
+		}
+		return mailrelay.HearServer
+	}
+	return w.appleLabel()
+}
+
+// appleLabel asks kb-listen --check, не чаще раза в 5 минут: Apple Speech
+// без разрешения или недоступный — голоса нет.
+func (w *mailWorker) appleLabel() string {
+	if goruntime.GOOS != "darwin" || w.listen == nil || w.listen.bin == "" {
+		return ""
+	}
+	if time.Since(w.appleAt) > 5*time.Minute {
+		st := w.listen.Check()
+		w.apple, w.appleAt = "", time.Now()
+		switch {
+		case st.Auth != "authorized" || !st.Available:
+		case st.OnDevice:
+			w.apple = mailrelay.HearDevice
+		default:
+			w.apple = mailrelay.HearApple
+		}
+	}
+	return w.apple
+}
+
+// useVoice wires the phone's voice (#648): распознает то, что выбрано в «Чат и
+// модель → Слушает»; Apple Speech — помощником kb-listen --file, только на Маке.
+func (w *mailWorker) useVoice(listen *dictation) {
+	w.listen, w.appleAt = listen, time.Time{}
+	// Запись, оставленная упавшим окном, — расшифрованная речь: убрать до
+	// первого круга (ревью безопасности #660).
+	dir := cmp.Or(listen.tmpDir, os.TempDir())
+	for _, pat := range []string{"kb-phone-*.wav", "kb-listen-*.wav"} {
+		old, _ := filepath.Glob(filepath.Join(dir, pat))
+		for _, f := range old {
+			// Свежая — запись другого окна (отладочная сборка рядом): не трогать.
+			if info, err := os.Stat(f); err == nil && time.Since(info.ModTime()) > 10*time.Minute {
+				_ = os.Remove(f)
+			}
+		}
+	}
+	w.hear = func(ctx context.Context, wav []byte) (string, error) {
+		tr, err := w.settings.listenTranscriber()
+		switch {
+		case err != nil:
+			return "", err
+		case tr != nil:
+			return tr(ctx, wav)
+		case goruntime.GOOS != "darwin" || listen == nil:
+			return "", errors.New("компьютер не слышит телефон: выберите распознавание в «Чат и модель → Слушает»")
+		}
+		return listen.TranscribeFile(ctx, wav)
+	}
+}
+
+// mailVoiceFiles is the server's mailbox files for the relay (#648).
+type mailVoiceFiles struct{ c kbserver.Client }
+
+func (f mailVoiceFiles) Get(ctx context.Context, id string) ([]byte, error) {
+	return f.c.MailFileGet(ctx, id)
+}
+
+func (f mailVoiceFiles) Delete(ctx context.Context, id string) error {
+	return f.c.MailFileDelete(ctx, id)
+}
+
+// phoneHearer opens the phone's recording with the chat key and hears it.
+type phoneHearer struct {
+	key  mailcrypt.Key
+	hear transcriber
+}
+
+func (h phoneHearer) Hear(ctx context.Context, sealed []byte) (string, error) {
+	wav, err := mailcrypt.OpenFile(h.key, sealed)
+	if err != nil {
+		return "", fmt.Errorf("запись с телефона не открылась: %w", err)
+	}
+	return h.hear(ctx, wav)
+}
 
 // phoneFindTimeout bounds one search or open for the phone: работник один на
 // все серверы, подвисший источник или огромный PDF не держат его круг.

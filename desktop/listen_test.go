@@ -238,3 +238,26 @@ printf '{"recorded":"%s","final":true,"silent":true}\n' "$2"
 		t.Fatalf("запись не стерта: %v", m)
 	}
 }
+
+// Голос с телефона (#648): готовая запись — помощнику с --file, текст —
+// итог; отказ помощника — его словами; временный файл не остается.
+func TestDictation_TranscribeFile(t *testing.T) {
+	tmp := t.TempDir()
+	d := &dictation{tmpDir: tmp, bin: fakeListen(t, `prev=""; f=""
+for a; do [ "$prev" = "--file" ] && f="$a"; prev="$a"; done
+[ "$(cat "$f")" = "RIFF-wav" ] && echo '{"text":"срок поставки","final":true}' || echo '{"error":"нет записи"}'
+`)}
+	if text, err := d.TranscribeFile(t.Context(), []byte("RIFF-wav")); err != nil || text != "срок поставки" {
+		t.Fatalf("transcribe: %q, %v", text, err)
+	}
+	d.bin = fakeListen(t, `echo '{"error":"нет разрешения на распознавание речи"}'; exit 3`)
+	if _, err := d.TranscribeFile(t.Context(), []byte("RIFF-wav")); err == nil || !strings.Contains(err.Error(), "нет разрешения") {
+		t.Errorf("refusal: %v", err)
+	}
+	if left, _ := os.ReadDir(tmp); len(left) != 0 {
+		t.Errorf("recordings left: %v", left)
+	}
+	if _, err := (&dictation{}).TranscribeFile(t.Context(), []byte("x")); err == nil {
+		t.Error("no helper: transcribed")
+	}
+}
