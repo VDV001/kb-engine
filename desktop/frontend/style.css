@@ -2005,7 +2005,7 @@ body:not(.no-mk-spark) .mk-legend i.fc { border-image: linear-gradient(90deg, va
 .mk-cn-intro { padding: 12px 14px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); font-size: 13px; color: var(--z-ink-2); }
 .mk-cn-intro b { color: var(--z-ink); }
 .mk-cn-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
-.mk-cn-card { display: grid; gap: 8px; align-content: start; padding: 14px 16px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg); }
+.mk-cn-card { display: grid; gap: 8px; align-content: start; min-width: 0; padding: 14px 16px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg); }
 .mk-cn-card.on { border-color: transparent; background: linear-gradient(var(--z-bg), var(--z-bg)) padding-box, linear-gradient(100deg, var(--mk1), var(--mk2), var(--mk3)) border-box; }
 .mk-cn-card h4 { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--z-ink); }
 .mk-cn-card .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--z-faint); flex: none; }
@@ -2025,7 +2025,7 @@ body:not(.no-mk-spark) .mk-legend i.fc { border-image: linear-gradient(90deg, va
 .settings .mk-cn-intro { margin: 0 0 12px; }
 .conn-grid .mk-cn-card.on { border-color: var(--z-rule); background: var(--z-bg); } /* рамка как у остальных Настроек (отзыв 15.11) */
 .conn-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); margin-bottom: 14px; }
-.conn-grid .mk-cn-card h4 { flex-wrap: wrap; }
+.conn-grid .mk-cn-card h4 { flex-wrap: wrap; overflow-wrap: anywhere; } /* адрес kb-сервера без пробелов не растягивает колонку (отзыв 16.11) */
 .conn-grid .mk-cn-card h4 small { color: var(--z-muted); font-weight: 400; }
 .conn-grid .mk-cn-card.off h4, .conn-grid .mk-cn-card.off .d, .conn-grid .mk-cn-card.off .mk-cn-chips { opacity: .55; }
 .conn-grid .d { overflow-wrap: anywhere; }
