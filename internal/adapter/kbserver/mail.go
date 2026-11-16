@@ -127,6 +127,10 @@ func (c Client) MailPost(ctx context.Context, chat string, sealed []byte) (int64
 // ErrNoSuchMailFile — файла в ящике нет: забран, удален по сроку (#658).
 var ErrNoSuchMailFile = fmt.Errorf("%w: no such mailbox file", ErrRejected)
 
+// ErrNoMailFiles — у сервера ящик есть, а файлов нет: сервер старше #658 или
+// собран без хранилища, которое удаляет.
+var ErrNoMailFiles = errors.New("kbserver: no mailbox files")
+
 // maxMailFile bounds the answer with a piece: domain.MaxMailFile и запас.
 const maxMailFile = 4 << 20
 

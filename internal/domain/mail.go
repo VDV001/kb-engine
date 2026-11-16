@@ -24,6 +24,8 @@ var (
 	ErrMailFile = errors.New("mail: invalid file id")
 	// ErrNoSuchMailFile — файла нет: забран, удален по сроку или чужой.
 	ErrNoSuchMailFile = errors.New("mail: no such file")
+	// ErrMailFilesOff — у сервера нет хранилища файлов ящика.
+	ErrMailFilesOff = errors.New("mail: files are off on this server")
 	// ErrMailDeskOnly — телефоны привязывает и отвязывает только компьютер:
 	// украденный телефон не выпустит себе второй токен и не отвяжет хозяина.
 	ErrMailDeskOnly = errors.New("mail: only the desk manages phones")

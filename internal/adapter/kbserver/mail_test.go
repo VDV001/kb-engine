@@ -234,3 +234,46 @@ func TestClient_MailFiles(t *testing.T) {
 		t.Errorf("chat files: %v", err)
 	}
 }
+
+// Ревью #659: id и размер куска проверяются до запроса — «..» не уходит
+// опросом журнала, лишние мегабайты не уходят в сеть; сервер без файлов —
+// свой отказ, а не «нет ящика».
+func TestClient_MailFilesRefusedBeforeTheRequest(t *testing.T) {
+	var hits int
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { hits++; w.WriteHeader(http.StatusOK) }))
+	t.Cleanup(srv.Close)
+	c := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}
+	ctx := context.Background()
+	if _, err := c.MailFileGet(ctx, ".."); !errors.Is(err, domain.ErrMailFile) {
+		t.Errorf("get ..: %v", err)
+	}
+	if err := c.MailFileDelete(ctx, "."); !errors.Is(err, domain.ErrMailFile) {
+		t.Errorf("delete .: %v", err)
+	}
+	if _, err := c.MailFilePut(ctx, make([]byte, domain.MaxMailFile+1)); !errors.Is(err, domain.ErrMailTooLarge) {
+		t.Errorf("too large: %v", err)
+	}
+	if _, err := c.MailFilePut(ctx, nil); !errors.Is(err, domain.ErrMailEmpty) {
+		t.Errorf("empty: %v", err)
+	}
+	if hits != 0 {
+		t.Errorf("%d requests went out", hits)
+	}
+}
+
+func TestClient_MailFilesOff(t *testing.T) {
+	s, err := blobfs.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := domain.NewUserID("alpha")
+	h := httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: s}, Phones: userauth.Phones{Store: s}, Now: time.Now}, func(string, ...any) {})
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.ServeHTTP(w, r.WithContext(httpapi.WithMailCaller(r.Context(), id, domain.MailDesk)))
+	}))
+	t.Cleanup(srv.Close)
+	c := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}
+	if _, err := c.MailFilePut(context.Background(), []byte("x")); !errors.Is(err, kbserver.ErrNoMailFiles) {
+		t.Errorf("files off: %v", err)
+	}
+}

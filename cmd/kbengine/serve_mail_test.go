@@ -347,8 +347,12 @@ func TestMailPhoneVisitAndName(t *testing.T) {
 
 // putFile posts a file piece as the phone or the desk would: байты, не JSON.
 func putFile(f tenantFixture, body []byte, token string) *httptest.ResponseRecorder {
+	return putFileAs(f, body, token, "application/octet-stream")
+}
+
+func putFileAs(f tenantFixture, body []byte, token, contentType string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodPost, "/api/mail/files", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 	f.h.ServeHTTP(rec, req)
@@ -423,5 +427,21 @@ func TestMailFileBudgetIsPerPerson(t *testing.T) {
 	}
 	if rec := putFile(f, []byte("sealed"), f.tokB); rec.Code != http.StatusCreated {
 		t.Errorf("B limited by A: %d", rec.Code)
+	}
+}
+
+// Тип тела — по смыслу, а не строкой (ревью #659): параметры и регистр не
+// мешают; JSON старого клиента в чат «files» — 415.
+func TestMailFileContentType(t *testing.T) {
+	f := newTenants(t)
+	for ct, want := range map[string]int{
+		"application/octet-stream; charset=binary": http.StatusCreated,
+		"Application/Octet-Stream":                 http.StatusCreated,
+		"application/json":                         http.StatusUnsupportedMediaType,
+		"":                                         http.StatusUnsupportedMediaType,
+	} {
+		if rec := putFileAs(f, []byte("x"), f.tokA, ct); rec.Code != want {
+			t.Errorf("%q: %d, want %d", ct, rec.Code, want)
+		}
 	}
 }
