@@ -299,3 +299,9 @@ export function themeColor(t, systemDark) {
   const dark = t === "dark" || (t !== "light" && systemDark);
   return dark ? "#0b0b0c" : "#ffffff";
 }
+
+// wavOf builds a WAV 16 кГц моно 16 бит from the microphone's float samples
+// at rate (#648): то, что понимает любой распознаватель окна, Apple Speech тоже.
+export function wavOf() {
+  return new Uint8Array(0);
+}

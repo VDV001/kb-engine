@@ -259,6 +259,23 @@ want(st18.chats.c.only === undefined && all18?.on === 2 && all18?.names.length =
 want(s.choiceView({ msgs: [] }, st18.desk)?.model === "qwen3", "a chat without an answer — the window's model");
 want(s.choiceView(st18.chats.c, null) === null, "no desk state — nothing to show");
 
+// 20. Голос (#648): WAV 16 кГц моно 16 бит из отсчетов микрофона; диктовка
+// возвращается текстом в чат; голосовой вопрос получает расслышанный текст,
+// ответ на него читается вслух.
+const w = s.wavOf(new Float32Array(48000).fill(0.5), 48000);
+const dv = new DataView(w.buffer);
+const tag = (at) => String.fromCharCode(...w.slice(at, at + 4));
+want(w.length === 44 + 32000 && w.length > 44 && tag(0) === "RIFF" && tag(8) === "WAVE" && tag(36) === "data" && dv.getUint32(24, true) === 16000 && dv.getUint16(22, true) === 1 && dv.getUint16(34, true) === 16, "wav header: 16 kHz mono 16 bit, one second");
+want(w.length > 45 && Math.abs(dv.getInt16(44, true) - 16383) <= 1, "wav samples are scaled to int16");
+const st20 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { c: { title: "Чат", msgs: [], updated: 1, listening: true } } };
+want(s.take(st20, { seq: 1, chat: "c", from: "desk" }, dk14(1, { kind: "heard", text: "срок поставки" })) === true && st20.chats.c.heard === "срок поставки" && !st20.chats.c.listening, "dictation lands in the chat as heard text");
+want(s.take(st20, { seq: 2, chat: "x", from: "desk" }, dk14(2, { kind: "heard", text: "а" })) === false && !st20.chats.x, "heard for an unknown chat is dropped");
+st20.chats.c.msgs.push({ who: "me", text: "🎤", voice: true, counter: "3" });
+st20.chats.c.pending = true;
+s.take(st20, { seq: 3, chat: "c", from: "desk" }, dk14(3, { kind: "answer", text: "30 дней", heard: "какой срок?" }));
+const q20 = st20.chats.c.msgs.find((x) => x.who === "me");
+want(q20.text === "какой срок?" && !q20.voice && st20.chats.c.say === "30 дней", "the voice question gets its words, the answer is to be read aloud");
+
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 
