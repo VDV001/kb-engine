@@ -258,10 +258,12 @@ want(s.take(st19, { seq: 4, chat: "desk-ffff", from: "desk" }, dk14(4, { kind: "
 const c19 = { model: "gone", only: ["f-1", "gone"], msgs: [] };
 want(JSON.stringify(s.questionPayload(c19, "q", desk18)) === JSON.stringify({ kind: "question", text: "q", only: ["f-1"] }), "stale model and source are dropped");
 want(JSON.stringify(s.questionPayload({ only: ["gone"], msgs: [] }, "q", desk18)) === JSON.stringify({ kind: "question", text: "q" }), "nothing left — the window's choice");
-// Выбор источников как в окне: все — «как в окне», ни одного — нельзя.
+// Выбор источников как в окне: ни одного — нельзя; «все» уходит явным
+// списком — иначе после сужения его не вернуть (ревью #656: «не выбирал» —
+// это источники чата окна, а не все).
 const all19 = ["f-1", "oz1"];
 want(s.pickSources(all19, []).ok === false, "no source at all is refused");
-want(s.pickSources(all19, ["oz1", "f-1"]).ok && s.pickSources(all19, ["oz1", "f-1"]).only === undefined, "all — as in the window");
+want(s.pickSources(all19, ["oz1", "f-1"]).ok && s.pickSources(all19, ["oz1", "f-1"]).only?.join() === "oz1,f-1", "all goes as an explicit list");
 want(s.pickSources(all19, ["oz1"]).only?.join() === "oz1", "a part is the chat's choice");
 
 console.log(fails.length ? fails.join("\n") : "ok");

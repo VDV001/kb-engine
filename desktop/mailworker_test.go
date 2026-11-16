@@ -408,9 +408,10 @@ func TestMailWorkerAnswersTheDesk(t *testing.T) {
 	}
 }
 
-// Телефон берет модель только из показанного ему — нынешняя и недавние, — а
-// не любую из списка шлюза за счет ключа человека; проверка — без сети цен:
-// она идет под замком чата.
+// Телефон берет модель только из тех, что человек уже брал (журнал), — а не
+// любую из списка шлюза за счет ключа человека; проверка — без сети цен: она
+// идет под замком чата. Выбранная модель не выпадает, когда окно поработает
+// с другими (ревью #656: недавних всего 3).
 func TestTurnModelOnlyFromThePhoneList(t *testing.T) {
 	d, _, tok, _ := newTestChatDesk(t)
 	tok.m[chatKeyAccount] = "k"
@@ -422,8 +423,12 @@ func TestTurnModelOnlyFromThePhoneList(t *testing.T) {
 		t.Error("a turn's model asked the gateway for prices")
 		return prices(ctx)
 	}
-	used, _ := domain.NewModelCall(d.now().Add(-time.Hour), domain.CallAnswer, "llama3", 10, 10, true, time.Second, time.Second, false)
-	d.calls = &callsRec{calls: []domain.ModelCall{used}}
+	rec := &callsRec{}
+	for i, m := range []string{"llama3", "a", "b", "c"} { // llama3 — самая старая
+		call, _ := domain.NewModelCall(d.now().Add(time.Duration(i-10)*time.Minute), domain.CallAnswer, m, 10, 10, true, time.Second, time.Second, false)
+		rec.calls = append(rec.calls, call)
+	}
+	d.calls = rec
 	if _, _, err := d.turnModel("anthropic/claude-sonnet-5.5"); err == nil {
 		t.Error("a gateway model the phone was never shown was taken")
 	}
@@ -461,6 +466,8 @@ func TestPhoneTurnKeepsTheChatSources(t *testing.T) {
 		{"no choice — the chat's own", nil, "srv1"},
 		{"stale and closed ids — the chat's own", []string{"gone", "oz2"}, "srv1"},
 		{"a known choice — taken, the stale dropped", []string{"oz1", "gone"}, "oz1"},
+		// Ревью #656: «все» с телефона — снова все, а не прежний выбор чата.
+		{"every known source — all again", knownIDs(s), ""},
 	} {
 		if _, err := ans(t.Context(), rec.ID, tc.name, mailrelay.Options{Only: tc.only}, nil, nil); err != nil {
 			t.Fatal(err)
@@ -472,5 +479,35 @@ func TestPhoneTurnKeepsTheChatSources(t *testing.T) {
 		if strings.Join(got.Sources, ",") != tc.want {
 			t.Errorf("%s: chat sources %v, want %s", tc.name, got.Sources, tc.want)
 		}
+	}
+}
+
+func knownIDs(s *folderSettings) []string {
+	var ids []string
+	for _, x := range phoneSources(s) {
+		ids = append(ids, x.ID)
+	}
+	return ids
+}
+
+// Ревью #656: вопрос с телефона без выбора берет источники чата окна, но без
+// тех, которых в окне больше нет: устаревший id не сужает поиск до нуля.
+func TestPhoneTurnDropsTheChatsStaleSources(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.settings.SetSources(serverList("srv1", "https://kb.example.ru", true), nil, map[string]string{"srv1": srvToken}); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := d.Ask(askReq{Question: "сроки?", Sources: []string{"srv1", "gone"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := chatAnswerer(d)(t.Context(), rec.ID, "еще?", mailrelay.Options{}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := d.load(rec.ID); strings.Join(got.Sources, ",") != "srv1" {
+		t.Errorf("chat sources %v, want srv1", got.Sources)
 	}
 }
