@@ -6,6 +6,7 @@ package main
 // usecase/mailrelay, здесь адаптеры: ящик, шифр, файл состояния, чат окна.
 
 import (
+	"cmp"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -17,6 +18,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -255,8 +257,45 @@ type phoneDesk struct {
 	models   func() (modelsView, error)
 }
 
+// Модели — нынешняя и недавние (весь список шлюза — сотни, он телефону не
+// нужен); источники — включенные папки и серверы и подключения, которые
+// человек разрешил чату («Чату: разрешить»): закрытое телефон не увидит.
 func (d phoneDesk) State(context.Context) (mailrelay.DeskState, error) {
-	return mailrelay.DeskState{}, nil
+	m, err := d.models()
+	if err != nil {
+		return mailrelay.DeskState{}, err
+	}
+	st := mailrelay.DeskState{Model: m.Current, Models: []string{}, Sources: []mailrelay.DeskSource{}}
+	for _, id := range append([]string{m.Current}, modelIDs(m.Recent)...) {
+		if id != "" && !slices.Contains(st.Models, id) {
+			st.Models = append(st.Models, id)
+		}
+	}
+	d.settings.mu.Lock()
+	cfg := d.settings.cfg
+	d.settings.mu.Unlock()
+	for _, s := range cfg.WithSources().Sources {
+		if s.Enabled {
+			st.Sources = append(st.Sources, mailrelay.DeskSource{ID: s.ID, Name: sourceLabel(s)})
+		}
+	}
+	for _, c := range cfg.Connections {
+		if name, ok := chatConnKinds[c.Kind]; ok && c.Enabled && c.Share {
+			st.Sources = append(st.Sources, mailrelay.DeskSource{ID: c.ID, Name: name + " · " + cmp.Or(c.Name, name), Conn: true})
+		}
+	}
+	return st, nil
+}
+
+// chatConnKinds are the connections a chat can ask (CHAT_CONN в frontend/app.js).
+var chatConnKinds = map[desktopconfig.ConnKind]string{desktopconfig.ConnOzon: "Ozon", desktopconfig.ConnMPStats: "MPStats"}
+
+func modelIDs(xs []modelChoice) []string {
+	out := make([]string, 0, len(xs))
+	for _, x := range xs {
+		out = append(out, x.ID)
+	}
+	return out
 }
 
 // answerFn runs a model turn and tells where the answer came from; step — ход
@@ -308,7 +347,7 @@ func (a workerAsker) AskStepped(ctx context.Context, id, question string, opts m
 			step(mailrelay.Step{Text: stepLabel(u)})
 		}
 	}
-	ans, err := a.w.answer(ctx, id, question, mailrelay.Options{}, began, each)
+	ans, err := a.w.answer(ctx, id, question, opts, began, each)
 	if err == nil {
 		a.w.changed(ans.Chat)
 	}
@@ -357,9 +396,11 @@ func chatAsker(d *chatDesk) askFn {
 func chatAnswerer(d *chatDesk) answerFn {
 	return func(ctx context.Context, chat, question string, opts mailrelay.Options, began func(string), step func(chat.Use)) (mailrelay.Answer, error) {
 		quiet := askOut{worker: true, step: step, began: began}
-		rec, err := d.ask(ctx, askReq{ID: chat, Question: question}, quiet)
+		req := askReq{ID: chat, Question: question, Sources: opts.Only, Model: opts.Model}
+		rec, err := d.ask(ctx, req, quiet)
 		if chat != "" && errors.Is(err, fs.ErrNotExist) {
-			rec, err = d.ask(ctx, askReq{Question: question}, quiet)
+			req.ID = ""
+			rec, err = d.ask(ctx, req, quiet)
 		}
 		if err != nil {
 			return mailrelay.Answer{}, err

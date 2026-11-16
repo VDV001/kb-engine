@@ -161,6 +161,8 @@ func sourceLabel(s desktopconfig.Source) string {
 	switch {
 	case s.Name != "":
 		return s.Name
+	case s.Kind == desktopconfig.KindGDrive: // пути у Диска нет: Base("") дал бы «.»
+		return "Google Диск"
 	case s.Kind == desktopconfig.KindServer:
 		if u, err := url.Parse(s.URL); err == nil && u.Host != "" {
 			return u.Host

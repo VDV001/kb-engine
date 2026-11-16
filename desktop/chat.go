@@ -232,6 +232,25 @@ func (d *chatDesk) config() desktopconfig.Chat {
 	return d.settings.cfg.Chat.WithDefaults()
 }
 
+// turnModel is the chat settings and key of one turn: model — выбор телефона
+// (#647), только из списка окна, иначе телефон взял бы любую модель, в том
+// числе дорогую, за счет ключа человека; пусто — модель настроек.
+func (d *chatDesk) turnModel(model string) (desktopconfig.Chat, string, error) {
+	c := d.config()
+	if model != "" && model != c.Model {
+		m, err := d.Models()
+		if err != nil {
+			return c, "", err
+		}
+		if !slices.ContainsFunc(append(m.Recent, m.All...), func(x modelChoice) bool { return x.ID == model }) {
+			return c, "", fmt.Errorf("модели «%s» нет в списке окна — выберите из списка", model)
+		}
+		c.Model = model
+	}
+	key, err := d.modelKey(c)
+	return c, key, err
+}
+
 // Settings returns the chat settings for the page.
 func (d *chatDesk) Settings() chatSettingsView {
 	c := d.config()
@@ -341,8 +360,7 @@ func (d *chatDesk) ask(parent context.Context, r askReq, out askOut) (chatRecord
 			return chatRecord{}, err
 		}
 	}
-	c := d.config()
-	key, err := d.modelKey(c)
+	c, key, err := d.turnModel(r.Model)
 	if err != nil {
 		return chatRecord{}, err
 	}
