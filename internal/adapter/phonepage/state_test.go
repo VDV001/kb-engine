@@ -137,6 +137,11 @@ want(s.nextTheme("purple") === "light", "unknown theme counts as system");
 want(s.themeColor("light", true) === "#ffffff" && s.themeColor("dark", false) === "#0b0b0c", "explicit theme wins over the system");
 want(s.themeColor("system", true) === "#0b0b0c" && s.themeColor("system", false) === "#ffffff", "system theme follows the system");
 
+// 11. Цвет полосы состояния — тот же --z-bg, что у страницы (ревью #644).
+const css = (await import("node:fs")).readFileSync(new URL("style.css", process.argv[1]), "utf8");
+const bgs = [...css.matchAll(/--z-bg:\s*(#[0-9a-fA-F]+)/g)].map((m) => m[1].toLowerCase().replace(/^#(.)(.)(.)$/, "#$1$1$2$2$3$3"));
+want(bgs.length >= 2 && bgs[0] === s.themeColor("dark", true) && bgs.slice(1).every((c) => c === s.themeColor("light", false)), "status bar color equals --z-bg of style.css: " + bgs.join(","));
+
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 
