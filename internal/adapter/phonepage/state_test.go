@@ -130,14 +130,28 @@ want(!st9.chats.c.step && st9.chats.c.msgs.length === 2, "the answer clears the 
 s.take(st9, { seq: 3, chat: "c", from: "desk" }, dk(3, { kind: "step", text: "поздно" }));
 want(!st9.chats.c.step, "a late step after the answer does not show");
 
-// 10. Тема как в окне на Маке: как в системе → светлая → темная по кругу.
+// 10. Карточка уведомлений (#622): что сказать и какую кнопку дать.
+const pv = (o) => s.pushView({ serverOn: true, supported: true, ios: false, standalone: false, permission: "default", subscribed: false, ...o });
+want(pv({}).action === "on", "push off by default offers to turn on");
+want(pv({ subscribed: true, permission: "granted" }).action === "off", "subscribed offers to turn off");
+want(pv({ permission: "denied" }).action === null && /запрещ/.test(pv({ permission: "denied" }).text), "denied: no button, says where to allow");
+want(pv({ supported: false, ios: true }).action === null && /Домой/.test(pv({ supported: false, ios: true }).text), "iPhone in Safari: home screen first");
+want(pv({ supported: false }).action === null && !/Домой/.test(pv({ supported: false }).text), "other browser without push");
+want(pv({ serverOn: false, subscribed: true }).action === null, "server without push: no button even if subscribed");
+
+// 11. Ключ сервера сменился (перепривязка, новый ключ VAPID) — подписка старым
+// ключом мертва, ее надо оформить заново (ревью #643).
+const k1 = new Uint8Array([4, 1, 2, 3]), k2 = new Uint8Array([4, 1, 2, 4]);
+want(s.sameKey(k1.buffer, new Uint8Array([4, 1, 2, 3])) && !s.sameKey(k1.buffer, k2) && !s.sameKey(null, k2), "subscription key compared with the server's");
+
+// 12. Тема как в окне на Маке: как в системе → светлая → темная по кругу.
 want(s.nextTheme("system") === "light" && s.nextTheme("light") === "dark" && s.nextTheme("dark") === "system", "theme cycles like the Mac window");
 want(s.nextTheme("purple") === "light", "unknown theme counts as system");
 // Полоса состояния — цвет фона выбранной темы, а «как в системе» — по системе.
 want(s.themeColor("light", true) === "#ffffff" && s.themeColor("dark", false) === "#0b0b0c", "explicit theme wins over the system");
 want(s.themeColor("system", true) === "#0b0b0c" && s.themeColor("system", false) === "#ffffff", "system theme follows the system");
 
-// 11. Цвет полосы состояния — тот же --z-bg, что у страницы (ревью #644).
+// 13. Цвет полосы состояния — тот же --z-bg, что у страницы (ревью #644).
 const css = (await import("node:fs")).readFileSync(new URL("style.css", process.argv[1]), "utf8");
 const bgs = [...css.matchAll(/--z-bg:\s*(#[0-9a-fA-F]+)/g)].map((m) => m[1].toLowerCase().replace(/^#(.)(.)(.)$/, "#$1$1$2$2$3$3"));
 const themeJs = (await import("node:fs")).readFileSync(new URL("theme.js", process.argv[1]), "utf8");

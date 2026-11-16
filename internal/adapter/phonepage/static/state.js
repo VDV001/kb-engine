@@ -2,7 +2,6 @@
 // base64 — проверяется тестом phonepage в node (ревью #636).
 
 const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
-const sameKey = (a, b) => !!a && !!b && a.length === b.length && a.every((x, i) => x === b[i]);
 
 // repair returns the state after scanning a QR. Тот же ключ (телефон привязан
 // снова, ключ у сервера прежний) — номер ящика, счетчик, отправитель и seen
@@ -145,6 +144,30 @@ export function b64(bytes) {
 
 export function unb64(text) {
   return Uint8Array.from(atob(text), (ch) => ch.charCodeAt(0));
+}
+
+// pushView is the notifications card: текст и кнопка (on, off или null).
+// iOS дает push только странице с экрана «Домой» (с 16.4); разрешение браузер
+// спрашивает только по нажатию — поэтому кнопка, а не запрос при открытии.
+export function pushView(o) {
+  if (!o.serverOn) return { text: "На этом kb-сервере уведомления не включены.", action: null };
+  if (!o.supported) {
+    return o.ios && !o.standalone
+      ? { text: "На iPhone уведомления приходят, когда DVK открыт с экрана «Домой».", action: null }
+      : { text: "Этот браузер не умеет уведомления.", action: null };
+  }
+  if (o.permission === "denied") return { text: "Уведомления запрещены в настройках браузера для этого сайта.", action: null };
+  return o.subscribed
+    ? { text: "Включены: компьютер ответил — телефон даст знать.", action: "off" }
+    : { text: "Выключены. Включите, чтобы узнавать об ответе компьютера при закрытой странице.", action: "on" };
+}
+
+// sameKey compares two keys: id ключа привязки или applicationServerKey
+// подписки (он приходит ArrayBuffer'ом) с ключом сервера.
+export function sameKey(a, b) {
+  if (!a || !b) return false;
+  const x = new Uint8Array(a), y = new Uint8Array(b);
+  return x.length === y.length && x.every((v, i) => v === y[i]);
 }
 
 // nextTheme is the theme after t on a tap: как кнопка окна на Маке.

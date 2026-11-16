@@ -22,6 +22,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/mailbox"
 	"github.com/daniil/kb-engine/internal/adapter/phonepage"
 	"github.com/daniil/kb-engine/internal/adapter/userauth"
+	"github.com/daniil/kb-engine/internal/adapter/webpush"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/mail"
 	"golang.org/x/time/rate"
@@ -35,9 +36,49 @@ import (
 // одного нет ни одной ссылки на данные другого. Верхний слой только узнает
 // человека по токену и выбирает его обработчик. Фильтра «не показывать чужое»
 // нет нигде, потому что чужого в обработчике нет.
-func tenantsHandler(ctx context.Context, store blob.Store, stderr io.Writer) http.Handler {
+// tenantOption configures tenantsHandler (tests).
+type tenantOption func(*pushConfig)
+
+// pushConfig is how the server reaches push services (#622).
+type pushConfig struct {
+	contact   string            // KB_PUSH_CONTACT: mailto: или https: для VAPID; пусто — push выключен
+	transport http.RoundTripper // nil — http.DefaultTransport
+}
+
+// pushContactFromEnv reads KB_PUSH_CONTACT; неверный — ошибка с именем переменной.
+func pushContactFromEnv() (string, error) {
+	c := os.Getenv("KB_PUSH_CONTACT")
+	if c == "" {
+		return "", nil
+	}
+	if err := webpush.CheckSubject(c); err != nil {
+		return "", fmt.Errorf("KB_PUSH_CONTACT: %w", err)
+	}
+	return c, nil
+}
+
+// withPush replaces the push contact and transport (tests).
+func withPush(contact string, rt http.RoundTripper) tenantOption {
+	return func(c *pushConfig) { c.contact, c.transport = contact, rt }
+}
+
+func tenantsHandler(ctx context.Context, store blob.Store, stderr io.Writer, opts ...tenantOption) http.Handler {
 	lw := &lockedWriter{w: stderr}
+	logf := func(f string, a ...any) { fmt.Fprintf(lw, "serve: "+f+"\n", a...) }
 	phones := userauth.NewRegistry(ctx, store, userauth.WithKey(userauth.DevicesKey))
+	contact, err := pushContactFromEnv()
+	if err != nil { // runServeTenants отказывает раньше; здесь — на случай другого входа
+		logf("push off: %v", err)
+	}
+	cfg := pushConfig{contact: contact}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	svc := mail.Service{Box: mailbox.Store{Blob: store, Seen: &mailbox.Seen{}}, Phones: freshPhones{userauth.Phones{Store: store}, phones},
+		Subs: userauth.Phones{Store: store}, Now: time.Now, Logf: logf}
+	if cfg.contact != "" { // без контакта push выключен: Push nil, маршруты — 404
+		svc.Push = &lazyPusher{store: store, contact: cfg.contact, transport: cfg.transport}
+	}
 	return &tenants{
 		ctx: ctx, store: store, stderr: lw,
 		reg:       userauth.NewRegistry(ctx, store),
@@ -49,8 +90,7 @@ func tenantsHandler(ctx context.Context, store blob.Store, stderr io.Writer) htt
 		// сервера; не задано — 404, как без приложения.
 		assetLinks: phonepage.AssetLinks(os.Getenv("KB_ANDROID_APP")),
 		now:        time.Now,
-		mail: httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: store, Seen: &mailbox.Seen{}}, Phones: freshPhones{userauth.Phones{Store: store}, phones}, Now: time.Now},
-			func(f string, a ...any) { fmt.Fprintf(lw, "serve: "+f+"\n", a...) }),
+		mail:       httpapi.MailHandler(svc, logf),
 	}
 }
 
@@ -137,10 +177,10 @@ func (t *tenants) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // компьютера, токен телефона — сторона телефона; сторону не выбирает клиент.
 func (t *tenants) serveMail(w http.ResponseWriter, r *http.Request) {
 	if tok, ok := httpapi.RequestToken(r); ok {
-		side := domain.MailDesk
+		side, device := domain.MailDesk, ""
 		id, ok := t.reg.Lookup(tok)
 		if !ok {
-			id, ok = t.phones.Lookup(tok)
+			id, device, ok = t.phones.LookupDevice(tok)
 			ok = ok && t.reg.Has(id) // телефон входит, пока жив хозяин (ревью #630)
 			side = domain.MailPhone
 		}
@@ -151,7 +191,8 @@ func (t *tenants) serveMail(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "too many mailbox requests; poll every 10 s", http.StatusTooManyRequests)
 				return
 			}
-			t.mail.ServeHTTP(w, r.WithContext(httpapi.WithMailCaller(r.Context(), id, side)))
+			ctx := httpapi.WithMailDevice(httpapi.WithMailCaller(r.Context(), id, side), device)
+			t.mail.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
 	}
@@ -292,6 +333,10 @@ func runServeTenants(location, s3TokenFile, addr, pprofAddr, tlsCert, tlsKey str
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 1
 	}
+	if _, err := pushContactFromEnv(); err != nil {
+		fmt.Fprintf(stderr, "serve: %v\n", err)
+		return 2
+	}
 	h := tenantsHandler(context.Background(), store, stderr)
 	srv := newServeServer(addr, h, "", tlsCfg)
 	fmt.Fprintf(stdout, "kbengine: serving people's bases on %s (tenants %s; tokens %s, TLS %s)\n", addr, location, userauth.RegistryKey, onOff(tlsCfg != nil))
@@ -315,4 +360,64 @@ func (l *lockedWriter) Write(p []byte) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.w.Write(p)
+}
+
+// lazyPusher reads the VAPID key on the first push call, not at start: сервер
+// без бакета под рукой (тесты, локальный serve) стартует, а сбой чтения ключа
+// повторится на следующем вызове, а не останется навсегда.
+type lazyPusher struct {
+	store     blob.Store
+	contact   string
+	transport http.RoundTripper
+
+	mu      gosync.Mutex
+	vapid   *webpush.VAPID
+	sender  *webpush.Sender
+	failed  error     // последний сбой чтения ключа
+	retryAt time.Time // до этого момента сбой отдается без нового чтения
+}
+
+// vapidRetry — пауза после сбоя чтения ключа: испорченный ключ или медленный
+// бакет не перечитывается каждым вызовом подряд (ревью #643).
+const vapidRetry = 30 * time.Second
+
+// vapidLoadTimeout bounds reading the key from the bucket.
+const vapidLoadTimeout = 10 * time.Second
+
+func (l *lazyPusher) load(ctx context.Context) (*webpush.VAPID, *webpush.Sender, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.sender == nil {
+		if l.failed != nil && time.Now().Before(l.retryAt) {
+			return nil, nil, l.failed
+		}
+		// Свой срок, а не запроса: оборванный запрос не должен стать сбоем для всех.
+		lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), vapidLoadTimeout)
+		v, err := webpush.LoadVAPID(lctx, l.store, l.contact)
+		cancel()
+		if err != nil {
+			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+				l.failed, l.retryAt = err, time.Now().Add(vapidRetry)
+			}
+			return nil, nil, err
+		}
+		l.vapid, l.sender = v, webpush.NewSender(v, l.transport, time.Now)
+	}
+	return l.vapid, l.sender, nil
+}
+
+func (l *lazyPusher) Send(ctx context.Context, sub domain.PushSubscription, payload []byte) error {
+	_, s, err := l.load(ctx)
+	if err != nil {
+		return err
+	}
+	return s.Send(ctx, sub, payload)
+}
+
+func (l *lazyPusher) PublicKey(ctx context.Context) (string, error) {
+	v, _, err := l.load(ctx)
+	if err != nil {
+		return "", err
+	}
+	return v.PublicKey(), nil
 }

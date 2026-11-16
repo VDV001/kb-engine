@@ -5,10 +5,10 @@
 // Логика без DOM и сети — state.js (проверяется тестом в node). Вид — макет
 // outputs/2026-11-15_dvk-devices-mockup.html (решения владельца 15.11).
 //
-// ponytail: без service worker — Chrome ставит страницу и так; push и работа
-// без сети — следующим шагом (iOS шлет push только странице с экрана «Домой»).
+// Service worker (sw.js) — только push: «компьютер ответил», когда страница
+// закрыта. Работы без сети нет — страница всегда свежая с сервера.
 import { importKey, seal, open } from "./crypto.js";
-import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, nextTheme, themeColor } from "./state.js";
+import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor } from "./state.js";
 
 const POLL_MS = 10_000; // решение 15.11: короткий опрос раз в 10 с
 const UNAUTH_MS = 60_000; // 401: реже, но не сдаемся — сервер мог ошибиться ненадолго
@@ -89,8 +89,81 @@ async function boot() {
     }
   }
   show(true);
-  if (st) poll();
+  if (st) { poll(); pushSync(); }
 }
+
+// --- уведомления (#622) ------------------------------------------------------
+
+const pushSupported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const swReady = pushSupported ? navigator.serviceWorker.register("sw.js").then(() => navigator.serviceWorker.ready) : null;
+let pushKey = null; // открытый ключ VAPID сервера; "" — на сервере push выключен
+
+async function serverPushKey() {
+  if (pushKey !== null) return pushKey;
+  const r = await api(API + "/push/key");
+  if (r.status === 404) return (pushKey = "");
+  if (!r.ok) throw new Error("сервер ответил " + r.status);
+  return (pushKey = (await r.json()).key);
+}
+
+const unb64url = (t) => unb64(t.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (t.length % 4)) % 4));
+
+async function putSubscription(sub) {
+  const j = sub.toJSON();
+  const r = await api(API + "/push", { method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ endpoint: j.endpoint, keys: { p256dh: j.keys.p256dh, auth: j.keys.auth } }) });
+  if (!r.ok) throw new Error("сервер не принял подписку: " + r.status);
+}
+
+// pushSync paints the card and resends a live subscription: адрес подписки
+// браузер может сменить, а сервер узнает новый только от телефона.
+async function pushSync() {
+  let view;
+  try {
+    const key = await serverPushKey(), serverOn = key !== "";
+    let sub = pushSupported && serverOn ? await (await swReady).pushManager.getSubscription() : null;
+    // Подписка другим ключом (перепривязка, новый ключ сервера) мертва: сервисы
+    // push отклоняют ее молча. Снимаем — карточка предложит включить заново.
+    if (sub && !sameKey(sub.options.applicationServerKey, unb64url(key))) {
+      await sub.unsubscribe();
+      sub = null;
+    }
+    if (sub && Notification.permission === "granted") await putSubscription(sub);
+    view = pushView({ serverOn, supported: pushSupported, ios: isIOS, standalone, permission: pushSupported ? Notification.permission : "default", subscribed: !!sub });
+  } catch (e) {
+    view = { text: "Не удалось узнать: " + e.message, action: null };
+  }
+  $("push-text").textContent = view.text;
+  $("push-btn").hidden = !view.action;
+  $("push-btn").dataset.action = view.action || "";
+  $("push-btn").textContent = view.action === "off" ? "Выключить уведомления" : "Включить уведомления";
+  $("push-btn").className = "btn wide" + (view.action === "on" ? " primary" : "");
+}
+
+// Разрешение браузер спрашивает только по нажатию — iOS иначе отказывает молча.
+$("push-btn").addEventListener("click", async () => {
+  const btn = $("push-btn");
+  btn.disabled = true;
+  try {
+    const reg = await swReady;
+    if (btn.dataset.action === "on") {
+      if ((await Notification.requestPermission()) !== "granted") throw new Error("разрешение не дано");
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: unb64url(await serverPushKey()) });
+      await putSubscription(sub);
+      note("Уведомления включены", false);
+    } else {
+      await (await reg.pushManager.getSubscription())?.unsubscribe();
+      await api(API + "/push", { method: "DELETE" });
+      note("Уведомления выключены", false);
+    }
+  } catch (e) {
+    note("Уведомления: " + e.message);
+  }
+  btn.disabled = false;
+  pushSync();
+});
 
 // --- экраны -----------------------------------------------------------------
 
@@ -511,6 +584,10 @@ $("unpair").addEventListener("click", async () => {
     return;
   }
   clearTimeout(timer);
+  try { // забытый телефон не должен звенеть: подписку — с сервера и из браузера
+    await (await swReady)?.pushManager.getSubscription().then((s) => s?.unsubscribe());
+    await api(API + "/push", { method: "DELETE" });
+  } catch { /* привязку стираем все равно */ }
   await kv("readwrite", (s) => s.delete("state"));
   st = null;
   location.reload();
@@ -574,7 +651,7 @@ document.addEventListener("visibilitychange", async () => {
 // загрузки — привязку разбираем здесь же, иначе ключ остался бы в адресе.
 addEventListener("hashchange", async () => {
   try {
-    if (await pairFromFragment()) { show(true); poll(); }
+    if (await pairFromFragment()) { show(true); poll(); pushSync(); }
   } catch (e) {
     note("Код не подошел: " + e.message + ". Покажите новый код в окне DVK.");
   }

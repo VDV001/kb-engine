@@ -4,6 +4,8 @@ package mail
 
 import (
 	"context"
+	"errors"
+	"sync"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
@@ -35,11 +37,43 @@ type Phones interface {
 	Revoke(ctx context.Context, id domain.UserID, device string) error
 }
 
+// PhonePush is a phone's push subscription.
+type PhonePush struct {
+	Device string
+	Sub    domain.PushSubscription
+}
+
+// Subscriptions keeps the phones' push subscriptions.
+type Subscriptions interface {
+	SetPush(ctx context.Context, id domain.UserID, device string, sub domain.PushSubscription) error
+	ClearPush(ctx context.Context, id domain.UserID, device string) error
+	Pushes(ctx context.Context, id domain.UserID) ([]PhonePush, error)
+	// DropPush removes the subscription with endpoint, чья бы она ни была.
+	DropPush(ctx context.Context, endpoint string) error
+}
+
+// Pusher sends one push message; domain.ErrPushGone — подписки больше нет.
+type Pusher interface {
+	Send(ctx context.Context, sub domain.PushSubscription, payload []byte) error
+	// PublicKey is the server's VAPID key for the phone's subscribe call.
+	PublicKey(ctx context.Context) (string, error)
+}
+
+// NotifyAnswer is the push payload: вид события, без текста. Подпись рисует
+// телефон, сервер переписку не видит и в уведомление ее не кладет.
+const NotifyAnswer = `{"kind":"answer"}`
+
+// NotifyTimeout bounds one notify call for all phones together.
+const NotifyTimeout = 5 * time.Second
+
 // Service is the mailbox of the server.
 type Service struct {
 	Box    Box
 	Phones Phones
+	Subs   Subscriptions
+	Push   Pusher
 	Now    func() time.Time
+	Logf   func(string, ...any)
 }
 
 // Post writes a message of side into chat.
@@ -78,4 +112,90 @@ func (s Service) RevokePhone(ctx context.Context, id domain.UserID, side domain.
 		return domain.ErrMailDeskOnly
 	}
 	return s.Phones.Revoke(ctx, id, device)
+}
+
+// SubscribePush stores the push subscription of the calling phone.
+func (s Service) SubscribePush(ctx context.Context, id domain.UserID, side domain.MailSide, device, endpoint string, p256dh, auth []byte) error {
+	if side != domain.MailPhone {
+		return domain.ErrMailPhoneOnly
+	}
+	if s.Push == nil {
+		return domain.ErrPushOff
+	}
+	sub, err := domain.NewPushSubscription(endpoint, p256dh, auth)
+	if err != nil {
+		return err
+	}
+	return s.Subs.SetPush(ctx, id, device, sub)
+}
+
+// UnsubscribePush removes the calling phone's subscription.
+func (s Service) UnsubscribePush(ctx context.Context, id domain.UserID, side domain.MailSide, device string) error {
+	if side != domain.MailPhone {
+		return domain.ErrMailPhoneOnly
+	}
+	return s.Subs.ClearPush(ctx, id, device)
+}
+
+// Notify tells the phones the desk answered and returns how many got it.
+// Рассылка идет в запросе окна, а не после ответа: в Serverless Container
+// горутина после ответа замерзает. Срок — ctx вызывающего.
+func (s Service) Notify(parent context.Context, id domain.UserID, side domain.MailSide) (int, error) {
+	if side != domain.MailDesk {
+		return 0, domain.ErrMailDeskOnly
+	}
+	if s.Push == nil {
+		return 0, domain.ErrPushOff
+	}
+	ctx, cancel := context.WithTimeout(parent, NotifyTimeout)
+	defer cancel()
+	pushes, err := s.Subs.Pushes(ctx, id)
+	if err != nil {
+		return 0, err
+	}
+	errs := make([]error, len(pushes))
+	var wg sync.WaitGroup
+	for i, p := range pushes {
+		wg.Go(func() { errs[i] = s.Push.Send(ctx, p.Sub, []byte(NotifyAnswer)) })
+	}
+	wg.Wait()
+	sent := 0
+	for i, err := range errs {
+		switch {
+		case err == nil:
+			sent++
+		case errors.Is(err, domain.ErrPushGone):
+			// По адресу, а не по телефону: телефон мог уже положить новый адрес
+			// на место забытого. Своим сроком: общий мог истечь на медленном соседе.
+			if err := s.dropPush(parent, pushes[i].Sub.Endpoint()); err != nil {
+				s.logf("mail: push: drop %s: %v", pushes[i].Device, err)
+			}
+		default:
+			s.logf("mail: push %s: %v", pushes[i].Device, err)
+		}
+	}
+	return sent, nil
+}
+
+// dropTimeout bounds removing one gone subscription.
+const dropTimeout = 5 * time.Second
+
+func (s Service) dropPush(parent context.Context, endpoint string) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), dropTimeout)
+	defer cancel()
+	return s.Subs.DropPush(ctx, endpoint)
+}
+
+func (s Service) logf(format string, args ...any) {
+	if s.Logf != nil {
+		s.Logf(format, args...)
+	}
+}
+
+// PushKey is the server's public VAPID key; push не настроен — ErrPushOff.
+func (s Service) PushKey(ctx context.Context) (string, error) {
+	if s.Push == nil {
+		return "", domain.ErrPushOff
+	}
+	return s.Push.PublicKey(ctx)
 }

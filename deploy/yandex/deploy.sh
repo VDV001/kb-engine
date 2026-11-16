@@ -28,6 +28,11 @@ TZ_NAME="${TZ_NAME:-Asia/Yekaterinburg}"
 # в значении разорвала бы --environment.
 KB_ANDROID_APP="${KB_ANDROID_APP:-}"
 [[ "$KB_ANDROID_APP" != *,* ]] || { echo "KB_ANDROID_APP: один отпечаток, без запятых" >&2; exit 2; }
+# KB_PUSH_CONTACT — контакт сервера для сервисов push (VAPID): mailto:адрес или
+# https://сайт. Задан — телефоны получают «Компьютер ответил»; ключ VAPID сервер
+# создает сам в бакете (auth/vapid.json). Пусто — push выключен.
+KB_PUSH_CONTACT="${KB_PUSH_CONTACT:-}"
+[[ -z "$KB_PUSH_CONTACT" || "$KB_PUSH_CONTACT" =~ ^(mailto:|https://)[^,]+$ ]] || { echo "KB_PUSH_CONTACT: mailto:… или https://…, без запятых" >&2; exit 2; }
 registry=kb-engine sa=kb-server key=kb-bucket container=kb-server
 say() { printf '%s\n' "$*" >&2; }
 die() { say "✘ $*"; exit 1; }
@@ -124,6 +129,10 @@ verify() {
     if [[ -n "${PROBE_TOKEN_FILE:-}" ]]; then
       code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 -H "X-KB-Token: $(<"$PROBE_TOKEN_FILE")" "${url%/}/api/engine" || true)"
       check "со своим токеном — 200 (было $code)" '[[ "$code" == 200 ]]'
+      if [[ -n "$KB_PUSH_CONTACT" ]]; then
+        code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 -H "X-KB-Token: $(<"$PROBE_TOKEN_FILE")" "${url%/}/api/mail/push/key" || true)"
+        check "ключ push отдается — 200 (было $code)" '[[ "$code" == 200 ]]'
+      fi
     else
       say "· вход своим токеном не проверен: PROBE_TOKEN_FILE не задан"
     fi
@@ -204,7 +213,7 @@ y serverless container revision deploy --container-name "$container" \
   --memory 512MB --cores 1 --concurrency 8 --execution-timeout 30s \
   --zone-instances-limit 1 --zone-requests-limit 8 \
   --metadata-options aws-v1-http-endpoint=disabled,gce-http-endpoint=enabled \
-  --environment "TZ=$TZ_NAME${KB_ANDROID_APP:+,KB_ANDROID_APP=$KB_ANDROID_APP}" \
+  --environment "TZ=$TZ_NAME${KB_ANDROID_APP:+,KB_ANDROID_APP=$KB_ANDROID_APP}${KB_PUSH_CONTACT:+,KB_PUSH_CONTACT=$KB_PUSH_CONTACT}" \
   --command /kbengine --args serve,--tenants,"s3://$BUCKET",--addr,0.0.0.0:8080,--allow-open >/dev/null
 # Вызов открыт: окно и kbengine-mcp ходят по HTTPS, а вход — личный токен
 # приложения (сервер хранит только SHA-256). Без токена — 401.

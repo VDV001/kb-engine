@@ -22,10 +22,16 @@ var (
 	ErrMailDeskOnly = errors.New("mail: only the desk manages phones")
 	// ErrMailTooManyPhones — у человека уже предельное число телефонов.
 	ErrMailTooManyPhones = errors.New("mail: too many phones")
+	// ErrMailPhoneOnly — на push подписывается сам телефон: подписка его.
+	ErrMailPhoneOnly = errors.New("mail: only a phone subscribes to push")
+	// ErrPushGone — сервис push забыл подписку (404, 410): ее пора удалить.
+	ErrPushGone = errors.New("push subscription is gone")
+	// ErrPushOff — push на этом сервере не настроен (нет контакта VAPID).
+	ErrPushOff = errors.New("push is not configured")
 )
 
-// mailReserved — имена, занятые маршрутами ящика (/api/mail/devices).
-var mailReserved = map[string]bool{"devices": true}
+// mailReserved — имена, занятые маршрутами ящика (/api/mail/devices, /push, /notify).
+var mailReserved = map[string]bool{"devices": true, "push": true, "notify": true}
 
 // MaxMailSealed bounds one sealed message: ход задачи и итог — текст, вложения
 // в ящик не кладутся.
