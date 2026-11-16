@@ -86,6 +86,37 @@ type Payload struct {
 	File *FileRef `json:"file,omitempty"`
 	// Heard — что окно расслышало в голосовом вопросе (#648, ответ на KindVoice).
 	Heard string `json:"heard,omitempty"`
+	// Attach — файл к вопросу телефона (#650): куски в файлах ящика по порядку.
+	Attach *Attachment `json:"attach,omitempty"`
+}
+
+// Attachment is a file the phone attached to a question: имя, тип, длина
+// открытого файла и куски по порядку — сообщение аутентично, поэтому сервер
+// не переставит, не подменит и не отрежет куски.
+type Attachment struct {
+	Name   string    `json:"name"`
+	Type   string    `json:"type"`
+	Size   int       `json:"size"`
+	Pieces []FileRef `json:"pieces"`
+}
+
+// MaxAttachment bounds one file from the phone (#650, решение владельца 16.11).
+const MaxAttachment = 10 << 20
+
+// File is an opened attachment for the model turn.
+type File struct {
+	Name, Type string
+	Data       []byte
+}
+
+// FileOpener decrypts a sealed piece of the mailbox files.
+type FileOpener interface {
+	OpenFile(sealed []byte) ([]byte, error)
+}
+
+// AttachedAsker runs a turn with files attached (#650); как SteppedAsker.
+type AttachedAsker interface {
+	AskAttached(ctx context.Context, chat, question string, files []File, step func(Step)) (Answer, error)
 }
 
 // FileRef names a piece in the mailbox files (#658): id выдал сервер, sha256 —
@@ -177,6 +208,8 @@ const (
 	VoiceGone = "gone"
 	// VoiceUnheard — код: распознавание не удалось; причина — в журнале окна.
 	VoiceUnheard = "unheard"
+	// AttachTooLarge — код: файл телефона больше MaxAttachment.
+	AttachTooLarge = "toolarge"
 	// KindRemember — окно предлагает запомнить факты о человеке (#647, Facts).
 	KindRemember = "remember"
 	// KindMemory — решение телефона по факту (Text yes/no, Facts[0]) и ответ окна
@@ -359,6 +392,8 @@ type Relay struct {
 	Hear  Hearer
 	// HearTimeout bounds one recognition; 0 — DefaultHearTimeout.
 	HearTimeout time.Duration
+	// Open — расшифровка кусков файлов (#650); nil — отказ DeskUnsupported.
+	Open FileOpener
 }
 
 // Notifier tells the phones an answer is waiting (kb-сервер, /api/mail/notify).
