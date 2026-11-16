@@ -116,6 +116,11 @@ const (
 	// MemoryBad — решение не разобрано; MemoryUnsupported — окно не умеет.
 	MemoryBad         = "bad"
 	MemoryUnsupported = "unsupported"
+	// MemoryStale — факт этому чату не предлагался или выпал из предложенного:
+	// решить его можно в окне, карточка остается со словами (повторное ревью #655).
+	MemoryStale = "stale"
+	// MemoryFailed — сбой портрета окна; причина — в журнале окна, не на телефоне.
+	MemoryFailed = "failed"
 )
 
 // Fact is a fact about the person the window offers to remember.
