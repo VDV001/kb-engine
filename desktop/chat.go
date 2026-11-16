@@ -157,6 +157,8 @@ type chatDesk struct {
 	// ext reads files from the phone (#650): PDF и картинки — помощником, без
 	// него — только текст и docx.
 	ext extraction
+	// edited — чат переименован или удален в окне (#649): телефону; nil — некому.
+	edited func(id, title string, deleted bool)
 	// versions — итерации документов для инструментов versions и open_version
 	// режима «модель ищет»; nil — инструментов нет (тесты без вкладки «Артефакты»).
 	versions *versionsDesk
@@ -533,7 +535,13 @@ func (d *chatDesk) Delete(id string) error {
 	}
 	_ = d.DropDraft(id) // черновик не переживает свой чат
 	d.dropChatProposals(id)
-	return os.Remove(p)
+	if err := os.Remove(p); err != nil {
+		return err
+	}
+	if d.edited != nil {
+		d.edited(id, "", true) // и телефону (#649)
+	}
+	return nil
 }
 
 var chatIDRe = regexp.MustCompile(`^[0-9a-f]{16}$`)

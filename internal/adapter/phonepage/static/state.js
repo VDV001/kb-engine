@@ -52,6 +52,12 @@ export function take(st, m, o) {
     c.step = p.text; // подпись — как в окне, ее строит окно
     return true;
   }
+  if (m.from === "desk" && (p.kind === "rename" || p.kind === "delete" || p.kind === "edited")) { // один чат в двух местах (#649)
+    if (p.kind === "edited" || !st.chats[m.chat]) return false; // подтверждение — правка уже на телефоне
+    if (p.kind === "delete") delete st.chats[m.chat];
+    else st.chats[m.chat].title = p.text;
+    return true;
+  }
   if (m.from === "desk" && p.kind === "heard") { // диктовка (#648): текст — в поле ввода чата
     const c = st.chats[m.chat];
     if (!c) return false;
@@ -368,6 +374,7 @@ const VOICE_WORDS = {
   gone: "Запись не дошла до компьютера — скажите еще раз.",
   unheard: "Компьютер не смог распознать запись — проверьте «Слушает» в настройках окна.",
   silent: "Компьютер не расслышал вопрос — скажите еще раз.",
+  chaterr: "Окно DVK не смогло переименовать или удалить чат — попробуйте еще раз.",
 };
 
 // MAX_ATTACH — предел файла с телефона (#650, mailrelay.MaxAttachment).

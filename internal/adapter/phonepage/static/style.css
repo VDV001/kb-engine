@@ -224,3 +224,6 @@ body[data-view="chat"] .toast { bottom: calc(124px + env(safe-area-inset-bottom)
 .msgs .mem .bad { color: var(--z-bad); }
 .mem-acts { display: flex; flex-wrap: wrap; gap: 6px; }
 .wait .step { margin-top: 4px; font-size: 12px; color: var(--z-faint); overflow-wrap: anywhere; }
+/* Чат на телефоне (#649): «Переименовать» и «Удалить» в шапке — тема уходит на
+   экран списка, иначе название чата сжимается до одного слова. */
+@media (max-width: 899px) { .top:has(#chat-rename:not([hidden])) [data-theme-btn] { display: none; } }

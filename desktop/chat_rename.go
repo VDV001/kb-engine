@@ -18,5 +18,11 @@ func (d *chatDesk) RenameChat(id, name string) error {
 		return err
 	}
 	rec.Title = name
-	return d.save(rec)
+	if err := d.save(rec); err != nil {
+		return err
+	}
+	if d.edited != nil {
+		d.edited(id, name, false) // и телефону (#649)
+	}
+	return nil
 }

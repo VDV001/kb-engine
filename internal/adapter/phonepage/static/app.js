@@ -169,6 +169,8 @@ $("push-btn").addEventListener("click", async () => {
 
 // show paints everything from st and ui; follow — прокрутить чат вниз.
 function show(follow) {
+  if (ui.view === "chat" && !st?.chats[ui.chat]) ui.view = ""; // чат удалили в окне (#649)
+  $("chat-rename").hidden = $("chat-delete").hidden = ui.view !== "chat";
   $("unpaired").hidden = !!st;
   $("shell").hidden = !st;
   if (!st) return;
@@ -631,6 +633,25 @@ document.querySelector(".tabs").addEventListener("click", (e) => {
   ui.tab = b.dataset.tab;
   show(false);
   if (ui.tab === "search" && !st.search?.q) $("fq").focus();
+});
+// Один чат в двух местах (#649): правка — сразу на телефоне и уходит в окно.
+$("chat-rename").addEventListener("click", async () => {
+  const id = ui.chat, c = st.chats[id];
+  const name = c && prompt("Новое название чата — и на телефоне, и в окне DVK на компьютере", c.title)?.trim().slice(0, 120);
+  if (!name) return;
+  c.title = name;
+  await persist();
+  show();
+  try { await send(id, { kind: "rename", text: name }); } catch (err) { note(err.unauth ? "kb-сервер не пускает телефон: название уйдет, когда пустит." : "Пока не отправлено: " + err.message + ". Уйдет со следующим опросом."); }
+});
+$("chat-delete").addEventListener("click", async () => {
+  const id = ui.chat, c = st.chats[id];
+  if (!c || !confirm("Удалить чат «" + c.title + "»? Он исчезнет и на телефоне, и в окне DVK на компьютере. Вернуть будет нельзя.")) return;
+  delete st.chats[id];
+  ui.view = "";
+  await persist();
+  show(false);
+  try { await send(id, { kind: "delete", text: "chat" }); } catch (err) { note(err.unauth ? "kb-сервер не пускает телефон: удаление уйдет, когда пустит." : "Пока не отправлено: " + err.message + ". Уйдет со следующим опросом."); }
 });
 $("back").addEventListener("click", () => {
   ui.view = "";
