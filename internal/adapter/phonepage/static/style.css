@@ -171,7 +171,7 @@ button { font: inherit; color: inherit; }
 .cmp .bar { display: flex; align-items: center; gap: 8px; }
 /* Модель и источники чата (#647), своей строкой: в строке с кругом и подписью
    на 390 px обрезаются. Свой класс: .chip — метки «взято» ответа. */
-.cmp .opts { display: flex; gap: 8px; min-width: 0; }
+.cmp .opts { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; } /* файл, модель и источники (#650) — в две строки, а не обрезанными */
 .cmp .opts:not(:has(.opt:not([hidden]))) { display: none; }
 .cmp .opt { flex: 0 1 auto; min-width: 0; min-height: 32px; padding: 0 10px; border: 1px solid var(--z-rule-2); border-radius: 999px; background: none; color: var(--z-muted); font: inherit; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Голос (#648): диктовка и вопрос голосом; нажата — идет запись. */
