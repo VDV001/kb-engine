@@ -256,7 +256,7 @@ type burst struct {
 	slowest time.Duration
 }
 
-func (s *burst) AskStepped(ctx context.Context, chat, question string, _ mailrelay.Options, step func(mailrelay.Step)) (mailrelay.Answer, error) {
+func (s *burst) AskStepped(ctx context.Context, chat, question string, step func(mailrelay.Step)) (mailrelay.Answer, error) {
 	for _, text := range []string{"Документы: сроки", "Ozon · Пример: заказы", "Документы: " + strings.Repeat("я", 300)} {
 		began := time.Now()
 		step(mailrelay.Step{Text: text})
@@ -305,7 +305,7 @@ type waiter struct {
 	saw bool
 }
 
-func (w *waiter) AskStepped(ctx context.Context, chat, question string, _ mailrelay.Options, step func(mailrelay.Step)) (mailrelay.Answer, error) {
+func (w *waiter) AskStepped(ctx context.Context, chat, question string, step func(mailrelay.Step)) (mailrelay.Answer, error) {
 	for range 200 {
 		w.box.mu.Lock()
 		n := len(w.box.box.msgs) // первым лежит вопрос телефона
@@ -379,7 +379,7 @@ func TestRelaySendsTheContextFill(t *testing.T) {
 // quick steps once at once and answers before StepEvery runs out.
 type quick struct{ sourced }
 
-func (s *quick) AskStepped(ctx context.Context, chat, question string, _ mailrelay.Options, step func(mailrelay.Step)) (mailrelay.Answer, error) {
+func (s *quick) AskStepped(ctx context.Context, chat, question string, step func(mailrelay.Step)) (mailrelay.Answer, error) {
 	step(mailrelay.Step{Text: "Документы: сроки"})
 	time.Sleep(1500 * time.Millisecond)
 	return s.AskSourced(ctx, chat, question)
@@ -401,83 +401,5 @@ func TestRelayFirstStepSoonAfterAccepted(t *testing.T) {
 	}
 	if strings.Join(kinds, ",") != "accepted,step,answer" {
 		t.Fatalf("mailbox %v: the first step waited the whole StepEvery", kinds)
-	}
-}
-
-// optioned records the phone's choice for the question.
-type optioned struct {
-	sourced
-	got mailrelay.Options
-}
-
-func (o *optioned) AskStepped(ctx context.Context, chat, question string, opts mailrelay.Options, _ func(mailrelay.Step)) (mailrelay.Answer, error) {
-	o.got = opts
-	return o.AskSourced(ctx, chat, question)
-}
-
-// Модель и источники, выбранные на телефоне, уходят с вопросом в ход окна (#647).
-func TestRelayPassesThePhoneChoice(t *testing.T) {
-	b, s := &box{}, &store{}
-	b.phone("c-1", "A", 1, mailrelay.Payload{Kind: mailrelay.KindQuestion, Text: "сроки?", Model: "anthropic/claude-haiku-5.5", Only: []string{"f-1", "ozon-1"}})
-	a := &optioned{}
-	r := newRelay(b, &asker{}, s)
-	r.Asker, r.StepEvery = a, time.Millisecond
-	if err := r.Tick(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	if a.got.Model != "anthropic/claude-haiku-5.5" || strings.Join(a.got.Only, ",") != "f-1,ozon-1" {
-		t.Fatalf("asker got %+v", a.got)
-	}
-}
-
-type deskInfo struct{ st mailrelay.DeskState }
-
-func (d deskInfo) State(context.Context) (mailrelay.DeskState, error) { return d.st, nil }
-
-// Телефон спрашивает состояние окна служебным чатом: модель, список моделей,
-// источники и подключения — без хода модели (#647).
-func TestRelayTellsThePhoneTheDesk(t *testing.T) {
-	b, s := &box{}, &store{}
-	b.phone("search-a", "A", 1, mailrelay.Payload{Kind: mailrelay.KindDesk, Text: "state"})
-	r := newRelay(b, &asker{}, s)
-	r.Desk = deskInfo{st: mailrelay.DeskState{Model: "m1", Models: []string{"m1", "m2"},
-		Sources: []mailrelay.DeskSource{{ID: "f-1", Name: "notes"}, {ID: "ozon-1", Name: "Ozon · Пример", Conn: true}}}}
-	if err := r.Tick(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	got := payloads(t, b)
-	if len(got) != 1 || got[0].Kind != mailrelay.KindDesk || got[0].Desk == nil || got[0].Desk.Model != "m1" || len(got[0].Desk.Sources) != 2 || !got[0].Desk.Sources[1].Conn {
-		t.Fatalf("reply %+v", got)
-	}
-	b2 := &box{}
-	b2.phone("search-a", "A", 1, mailrelay.Payload{Kind: mailrelay.KindDesk, Text: "state"})
-	if err := newRelay(b2, &asker{}, &store{}).Tick(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	if got := payloads(t, b2); len(got) != 1 || got[0].Kind != mailrelay.KindError {
-		t.Fatalf("no Desk: %+v", got)
-	}
-}
-
-// scopedAnswer answers with the chat's sources.
-type scopedAnswer struct{ asker }
-
-func (f *scopedAnswer) AskSourced(ctx context.Context, chat, question string) (mailrelay.Answer, error) {
-	c, text, err := f.Ask(ctx, chat, question)
-	return mailrelay.Answer{Chat: c, Text: text, Only: []string{"f-1"}}, err
-}
-
-// Ответ несет источники чата окна (ревью #656): галочки телефона показывают,
-// где чат ищет на самом деле, а не «все».
-func TestRelaySendsTheChatSources(t *testing.T) {
-	b := &box{}
-	b.phone("c-1", "A", 1, q("сроки?"))
-	r := newRelay(b, &asker{}, &store{})
-	r.Asker = &scopedAnswer{}
-	if err := r.Tick(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	if got := payloads(t, b); len(got) != 1 || strings.Join(got[0].Only, ",") != "f-1" {
-		t.Fatalf("answer %+v", got)
 	}
 }

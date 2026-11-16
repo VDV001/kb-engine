@@ -35,8 +35,6 @@ export function take(st, m, o) {
   try { p = JSON.parse(new TextDecoder().decode(o.plain)); } catch { return false; }
   const at = Date.parse(m.at) || Date.now();
   if (m.from === "desk") st.lastDesk = Math.max(st.lastDesk || 0, at);
-  if (m.chat === deskChat(st)) return desked(st, m, p);
-  if (m.chat.startsWith("desk-")) return false; // состояние окна для другого телефона того же ключа
   if (m.chat === searchChat(st)) return found(st, m, p);
   if (m.chat.startsWith("search-")) return false; // поиск другого телефона того же ключа
   if (m.from === "desk" && (p.kind === "remember" || p.kind === "memory")) return remembered(st.chats[m.chat], p);
@@ -64,9 +62,6 @@ export function take(st, m, o) {
     // в окне он ничего не сохраняет и прежний счет остается (ревью #654).
     if (p.context?.used > 0) c.context = { used: p.context.used, window: p.context.window || 0 };
     else if (p.kind === "answer") delete c.context;
-    // Где чат ищет теперь — от окна; пусто — все. Выбор телефона, еще не
-    // ушедший с вопросом, не затирается (ревью #656).
-    if (p.kind === "answer" && !c.onlySet) c.only = p.only?.length ? p.only : undefined;
   } else {
     const mine = who === hex(st.sender);
     const sent = mine && c.msgs.find((x) => x.who === "me" && x.counter === o.counter.toString());
@@ -157,62 +152,11 @@ export function deciding(c, id) {
   if (f) Object.assign(f, { busy: true, err: "" });
 }
 
-// questionPayload is the question of chat c with its choice (#647). Модель —
-// если выбрана; источники — только измененные на телефоне (onlySet): иначе
-// чат ищет, где ищет в окне (ревью #656).
-export function questionPayload(c, text, desk) {
-  const p = { kind: "question", text }, ch = chosen(c, desk);
-  if (ch.model) p.model = ch.model;
-  if (ch.only && c.onlySet) p.only = ch.only;
-  return p;
-}
-
-// chosen is chat c's choice as the phone shows and sends it: источники,
-// которых в окне больше нет, отсекаются; ничего не осталось — все. Модель —
-// как есть: окно примет любую взятую раньше, а список телефона короткий
-// (ревью #656). Состояния окна нет — источники как есть, отсечет окно.
-export function chosen(c, desk) {
-  const model = c.model || undefined;
-  let only = Array.isArray(c.only) ? c.only : undefined;
-  if (desk) {
-    if (only) {
-      const ids = (desk.sources || []).map((x) => x.id);
-      only = only.filter((x) => ids.includes(x));
-      if (!only.length) only = undefined;
-    }
-  }
-  return { model, only };
-}
-
 // searchChat is the mailbox chat of this phone's searches: выдача и документы
 // идут им и в список чатов не попадают. От отправителя — повторная привязка
 // тем же ключом сохраняет его.
 export function searchChat(st) {
   return "search-" + hex(st.sender || []);
-}
-
-// deskChat is the mailbox chat of the window's state for this phone (#647):
-// свой, а не чат поиска — отказ на desk не становится ошибкой поиска (ревью #656).
-export function deskChat(st) {
-  return "desk-" + hex(st.sender || []);
-}
-
-// pickSources turns the checked sources of a chat into its choice: ни одного —
-// нельзя, чату негде искать (как в окне); все — явным списком, окно читает его
-// как «все».
-export function pickSources(on) {
-  if (!on.length) return { ok: false };
-  return { ok: true, only: on };
-}
-
-// desked applies the window's state (#647). Отказ (окно без desk) — мимо:
-// кнопки модели и источников остаются скрытыми, «спросили» не снимается —
-// повтор через срок askDesk, а не на каждое открытие чата.
-function desked(st, m, p) {
-  if (m.from !== "desk" || p.kind !== "desk") return false;
-  st.desk = p.desk || null;
-  st.deskAt = Date.now();
-  return true;
 }
 
 // found applies the desk's answer to a search: выдача, документ или отказ.

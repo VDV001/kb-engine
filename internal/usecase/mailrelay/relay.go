@@ -74,32 +74,6 @@ type Payload struct {
 	Context *ContextFill `json:"context,omitempty"`
 	// Facts — «Запомнить о Вас?» (#647): предложение окна или решение телефона.
 	Facts []Fact `json:"facts,omitempty"`
-	// Model и Only — выбор телефона для вопроса (#647): модель из списка окна и
-	// источники чата; пусто — как настроено в окне.
-	Model string   `json:"model,omitempty"`
-	Only  []string `json:"only,omitempty"`
-	// Desk — состояние окна для поля ввода телефона (#647), ответ на desk.
-	Desk *DeskState `json:"desk,omitempty"`
-}
-
-// DeskState is what the phone's input needs from the window: модель и список
-// моделей, источники и подключения чата.
-type DeskState struct {
-	Model   string       `json:"model"`
-	Models  []string     `json:"models"`
-	Sources []DeskSource `json:"sources"`
-}
-
-// DeskSource is a source or a connection the chat can search.
-type DeskSource struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Conn bool   `json:"conn,omitempty"` // подключение (Ozon, MPStats), а не папка или сервер
-}
-
-// DeskInfo tells the window's state for the phone.
-type DeskInfo interface {
-	State(ctx context.Context) (DeskState, error)
 }
 
 // ContextFill is how full the chat's context is: токены по счету провайдера и
@@ -123,8 +97,6 @@ const (
 	KindStep = "step"
 	// KindAccepted — окно взяло вопрос в работу (#646): телефон пишет «компьютер принял».
 	KindAccepted = "accepted"
-	// KindDesk — телефон спрашивает состояние окна, окно отвечает им (#647, Desk).
-	KindDesk = "desk"
 	// KindRemember — окно предлагает запомнить факты о человеке (#647, Facts).
 	KindRemember = "remember"
 	// KindMemory — решение телефона по факту (Text yes/no, Facts[0]) и ответ окна
@@ -192,8 +164,6 @@ type Answer struct {
 	Chat, Text string
 	Sources    []Source
 	Context    *ContextFill
-	// Only — источники чата окна после хода (#647); пусто — все.
-	Only []string
 }
 
 // SourcedAsker is an Asker that also tells where the answer came from.
@@ -207,17 +177,10 @@ type Step struct {
 	Text string
 }
 
-// Options is the phone's choice for one question (#647): модель из списка окна
-// и источники чата; пусто — как настроено в окне.
-type Options struct {
-	Model string
-	Only  []string
-}
-
 // SteppedAsker is a SourcedAsker that also reports the turn's steps while it
 // runs: телефон видит ход, а не только итог (#622).
 type SteppedAsker interface {
-	AskStepped(ctx context.Context, chat, question string, opts Options, step func(Step)) (Answer, error)
+	AskStepped(ctx context.Context, chat, question string, step func(Step)) (Answer, error)
 }
 
 // Finder searches the person's sources and opens a found document as text —
@@ -307,8 +270,6 @@ type Relay struct {
 	Notes []Note
 	// Memory — решения телефона по предложенным фактам (nil — отказ словами).
 	Memory Memory
-	// Desk — состояние окна для телефона (nil — отказ словами).
-	Desk DeskInfo
 }
 
 // Notifier tells the phones an answer is waiting (kb-сервер, /api/mail/notify).
@@ -405,7 +366,7 @@ func (r Relay) request(st *State, m Message) (Payload, bool) {
 		return Payload{}, false
 	}
 	switch p.Kind {
-	case KindQuestion, KindSearch, KindOpen, KindMemory, KindDesk:
+	case KindQuestion, KindSearch, KindOpen, KindMemory:
 		return p, true
 	}
 	return Payload{}, false
@@ -425,11 +386,9 @@ func (r Relay) handle(ctx context.Context, st *State, m Message) (bool, error) {
 	var reply Payload
 	switch req.Kind {
 	case KindQuestion:
-		reply = r.ask(ctx, st, m.Chat, req)
+		reply = r.ask(ctx, st, m.Chat, req.Text)
 	case KindMemory:
 		reply = r.decide(ctx, st, m.Chat, req)
-	case KindDesk:
-		reply = r.desk(ctx)
 	default:
 		reply = r.find(ctx, req)
 	}
@@ -455,15 +414,12 @@ func (r Relay) now() time.Time {
 }
 
 // ask runs the model turn in the window's chat of this mailbox chat.
-func (r Relay) ask(ctx context.Context, st *State, chat string, req Payload) Payload {
-	question := req.Text
+func (r Relay) ask(ctx context.Context, st *State, chat, question string) Payload {
 	var a Answer
 	var err error
 	if sa, ok := r.Asker.(SteppedAsker); ok && r.StepEvery > 0 {
 		step, stop := r.stepper(ctx, st, chat)
-		// Выбор телефона — с вопросом (#647); без шагов его некому передать —
-		// у окна шаги включены всегда.
-		a, err = sa.AskStepped(ctx, st.Chats[chat], question, Options{Model: req.Model, Only: req.Only}, step)
+		a, err = sa.AskStepped(ctx, st.Chats[chat], question, step)
 		stop()
 	} else if sa, ok := r.Asker.(SourcedAsker); ok {
 		a, err = sa.AskSourced(ctx, st.Chats[chat], question)
@@ -474,7 +430,7 @@ func (r Relay) ask(ctx context.Context, st *State, chat string, req Payload) Pay
 		return Payload{Kind: KindError, Text: err.Error()}
 	}
 	st.Chats[chat] = a.Chat
-	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources, Context: a.Context, Only: a.Only}
+	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources, Context: a.Context}
 }
 
 // minPostGap — предел частоты отправки окна в ящик (сервер: раз в секунду).
@@ -690,23 +646,6 @@ func clip(text string, limit int) string {
 		cut--
 	}
 	return text[:max(cut, 0)] + "…"
-}
-
-// desk tells the phone the window's state (#647): модель и источники для поля ввода.
-func (r Relay) desk(ctx context.Context) Payload {
-	if r.FindTimeout > 0 { // тот же срок, что у поиска: работник один на все серверы
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, r.FindTimeout)
-		defer cancel()
-	}
-	if r.Desk == nil {
-		return Payload{Kind: KindError, Text: "окно этой версии не отдает телефону модели и источники"}
-	}
-	st, err := r.Desk.State(ctx)
-	if err != nil {
-		return Payload{Kind: KindError, Text: err.Error()}
-	}
-	return Payload{Kind: KindDesk, Desk: &st}
 }
 
 // ErrNoFinder — relay собран без поиска для телефона. Слова для человека

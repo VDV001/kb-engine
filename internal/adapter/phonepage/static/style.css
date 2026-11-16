@@ -169,15 +169,6 @@ button { font: inherit; color: inherit; }
   background: linear-gradient(var(--z-bg-2), var(--z-bg-2)) padding-box, var(--sp-cool) border-box; }
 .cmp textarea { resize: none; border: 0; background: none; color: var(--z-ink); font: inherit; font-size: 16px; line-height: 1.45; outline: none; max-height: 40vh; min-height: 24px; }
 .cmp .bar { display: flex; align-items: center; gap: 8px; }
-/* Модель и источники чата — как в окне (#647), своей строкой: в строке с
-   кругом и подписью на 390 px обе кнопки обрезаны. Свой класс: .chip — метки
-   «взято» ответа. */
-.cmp .opts { display: flex; gap: 8px; min-width: 0; }
-.cmp .opts:not(:has(.opt:not([hidden]))) { display: none; }
-.cmp .opt { flex: 0 1 auto; min-width: 0; min-height: 32px; padding: 0 10px; border: 1px solid var(--z-rule-2); border-radius: 999px; background: none; color: var(--z-muted); font: inherit; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pick { display: grid; gap: 8px; padding: 10px 12px; margin-bottom: 8px; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); font-size: 13px; max-height: 40vh; overflow: auto; }
-.pick b { font-size: 11px; color: var(--z-muted); font-weight: 600; margin-top: 4px; }
-.pick label { display: flex; align-items: center; gap: 8px; min-height: 32px; }
 /* Круг контекста чата — как в окне (#647). */
 .ctx { display: inline-flex; align-items: center; gap: 4px; background: none; border: 0; padding: 2px 0; color: var(--z-muted); font: inherit; font-size: 11px; }
 .ctx svg { width: 18px; height: 18px; }
@@ -185,7 +176,7 @@ button { font: inherit; color: inherit; }
 .ctx .bg { stroke: var(--z-rule); } .ctx .fg { stroke: var(--z-ok); stroke-linecap: round; }
 .ctx[data-tone="warn"] .fg { stroke: var(--z-warn); } .ctx[data-tone="bad"] .fg { stroke: var(--z-bad); }
 .cmp .sp { flex: 1; color: var(--z-faint); font-size: 11px; }
-.cmp .send { margin-left: auto; flex: none; width: 44px; height: 40px; display: grid; place-items: center; border: 0; border-radius: var(--z-radius); background: var(--z-accent); color: var(--z-accent-ink); cursor: pointer; }
+.cmp .send { width: 44px; height: 40px; display: grid; place-items: center; border: 0; border-radius: var(--z-radius); background: var(--z-accent); color: var(--z-accent-ink); cursor: pointer; }
 .cmp .send:disabled { opacity: .5; }
 .cmp .send svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 

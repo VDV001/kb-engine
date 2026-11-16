@@ -98,50 +98,17 @@ func usedModels(calls []domain.ModelCall) []string {
 	return out
 }
 
-// phoneModels are the models the phone may pick (#647), нынешняя первой:
-// все, что человек уже брал для ответа и поиска (журнал), без цен шлюза — без
-// сети. Все взятые, а не последние recentModels: выбор телефона не выпадает,
-// когда окно поработает с другими; голос и распознавание пишут тот же журнал,
-// их модели — не модели чата (ревью #656).
-//
-// ponytail: журнал читается целиком на вопрос телефона со своей моделью и на
-// запрос desk — вне замка чата. Потолок: журнал в сотни тысяч вызовов. Путь:
-// держать список моделей по mtime журнала.
-func (d *chatDesk) phoneModels() ([]string, error) {
-	c := d.config()
-	calls, err := d.usedCalls()
-	if err != nil {
-		return nil, err
-	}
-	calls = slices.DeleteFunc(calls, func(x domain.ModelCall) bool {
-		return x.Purpose() != domain.CallAnswer && x.Purpose() != domain.CallSearch
-	})
-	var out []string
-	for _, id := range append([]string{c.Model}, usedModels(calls)...) {
-		if id != "" && !slices.Contains(out, id) {
-			out = append(out, id)
-		}
-	}
-	return out, nil
-}
-
-// usedCalls reads the model journal; без журнала — пусто.
-func (d *chatDesk) usedCalls() ([]domain.ModelCall, error) {
-	if d.calls == nil {
-		return nil, nil
-	}
-	calls, _, err := d.calls.Load()
-	return calls, err
-}
-
 // Models returns the quick picker list; цены шлюза — из кэша, без них список остается.
 func (d *chatDesk) Models() (modelsView, error) {
 	d.settings.mu.Lock()
 	c, spend := d.settings.cfg.Chat.WithDefaults(), d.settings.cfg.Spend
 	d.settings.mu.Unlock()
-	calls, err := d.usedCalls()
-	if err != nil {
-		return modelsView{}, err
+	var calls []domain.ModelCall
+	if d.calls != nil {
+		var err error
+		if calls, _, err = d.calls.Load(); err != nil {
+			return modelsView{}, err
+		}
 	}
 	own := make(map[string]domain.ModelPrice, len(spend.Prices))
 	for m, p := range spend.Prices {

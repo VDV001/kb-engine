@@ -95,10 +95,6 @@ type askReq struct {
 	Sources  []string `json:"sources"`
 	// Portrait — как портрет идет в чат, когда не помещается: "", full, relevant.
 	Portrait string `json:"portrait"`
-	// Model — модель этого вопроса (выбор телефона, #647): ставит только
-	// chatAnswerer после phoneModel, со страницы окна не приходит; пусто —
-	// модель настроек.
-	Model string `json:"-"`
 }
 
 type chatMessage struct {
@@ -233,35 +229,6 @@ func (d *chatDesk) config() desktopconfig.Chat {
 	return d.settings.cfg.Chat.WithDefaults()
 }
 
-// turnModel is the chat settings and key of one turn: model — выбор телефона
-// (#647), уже проверенный phoneModel; пусто — модель настроек.
-func (d *chatDesk) turnModel(model string) (desktopconfig.Chat, string, error) {
-	c := d.config()
-	if model != "" {
-		c.Model = model
-	}
-	key, err := d.modelKey(c)
-	return c, key, err
-}
-
-// phoneModel refuses a model the phone may not pick: только из тех, что
-// человек уже брал (phoneModels), иначе телефон взял бы любую модель шлюза, в
-// том числе дорогую, за счет ключа человека. Вне замка чата: журнал читается
-// с диска (ревью #656).
-func (d *chatDesk) phoneModel(model string) error {
-	if model == "" {
-		return nil
-	}
-	m, err := d.phoneModels()
-	if err != nil {
-		return err
-	}
-	if !slices.Contains(m, model) {
-		return fmt.Errorf("модели «%s» нет в списке окна — выберите из списка", model)
-	}
-	return nil
-}
-
 // Settings returns the chat settings for the page.
 func (d *chatDesk) Settings() chatSettingsView {
 	c := d.config()
@@ -358,16 +325,6 @@ type askOut struct {
 	began func(id string)
 }
 
-// turnSources are where a turn searches: телефон не выбирал — где чат окна,
-// без источников, которых в окне больше нет (ревью #656); окно присылает свой
-// выбор всегда.
-func (d *chatDesk) turnSources(r askReq, rec chatRecord, out askOut) []string {
-	if out.worker && r.Sources == nil {
-		return knownOnly(d.settings, rec.Sources)
-	}
-	return r.Sources
-}
-
 // ask runs a turn; ctx — родитель срока хода: закрытие окна прерывает ход работника.
 func (d *chatDesk) ask(parent context.Context, r askReq, out askOut) (chatRecord, error) {
 	show, step := out.show, out.step
@@ -381,12 +338,11 @@ func (d *chatDesk) ask(parent context.Context, r askReq, out askOut) (chatRecord
 			return chatRecord{}, err
 		}
 	}
-	// Настройки — под замком: ход, ждавший замка, берет нынешние (ревью #656).
-	c, key, err := d.turnModel(r.Model)
+	c := d.config()
+	key, err := d.modelKey(c)
 	if err != nil {
 		return chatRecord{}, err
 	}
-	r.Sources = d.turnSources(r, rec, out)
 	switch r.Portrait {
 	case "", string(portrait.ContextFull), string(portrait.ContextRelevant):
 	default:

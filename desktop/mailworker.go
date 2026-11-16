@@ -6,7 +6,6 @@ package main
 // usecase/mailrelay, здесь адаптеры: ящик, шифр, файл состояния, чат окна.
 
 import (
-	"cmp"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -18,7 +17,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"slices"
 	"sync"
 	"time"
 
@@ -43,13 +41,12 @@ type askFn func(ctx context.Context, chat, question string) (string, string, err
 type mailWorker struct {
 	settings *folderSettings
 	ask      askFn
-	answer   answerFn           // ход модели с метками «взято»; nil — ask без меток
-	find     mailrelay.Finder   // поиск с телефона; nil — отказ словами
-	dir      string             // где лежат mail-<id>.json
-	changed  func(chat string)  // ответ записан в чат окна: странице перечитать список и чат
-	turn     func(phoneTurn)    // ход по вопросу с телефона — странице (#646)
-	memory   mailrelay.Memory   // решения телефона по «Запомнить о Вас?» (#647); nil — отказ словами
-	desk     mailrelay.DeskInfo // модели и источники окна для телефона (#647); nil — отказ словами
+	answer   answerFn          // ход модели с метками «взято»; nil — ask без меток
+	find     mailrelay.Finder  // поиск с телефона; nil — отказ словами
+	dir      string            // где лежат mail-<id>.json
+	changed  func(chat string) // ответ записан в чат окна: странице перечитать список и чат
+	turn     func(phoneTurn)   // ход по вопросу с телефона — странице (#646)
+	memory   mailrelay.Memory  // решения телефона по «Запомнить о Вас?» (#647); nil — отказ словами
 
 	notesMu sync.Mutex
 	notes   []mailrelay.Note // «Запомнить о Вас?» для телефонов: пишет разбор ответа, забирает круг
@@ -177,20 +174,10 @@ func (w *mailWorker) tickServer(ctx context.Context, id string, notes []mailrela
 		Notifier:  mailNotify{c.client},
 		Notes:     notes,
 		Memory:    w.memory,
-		Desk:      w.desk,
 
 		FindTimeout: phoneFindTimeout,
 	}
 	return relay.Tick(ctx)
-}
-
-// useChat wires the worker to the window's chat: ход модели, поиск,
-// «новое — только в портрете» и состояние окна для поля ввода телефона. Здесь, а не в app.go: сборка проверяется тестом.
-func (w *mailWorker) useChat(d *chatDesk) {
-	w.answer = chatAnswerer(d)
-	w.find = newPhoneFinder(d.find, d.openFound) // ставит useSources в main до старта окна
-	w.quiet = func() bool { return d.config().MemoryQuiet }
-	w.desk = phoneDesk{settings: d.settings, models: d.phoneModels}
 }
 
 // phoneFindTimeout bounds one search or open for the phone: работник один на
@@ -254,88 +241,10 @@ func (m phoneMemory) Decide(ctx context.Context, id string, yes bool, text strin
 	return nil
 }
 
-// phoneDesk tells the phone the window's state (#647).
-type phoneDesk struct {
-	settings *folderSettings
-	models   func() ([]string, error) // нынешняя первой (phoneModels)
-}
-
-// Модели — нынешняя и взятые раньше, до phoneShownModels (весь список шлюза —
-// сотни, он телефону не нужен); источники — включенные папки и серверы и подключения, которые
-// человек разрешил чату («Чату: разрешить»): закрытое телефон не увидит.
-func (d phoneDesk) State(context.Context) (mailrelay.DeskState, error) {
-	m, err := d.models()
-	if err != nil {
-		return mailrelay.DeskState{}, err
-	}
-	st := mailrelay.DeskState{Models: m[:min(len(m), phoneShownModels)], Sources: []mailrelay.DeskSource{}}
-	if len(m) > 0 {
-		st.Model = m[0]
-	}
-	st.Sources = phoneSources(d.settings)
-	return st, nil
-}
-
-// phoneSources are the sources and connections the phone may pick for a chat.
-func phoneSources(s *folderSettings) []mailrelay.DeskSource {
-	s.mu.Lock()
-	cfg := s.cfg
-	s.mu.Unlock()
-	out := []mailrelay.DeskSource{}
-	for _, s := range cfg.WithSources().Sources {
-		if s.Enabled {
-			out = append(out, mailrelay.DeskSource{ID: s.ID, Name: sourceLabel(s)})
-		}
-	}
-	for _, c := range cfg.Connections {
-		if name, ok := chatConnKinds[c.Kind]; ok && c.Enabled && c.Share {
-			out = append(out, mailrelay.DeskSource{ID: c.ID, Name: name + " · " + cmp.Or(c.Name, name), Conn: true})
-		}
-	}
-	return out
-}
-
-// phoneOnly keeps the phone's choice of sources that the window still offers:
-// устаревший или закрытый чату id не сужает поиск до нуля; ничего не
-// осталось — nil, как у чата окна; все — пустой список, «все» окна
-// (ревью #656): иначе сузивший телефон не вернул бы все.
-func phoneOnly(s *folderSettings, only []string) []string {
-	out := knownOnly(s, only)
-	if out != nil && !slices.ContainsFunc(phoneSources(s), func(x mailrelay.DeskSource) bool { return !slices.Contains(out, x.ID) }) {
-		return []string{}
-	}
-	return out
-}
-
-// knownOnly drops the ids the window no longer offers; ничего не осталось —
-// nil, все. Выбор окна, совпавший со всеми, остается списком: новый источник
-// в суженный чат не попадает (ревью #656).
-func knownOnly(s *folderSettings, only []string) []string {
-	if len(only) == 0 {
-		return nil
-	}
-	known := phoneSources(s)
-	out := slices.DeleteFunc(slices.Clone(only), func(id string) bool {
-		return !slices.ContainsFunc(known, func(x mailrelay.DeskSource) bool { return x.ID == id })
-	})
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-// phoneShownModels — сколько моделей видит телефон: выбрать он может любую
-// взятую (phoneModels), показ — короткий список у поля ввода.
-const phoneShownModels = 10
-
-// chatConnKinds are the connections a chat can ask (CHAT_CONN в frontend/app.js).
-var chatConnKinds = map[desktopconfig.ConnKind]string{desktopconfig.ConnOzon: "Ozon", desktopconfig.ConnMPStats: "MPStats"}
-
 // answerFn runs a model turn and tells where the answer came from; step — ход
 // модели по мере ответа (nil — без хода).
 // began — чат окна, в котором пойдет ход, известен (до ответа модели, #646).
-// opts — выбор телефона для вопроса (#647): модель и источники.
-type answerFn func(ctx context.Context, chat, question string, opts mailrelay.Options, began func(id string), step func(chat.Use)) (mailrelay.Answer, error)
+type answerFn func(ctx context.Context, chat, question string, began func(id string), step func(chat.Use)) (mailrelay.Answer, error)
 
 // phoneTurn is what the window page hears about a phone's question (#646):
 // начало хода, шаг или конец; Chat — чат окна.
@@ -355,7 +264,7 @@ func (a workerAsker) Ask(ctx context.Context, chat, question string) (string, st
 
 // AskStepped is AskSourced with the turn's steps for the phone (#622); step
 // nil — без хода.
-func (a workerAsker) AskStepped(ctx context.Context, id, question string, opts mailrelay.Options, step func(mailrelay.Step)) (mailrelay.Answer, error) {
+func (a workerAsker) AskStepped(ctx context.Context, id, question string, step func(mailrelay.Step)) (mailrelay.Answer, error) {
 	if a.w.answer == nil {
 		c, text, err := a.Ask(ctx, id, question)
 		return mailrelay.Answer{Chat: c, Text: text}, err
@@ -380,7 +289,7 @@ func (a workerAsker) AskStepped(ctx context.Context, id, question string, opts m
 			step(mailrelay.Step{Text: stepLabel(u)})
 		}
 	}
-	ans, err := a.w.answer(ctx, id, question, opts, began, each)
+	ans, err := a.w.answer(ctx, id, question, began, each)
 	if err == nil {
 		a.w.changed(ans.Chat)
 	}
@@ -388,7 +297,7 @@ func (a workerAsker) AskStepped(ctx context.Context, id, question string, opts m
 }
 
 func (a workerAsker) AskSourced(ctx context.Context, id, question string) (mailrelay.Answer, error) {
-	return a.AskStepped(ctx, id, question, mailrelay.Options{}, nil)
+	return a.AskStepped(ctx, id, question, nil)
 }
 
 // stepLabel words a step as the window shows it (useName в frontend/app.js):
@@ -420,29 +329,23 @@ func stepLabel(u chat.Use) string {
 func chatAsker(d *chatDesk) askFn {
 	answer := chatAnswerer(d)
 	return func(ctx context.Context, chat, question string) (string, string, error) {
-		a, err := answer(ctx, chat, question, mailrelay.Options{}, nil, nil)
+		a, err := answer(ctx, chat, question, nil, nil)
 		return a.Chat, a.Text, err
 	}
 }
 
 // chatAnswerer is chatAsker with the «взято» labels of the answer (answerSources).
 func chatAnswerer(d *chatDesk) answerFn {
-	return func(ctx context.Context, chat, question string, opts mailrelay.Options, began func(string), step func(chat.Use)) (mailrelay.Answer, error) {
+	return func(ctx context.Context, chat, question string, began func(string), step func(chat.Use)) (mailrelay.Answer, error) {
 		quiet := askOut{worker: true, step: step, began: began}
-		if err := d.phoneModel(opts.Model); err != nil {
-			return mailrelay.Answer{}, err
-		}
-		req := askReq{ID: chat, Question: question, Sources: phoneOnly(d.settings, opts.Only), Model: opts.Model}
-		rec, err := d.ask(ctx, req, quiet)
+		rec, err := d.ask(ctx, askReq{ID: chat, Question: question}, quiet)
 		if chat != "" && errors.Is(err, fs.ErrNotExist) {
-			req.ID = ""
-			rec, err = d.ask(ctx, req, quiet)
+			rec, err = d.ask(ctx, askReq{Question: question}, quiet)
 		}
 		if err != nil {
 			return mailrelay.Answer{}, err
 		}
-		// Only — где чат ищет теперь: галочки телефона — правда о чате (ревью #656).
-		a := mailrelay.Answer{Chat: rec.ID, Sources: answerSources(rec), Only: rec.Sources}
+		a := mailrelay.Answer{Chat: rec.ID, Sources: answerSources(rec)}
 		a.Context = (*mailrelay.ContextFill)(rec.Context) // круг контекста на телефоне (#647); та же форма
 		if n := len(rec.Messages); n > 0 {
 			a.Text = rec.Messages[n-1].Text

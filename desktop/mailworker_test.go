@@ -75,13 +75,7 @@ var phoneSender = mailcrypt.Sender{1, 2, 3, 4, 5, 6, 7, 8}
 
 func phoneAsks(t *testing.T, srv *httptest.Server, key mailcrypt.Key, chat string, counter uint64, text string) {
 	t.Helper()
-	phoneSends(t, srv, key, chat, counter, mailrelay.Payload{Kind: mailrelay.KindQuestion, Text: text})
-}
-
-// phoneSends posts any request of the phone.
-func phoneSends(t *testing.T, srv *httptest.Server, key mailcrypt.Key, chat string, counter uint64, p mailrelay.Payload) {
-	t.Helper()
-	plain, _ := json.Marshal(p)
+	plain, _ := json.Marshal(mailrelay.Payload{Kind: mailrelay.KindQuestion, Text: text})
 	sealed, err := mailcrypt.Seal(key, mailcrypt.Meta{Chat: chat, From: domain.MailPhone, Sender: phoneSender, Counter: counter}, plain)
 	if err != nil {
 		t.Fatal(err)
@@ -256,13 +250,13 @@ func TestMailWorkerShowsThePhoneTurn(t *testing.T) {
 	var got []phoneTurn
 	w.turn = func(e phoneTurn) { got = append(got, e) }
 	fail := error(nil)
-	w.answer = func(_ context.Context, _, _ string, _ mailrelay.Options, began func(string), step func(chat.Use)) (mailrelay.Answer, error) {
+	w.answer = func(_ context.Context, _, _ string, began func(string), step func(chat.Use)) (mailrelay.Answer, error) {
 		began("w-1")
 		step(chat.Use{Kind: chat.UseDocs, What: "поставки"})
 		return mailrelay.Answer{Chat: "w-1", Text: "12"}, fail
 	}
 	var steps []string
-	if _, err := (workerAsker{w}).AskStepped(t.Context(), "", "сколько?", mailrelay.Options{}, func(s mailrelay.Step) { steps = append(steps, s.Text) }); err != nil {
+	if _, err := (workerAsker{w}).AskStepped(t.Context(), "", "сколько?", func(s mailrelay.Step) { steps = append(steps, s.Text) }); err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 3 || got[0] != (phoneTurn{Chat: "w-1", Question: "сколько?"}) || got[1].Step == nil || got[1].Step.What != "поставки" || got[2] != (phoneTurn{Chat: "w-1", Done: true}) {
@@ -272,7 +266,7 @@ func TestMailWorkerShowsThePhoneTurn(t *testing.T) {
 		t.Errorf("phone steps %v", steps)
 	}
 	got, fail = nil, errors.New("model down")
-	_, _ = (workerAsker{w}).AskStepped(t.Context(), "", "еще?", mailrelay.Options{}, nil)
+	_, _ = (workerAsker{w}).AskStepped(t.Context(), "", "еще?", nil)
 	if len(got) == 0 || got[len(got)-1] != (phoneTurn{Chat: "w-1", Done: true}) {
 		t.Fatalf("after a failed turn the page heard %+v — «отвечает» would hang", got)
 	}
@@ -333,230 +327,5 @@ func TestPhoneMemoryDecides(t *testing.T) {
 	calls, fail = nil, errors.New("портрет недоступен")
 	if err := m.Decide(t.Context(), "f3", false, ""); err == nil || len(calls) != 1 {
 		t.Fatalf("failed decide: %v, %v — the page must not drop its card", err, calls)
-	}
-}
-
-// Выбор телефона — модель и источники — доходит до хода окна (#647).
-func TestMailWorkerPassesThePhoneChoice(t *testing.T) {
-	w := newMailWorker(nil, nil, t.TempDir())
-	var got mailrelay.Options
-	w.answer = func(_ context.Context, _, _ string, opts mailrelay.Options, _ func(string), _ func(chat.Use)) (mailrelay.Answer, error) {
-		got = opts
-		return mailrelay.Answer{Chat: "w-1", Text: "ок"}, nil
-	}
-	want := mailrelay.Options{Model: "qwen3", Only: []string{"f-1"}}
-	if _, err := (workerAsker{w}).AskStepped(t.Context(), "", "сроки?", want, nil); err != nil {
-		t.Fatal(err)
-	}
-	if got.Model != "qwen3" || strings.Join(got.Only, ",") != "f-1" {
-		t.Fatalf("answer got %+v", got)
-	}
-}
-
-// Состояние окна для поля ввода телефона: модель и список, источники и
-// подключения, разрешенные чату (#647).
-func TestPhoneDeskState(t *testing.T) {
-	s, _, _ := newServerSettings(t)
-	if err := s.SetSources(serverList("srv1", "https://kb.example.ru", true), nil, map[string]string{"srv1": srvToken}); err != nil {
-		t.Fatal(err)
-	}
-	s.mu.Lock()
-	s.cfg.Connections = append(s.cfg.Connections,
-		desktopconfig.Connection{ID: "oz1", Kind: desktopconfig.ConnOzon, Name: "Пример", Enabled: true, Share: true},
-		desktopconfig.Connection{ID: "oz2", Kind: desktopconfig.ConnOzon, Name: "Закрытый", Enabled: true})
-	s.mu.Unlock()
-	d := phoneDesk{settings: s, models: func() ([]string, error) { return []string{"qwen3", "llama3"}, nil }}
-	st, err := d.State(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if st.Model != "qwen3" || strings.Join(st.Models, ",") != "qwen3,llama3" {
-		t.Errorf("models %+v", st)
-	}
-	var names []string
-	for _, x := range st.Sources {
-		names = append(names, fmt.Sprintf("%s|%t", x.Name, x.Conn))
-	}
-	if strings.Join(names, ",") != "notes|false,kb.example.ru|false,Ozon · Пример|true" {
-		t.Errorf("sources %v — закрытое для чата подключение телефону не показывается", names)
-	}
-}
-
-// --- ревью #656
-
-// Окно отвечает телефону на desk настоящим кругом работника: состояние окна
-// подключено там же, где ход модели (useChat), а не полем, поставленным в тесте.
-func TestMailWorkerAnswersTheDesk(t *testing.T) {
-	s, tok, srv, _ := newWorkerSettings(t)
-	key := mailcrypt.NewKey()
-	tok.m[mailKeyAccount("srv1")] = key.Encode()
-	d, _, _, _ := newTestChatDesk(t)
-	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
-		t.Fatal(err)
-	}
-	w := newMailWorker(s, chatAsker(d), t.TempDir())
-	w.useChat(d)
-	phoneSends(t, srv, key, "desk-0101", 1, mailrelay.Payload{Kind: mailrelay.KindDesk, Text: "state"})
-	if err := w.tick(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	got := phoneReads(t, srv, key)
-	if len(got) != 1 || got[0].Kind != mailrelay.KindDesk || got[0].Desk == nil || got[0].Desk.Model != "qwen3" {
-		t.Fatalf("phone got %+v — the desk is not wired into the worker's relay", got)
-	}
-}
-
-// Телефон берет модель только из тех, что человек уже брал (журнал), — а не
-// любую из списка шлюза за счет ключа человека; проверка — без сети цен.
-// Выбранная модель не выпадает, когда окно поработает с другими (ревью #656:
-// недавних всего 3).
-func TestTurnModelOnlyFromThePhoneList(t *testing.T) {
-	d, _, tok, _ := newTestChatDesk(t)
-	tok.m[chatKeyAccount] = "k"
-	if err := d.SetSettings(desktopconfig.Chat{URL: pricesURL, Model: "qwen3"}, ""); err != nil {
-		t.Fatal(err)
-	}
-	prices := gatewayPrices(t)
-	d.prices = func(ctx context.Context) (map[string]domain.ModelPrice, error) {
-		t.Error("a turn's model asked the gateway for prices")
-		return prices(ctx)
-	}
-	rec := &callsRec{}
-	for i, m := range []string{"llama3", "a", "b", "c"} { // llama3 — самая старая
-		call, _ := domain.NewModelCall(d.now().Add(time.Duration(i-10)*time.Minute), domain.CallAnswer, m, 10, 10, true, time.Second, time.Second, false)
-		rec.calls = append(rec.calls, call)
-	}
-	d.calls = rec
-	if err := d.phoneModel("anthropic/claude-sonnet-5.5"); err == nil {
-		t.Error("a gateway model the phone was never shown was taken")
-	}
-	if err := d.phoneModel("llama3"); err != nil {
-		t.Errorf("a model used before: %v", err)
-	}
-}
-
-// Вопрос с телефона без выбора ищет там же, где чат окна, и не стирает его
-// выбор; устаревшие и закрытые чату id отсекаются, а не сужают поиск до нуля.
-func TestPhoneTurnKeepsTheChatSources(t *testing.T) {
-	d, _, _, _ := newTestChatDesk(t)
-	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
-		t.Fatal(err)
-	}
-	s := d.settings
-	if err := s.SetSources(serverList("srv1", "https://kb.example.ru", true), nil, map[string]string{"srv1": srvToken}); err != nil {
-		t.Fatal(err)
-	}
-	s.mu.Lock()
-	s.cfg.Connections = append(s.cfg.Connections,
-		desktopconfig.Connection{ID: "oz1", Kind: desktopconfig.ConnOzon, Name: "Пример", Enabled: true, Share: true},
-		desktopconfig.Connection{ID: "oz2", Kind: desktopconfig.ConnOzon, Name: "Закрытый", Enabled: true})
-	s.mu.Unlock()
-	rec, err := d.Ask(askReq{Question: "сроки?", Sources: []string{"srv1"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ans := chatAnswerer(d)
-	for _, tc := range []struct {
-		name string
-		only []string
-		want string
-	}{
-		{"no choice — the chat's own", nil, "srv1"},
-		{"stale and closed ids — the chat's own", []string{"gone", "oz2"}, "srv1"},
-		{"a known choice — taken, the stale dropped", []string{"oz1", "gone"}, "oz1"},
-		// Ревью #656: «все» с телефона — снова все, а не прежний выбор чата.
-		{"every known source — all again", knownIDs(s), ""},
-	} {
-		if _, err := ans(t.Context(), rec.ID, tc.name, mailrelay.Options{Only: tc.only}, nil, nil); err != nil {
-			t.Fatal(err)
-		}
-		got, err := d.load(rec.ID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Join(got.Sources, ",") != tc.want {
-			t.Errorf("%s: chat sources %v, want %s", tc.name, got.Sources, tc.want)
-		}
-	}
-}
-
-func knownIDs(s *folderSettings) []string {
-	var ids []string
-	for _, x := range phoneSources(s) {
-		ids = append(ids, x.ID)
-	}
-	return ids
-}
-
-// Ревью #656: вопрос с телефона без выбора берет источники чата окна, но без
-// тех, которых в окне больше нет: устаревший id не сужает поиск до нуля.
-func TestPhoneTurnDropsTheChatsStaleSources(t *testing.T) {
-	d, _, _, _ := newTestChatDesk(t)
-	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
-		t.Fatal(err)
-	}
-	if err := d.settings.SetSources(serverList("srv1", "https://kb.example.ru", true), nil, map[string]string{"srv1": srvToken}); err != nil {
-		t.Fatal(err)
-	}
-	rec, err := d.Ask(askReq{Question: "сроки?", Sources: []string{"srv1", "gone"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := chatAnswerer(d)(t.Context(), rec.ID, "еще?", mailrelay.Options{}, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	if got, _ := d.load(rec.ID); strings.Join(got.Sources, ",") != "srv1" {
-		t.Errorf("chat sources %v, want srv1", got.Sources)
-	}
-}
-
-// Ревью #656: вопрос с телефона без выбора не сворачивает выбор окна в «все»:
-// список окна, совпавший с нынешними источниками, остается списком — новый
-// источник в него не попадет.
-func TestPhoneTurnKeepsTheWindowsFullList(t *testing.T) {
-	d, _, _, _ := newTestChatDesk(t)
-	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
-		t.Fatal(err)
-	}
-	all := knownIDs(d.settings)
-	rec, err := d.Ask(askReq{Question: "сроки?", Sources: all})
-	if err != nil {
-		t.Fatal(err)
-	}
-	a, err := chatAnswerer(d)(t.Context(), rec.ID, "еще?", mailrelay.Options{}, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, _ := d.load(rec.ID)
-	if strings.Join(got.Sources, ",") != strings.Join(all, ",") {
-		t.Errorf("chat sources %v, want the window's list %v", got.Sources, all)
-	}
-	if strings.Join(a.Only, ",") != strings.Join(all, ",") {
-		t.Errorf("the phone is told %v, want the chat's sources", a.Only)
-	}
-}
-
-// Ревью #656: голос и распознавание пишут тот же журнал — их модели телефон
-// чату не выберет.
-func TestPhoneModelsAreChatModels(t *testing.T) {
-	d, _, _, _ := newTestChatDesk(t)
-	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
-		t.Fatal(err)
-	}
-	rec := &callsRec{}
-	for _, c := range []struct {
-		p domain.CallPurpose
-		m string
-	}{{domain.CallSpeak, "openai/tts-1-hd"}, {domain.CallListen, "openai/whisper-1"}, {domain.CallSearch, "llama3"}} {
-		call, _ := domain.NewModelCall(d.now().Add(-time.Hour), c.p, c.m, 10, 10, true, time.Second, time.Second, false)
-		rec.calls = append(rec.calls, call)
-	}
-	d.calls = rec
-	got, err := d.phoneModels()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Join(got, ",") != "qwen3,llama3" {
-		t.Errorf("phone models %v — voice models are not chat models", got)
 	}
 }
