@@ -160,6 +160,10 @@ const (
 	VoiceAsk     = "ask"
 	// VoiceMismatch — код отказа: запись не та, что назвало сообщение (хеш).
 	VoiceMismatch = "mismatch"
+	// VoiceGone — код: запись не забралась (нет, истекла, сбой сети).
+	VoiceGone = "gone"
+	// VoiceUnheard — код: распознавание не удалось; причина — в журнале окна.
+	VoiceUnheard = "unheard"
 	// KindRemember — окно предлагает запомнить факты о человеке (#647, Facts).
 	KindRemember = "remember"
 	// KindMemory — решение телефона по факту (Text yes/no, Facts[0]) и ответ окна
@@ -340,6 +344,8 @@ type Relay struct {
 	// Files и Hear — голос телефона (#648); nil — отказ DeskUnsupported.
 	Files VoiceFiles
 	Hear  Hearer
+	// HearTimeout bounds one recognition; 0 — DefaultHearTimeout.
+	HearTimeout time.Duration
 }
 
 // Notifier tells the phones an answer is waiting (kb-сервер, /api/mail/notify).
