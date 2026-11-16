@@ -157,6 +157,11 @@ func (f *folderSettings) MailPhones(id string) ([]phoneRow, error) {
 	return rows, nil
 }
 
+// MailRenamePhone gives the phone the name the person typed.
+func (f *folderSettings) MailRenamePhone(id, device, name string) error {
+	return errors.ErrUnsupported
+}
+
 // MailRevokePhone unpairs the phone. Отвязан последний — ключ чата стирается:
 // у отвязанного телефона он остался, и следующий телефон получит новый.
 //

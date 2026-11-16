@@ -9,6 +9,28 @@ import (
 	"github.com/daniil/kb-engine/internal/domain"
 )
 
+// Имя телефона дает человек в окне: браузер iPhone модель не сообщает (#622).
+func TestNewPhoneName(t *testing.T) {
+	for in, want := range map[string]string{
+		"iPhone 17 Pro":         "iPhone 17 Pro",
+		"  Samsung Анастасии ":  "Samsung Анастасии",
+		"":                      "",
+		"   ":                   "",
+		"a\nb":                  "",
+		"a\u202eb":              "",
+		strings.Repeat("я", 41): "",
+		strings.Repeat("ю", 40): strings.Repeat("ю", 40),
+	} {
+		got, err := domain.NewPhoneName(in)
+		if want == "" && !errors.Is(err, domain.ErrBadPhoneName) {
+			t.Errorf("%q: принято как %q", in, got)
+		}
+		if want != "" && (err != nil || got != want) {
+			t.Errorf("%q = %q, %v; want %q", in, got, err, want)
+		}
+	}
+}
+
 // Менее точное имя не заменяет точное: Chrome шлет модель не в каждом запросе,
 // и «Samsung SM-S918B» не должен прыгать в «Android» и обратно (ревью #652).
 func TestBetterPhoneName(t *testing.T) {

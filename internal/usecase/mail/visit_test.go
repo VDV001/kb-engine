@@ -12,14 +12,38 @@ import (
 )
 
 type fakeVisits struct {
-	got  []string
-	seen map[string]mail.Visit
-	err  error // сбой Seen
+	got, renamed []string
+	seen         map[string]mail.Visit
+	err          error // сбой Seen
 }
 
 func (f *fakeVisits) Visit(_ context.Context, _ domain.UserID, device, name string, at time.Time) error {
 	f.got = append(f.got, device+"|"+name+"|"+at.Format(time.RFC3339))
 	return nil
+}
+
+func (f *fakeVisits) Rename(_ context.Context, _ domain.UserID, device, name string) error {
+	f.renamed = append(f.renamed, device+"|"+name)
+	return nil
+}
+
+// Имя телефону дает только компьютер, и только допустимое (#622).
+func TestRenamePhone(t *testing.T) {
+	v := &fakeVisits{}
+	svc := mail.Service{Visits: v}
+	ctx := context.Background()
+	if err := svc.RenamePhone(ctx, who, domain.MailPhone, "p-1", "Мой"); !errors.Is(err, domain.ErrMailDeskOnly) {
+		t.Fatalf("phone renames: %v", err)
+	}
+	if err := svc.RenamePhone(ctx, who, domain.MailDesk, "p-1", " "); !errors.Is(err, domain.ErrBadPhoneName) {
+		t.Fatalf("empty name: %v", err)
+	}
+	if err := svc.RenamePhone(ctx, who, domain.MailDesk, "p-1", " iPhone 17 Pro "); err != nil || len(v.renamed) != 1 || v.renamed[0] != "p-1|iPhone 17 Pro" {
+		t.Fatalf("rename: %v, %v", err, v.renamed)
+	}
+	if err := (mail.Service{}).RenamePhone(ctx, who, domain.MailDesk, "p-1", "iPhone"); !errors.Is(err, errors.ErrUnsupported) {
+		t.Fatalf("no Visits: %v", err)
+	}
 }
 
 func (f *fakeVisits) Seen(context.Context, domain.UserID) (map[string]mail.Visit, error) {

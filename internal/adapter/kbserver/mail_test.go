@@ -31,7 +31,7 @@ func mailKB(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: s}, Phones: userauth.Phones{Store: s}, Now: time.Now},
+	h := httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: s}, Phones: userauth.Phones{Store: s}, Visits: &userauth.Visits{Store: s}, Now: time.Now},
 		func(string, ...any) {})
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get(kbserver.TokenHeader) != token {
@@ -143,5 +143,29 @@ func TestClient_MailPostAndSince(t *testing.T) {
 	}
 	if _, err := c.MailPost(ctx, "Bad Chat", []byte("x")); !errors.Is(err, kbserver.ErrRejected) {
 		t.Errorf("bad chat: %v, want ErrRejected", err)
+	}
+}
+
+// Окно дает телефону имя: сервер хранит его и отдает в списке; плохое имя и
+// чужой телефон — отказы со своими словами (#622).
+func TestClient_RenamePhone(t *testing.T) {
+	srv := mailKB(t)
+	c := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}
+	ctx := context.Background()
+	dev, _, err := c.AddPhone(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.RenamePhone(ctx, dev, "iPhone 17 Pro"); err != nil {
+		t.Fatal(err)
+	}
+	if list, err := c.Phones(ctx); err != nil || len(list) != 1 || list[0].Name != "iPhone 17 Pro" {
+		t.Fatalf("after rename: %+v, %v", list, err)
+	}
+	if err := c.RenamePhone(ctx, dev, " "); !errors.Is(err, kbserver.ErrBadPhoneName) {
+		t.Fatalf("empty name: %v", err)
+	}
+	if err := c.RenamePhone(ctx, "p-00000000", "Мой"); !errors.Is(err, kbserver.ErrNoSuchPhone) {
+		t.Fatalf("unknown phone: %v", err)
 	}
 }

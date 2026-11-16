@@ -22,6 +22,8 @@ var ErrNoMailbox = errors.New("kbserver: no mailbox")
 var (
 	ErrMailRefused = fmt.Errorf("%w: mailbox", ErrRejected)
 	ErrNoSuchPhone = fmt.Errorf("%w: no such phone", ErrRejected)
+	// ErrBadPhoneName — сервер не принял имя телефона: пустое, длинное, непечатное.
+	ErrBadPhoneName = fmt.Errorf("%w: bad phone name", ErrRejected)
 )
 
 // Phone is a phone paired with the person's mailbox.
@@ -63,6 +65,11 @@ func (c Client) RevokePhone(ctx context.Context, device string) error {
 	// 404 здесь — «такого телефона нет», а не «нет ящика»: путь ящика сервер знает.
 	return c.mail(ctx, mailReq{method: http.MethodDelete, path: "/api/mail/devices/" + url.PathEscape(device), want: http.StatusNoContent,
 		notFound: ErrNoSuchPhone}, nil)
+}
+
+// RenamePhone gives the phone the name the person chose.
+func (c Client) RenamePhone(ctx context.Context, device, name string) error {
+	return errors.ErrUnsupported
 }
 
 // MailMessage is one sealed message of the mailbox; сторону назвал токен отправителя.

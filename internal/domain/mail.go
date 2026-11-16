@@ -28,6 +28,8 @@ var (
 	ErrPushGone = errors.New("push subscription is gone")
 	// ErrPushOff — push на этом сервере не настроен (нет контакта VAPID).
 	ErrPushOff = errors.New("push is not configured")
+	// ErrBadPhoneName — имя телефона пустое, длиннее 40 или с непечатными знаками.
+	ErrBadPhoneName = errors.New("mail: phone name must be 1-40 printable characters")
 )
 
 // Имена телефона по браузеру, когда модель неизвестна: Safari модель не
@@ -39,6 +41,10 @@ const (
 	PhoneAndroid   = "Android"
 	PhoneWindows   = "Windows"
 )
+
+// NewPhoneName checks the name a person gives a phone in the window: «iPhone 17
+// Pro», «Samsung Анастасии». Пробелы по краям отрезаются.
+func NewPhoneName(s string) (string, error) { return s, nil }
 
 // genericPhoneNames are the names without a model; пустое — имени еще нет.
 var genericPhoneNames = map[string]bool{"": true, PhoneIPhone: true, PhoneIPad: true, PhoneIPadOrMac: true, PhoneAndroid: true, PhoneWindows: true}

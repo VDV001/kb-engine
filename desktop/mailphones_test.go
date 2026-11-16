@@ -32,7 +32,7 @@ func newMailSettings(t *testing.T) (*folderSettings, *fakeTokens, *httptest.Serv
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: store}, Phones: userauth.Phones{Store: store}, Now: time.Now},
+	h := httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: store}, Phones: userauth.Phones{Store: store}, Visits: &userauth.Visits{Store: store}, Now: time.Now},
 		func(string, ...any) {})
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get(kbserver.TokenHeader) != srvToken {
@@ -289,5 +289,24 @@ func TestMailPhonesNameAndSeen(t *testing.T) {
 	// Сервер не прочитал входы: окно не ждет молча входа, которого не увидит (ревью #652).
 	if !list[2].SeenUnknown {
 		t.Errorf("phone with unknown visits %+v", list[2])
+	}
+}
+
+// «Переименовать» в окне: имя видно в списке, плохое имя — понятный отказ (#622).
+func TestMailRenamePhone(t *testing.T) {
+	s, _, _ := newMailSettings(t)
+	a, err := s.MailPairPhone("srv1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MailRenamePhone("srv1", a.Device, "iPhone 17 Pro"); err != nil {
+		t.Fatal(err)
+	}
+	if list, err := s.MailPhones("srv1"); err != nil || len(list) != 1 || list[0].Name != "iPhone 17 Pro" {
+		t.Fatalf("after rename: %+v, %v", list, err)
+	}
+	err = s.MailRenamePhone("srv1", a.Device, strings.Repeat("я", 41))
+	if err == nil || !strings.Contains(err.Error(), "до 40") {
+		t.Fatalf("long name: %v", err)
 	}
 }

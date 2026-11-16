@@ -254,3 +254,39 @@ func TestVisitsSeenReportsReadFailure(t *testing.T) {
 		t.Fatal("unreadable visits reported as none")
 	}
 }
+
+// Имя, данное в окне, переживает следующие входы телефона и другой процесс
+// сервера; вход после переименования время пишет, имя не трогает (#622).
+func TestVisitsRename(t *testing.T) {
+	ctx := context.Background()
+	s, owner, dev, quiet := visitsFixture(t)
+	other := id(t, "other")
+	if _, err := userauth.Add(ctx, s, other); err != nil {
+		t.Fatal(err)
+	}
+	theirs, _, _ := userauth.AddDevice(ctx, s, other)
+	v := &userauth.Visits{Store: s}
+	_ = v.Visit(ctx, owner, dev, "Samsung SM-S918B", t0)
+	if err := v.Rename(ctx, owner, dev, "Телефон Анастасии"); err != nil {
+		t.Fatal(err)
+	}
+	_ = v.Visit(ctx, owner, dev, "Pixel 8", t0.Add(time.Minute)) // точнее прежнего — но имя дал человек
+	_ = (&userauth.Visits{Store: s}).Visit(ctx, owner, dev, "Samsung SM-S918B", t0.Add(userauth.VisitEvery+time.Minute))
+	// Переименованный до первого входа: имя есть, входа нет.
+	if err := v.Rename(ctx, owner, quiet, "iPhone 17 Pro"); err != nil {
+		t.Fatal(err)
+	}
+	seen, err := v.Seen(ctx, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := seen[dev]; got.Name != "Телефон Анастасии" || !got.At.Equal(t0.Add(userauth.VisitEvery+time.Minute)) {
+		t.Errorf("renamed phone after visits: %+v", got)
+	}
+	if got := seen[quiet]; got.Name != "iPhone 17 Pro" || !got.At.IsZero() {
+		t.Errorf("renamed before the first visit: %+v", got)
+	}
+	if err := v.Rename(ctx, owner, theirs, "Чужой"); !errors.Is(err, domain.ErrNoSuchUser) {
+		t.Fatalf("rename of another person's phone: %v", err)
+	}
+}

@@ -366,6 +366,11 @@ func (v *Visits) write(ctx context.Context, id domain.UserID, entry seenDTO) (se
 	return entry, err
 }
 
+// Rename sets the name the person gave phone device of id.
+func (v *Visits) Rename(ctx context.Context, id domain.UserID, device, name string) error {
+	return errors.ErrUnsupported
+}
+
 // Seen returns the last visits of id's phones by device.
 func (v *Visits) Seen(ctx context.Context, id domain.UserID) (map[string]mail.Visit, error) {
 	f, _, err := readSeen(ctx, v.Store, id)

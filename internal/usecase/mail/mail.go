@@ -39,6 +39,13 @@ type Visits interface {
 	Visit(ctx context.Context, id domain.UserID, device, name string, at time.Time) error
 	// Seen returns the last visits of id's phones by device.
 	Seen(ctx context.Context, id domain.UserID) (map[string]Visit, error)
+	// Rename sets the name the person gave the phone; чужой телефон — ErrNoSuchUser.
+	Rename(ctx context.Context, id domain.UserID, device, name string) error
+}
+
+// RenamePhone names a phone as the person wants; только компьютер.
+func (s Service) RenamePhone(ctx context.Context, id domain.UserID, side domain.MailSide, device, name string) error {
+	return nil
 }
 
 // Box is the log of sealed messages.
