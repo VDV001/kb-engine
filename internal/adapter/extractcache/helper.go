@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -37,9 +38,14 @@ type Helper struct {
 
 // HelperNextTo finds kb-extract beside the executable exe (kb.app/Contents/MacOS).
 func HelperNextTo(exe string) (Helper, bool) {
-	bin := filepath.Join(filepath.Dir(exe), "kb-extract")
+	// На Windows — kb-extract.exe (desktop/extractwin): бита исполнения там нет.
+	name, needX := "kb-extract", true
+	if runtime.GOOS == "windows" {
+		name, needX = "kb-extract.exe", false
+	}
+	bin := filepath.Join(filepath.Dir(exe), name)
 	info, err := os.Stat(bin)
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
+	if err != nil || !info.Mode().IsRegular() || needX && info.Mode()&0o111 == 0 {
 		return Helper{}, false
 	}
 	return Helper{Bin: bin}, true

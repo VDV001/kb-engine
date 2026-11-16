@@ -5,9 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -275,15 +273,6 @@ func (d *accessDesk) Copy(id string) error {
 type kbAuth struct {
 	bin  string
 	wait time.Duration
-}
-
-// authNextTo finds kb-auth next to the window; нет — nil (окно не из сборки).
-func authNextTo(exe string) authHelper {
-	bin := filepath.Join(filepath.Dir(exe), "kb-auth")
-	if info, err := os.Stat(bin); err == nil && info.Mode().IsRegular() && info.Mode()&0o111 != 0 {
-		return kbAuth{bin: bin, wait: 10 * time.Second}
-	}
-	return nil
 }
 
 func (a kbAuth) Check(reason string) error {

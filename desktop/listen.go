@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -64,10 +65,15 @@ type dictation struct {
 	stdin  io.WriteCloser
 }
 
-// listenNextTo finds kb-listen next to the window's binary.
+// listenNextTo finds kb-listen next to the window's binary: на Windows —
+// kb-listen.exe (desktop/listenwin), там у файлов нет бита исполнения.
 func listenNextTo(exe string) string {
-	bin := filepath.Join(filepath.Dir(exe), "kb-listen")
-	if info, err := os.Stat(bin); err == nil && info.Mode().IsRegular() && info.Mode()&0o111 != 0 {
+	name, needX := "kb-listen", true
+	if goruntime.GOOS == "windows" {
+		name, needX = "kb-listen.exe", false
+	}
+	bin := filepath.Join(filepath.Dir(exe), name)
+	if info, err := os.Stat(bin); err == nil && info.Mode().IsRegular() && (!needX || info.Mode()&0o111 != 0) {
 		return bin
 	}
 	return ""

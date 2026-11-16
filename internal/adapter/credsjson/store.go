@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/daniil/kb-engine/internal/adapter/appdir"
 	"github.com/daniil/kb-engine/internal/adapter/filelock"
 	"github.com/daniil/kb-engine/internal/domain"
 )
@@ -17,7 +18,7 @@ import (
 // DefaultPath is the cards file next to the window settings: окно, терминал и
 // MCP видят одни карточки.
 func DefaultPath(home string) string {
-	return filepath.Join(home, "Library", "Application Support", "kb-desktop", "credentials.json")
+	return filepath.Join(appdir.Dir(home), "credentials.json")
 }
 
 // Store is the cards file at Path.

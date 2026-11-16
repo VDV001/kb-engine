@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"slices"
 
 	"github.com/daniil/kb-engine/internal/adapter/cdpbrowser"
@@ -98,7 +99,11 @@ func (d *browserDesk) Stop() error { return d.host.Stop() }
 // findKbengine looks for the engine binary: рядом с окном (его кладет just desktop),
 // потом ~/go/bin, потом PATH.
 func findKbengine(exeDir, home string, lookPath func(string) (string, error)) (string, error) {
-	for _, p := range []string{filepath.Join(exeDir, "kbengine"), filepath.Join(home, "go", "bin", "kbengine")} {
+	name := "kbengine"
+	if goruntime.GOOS == "windows" {
+		name += ".exe" // рядом с окном его кладет установщик (desktop/setupwin)
+	}
+	for _, p := range []string{filepath.Join(exeDir, name), filepath.Join(home, "go", "bin", name)} {
 		if st, err := os.Stat(p); err == nil && !st.IsDir() {
 			return p, nil
 		}

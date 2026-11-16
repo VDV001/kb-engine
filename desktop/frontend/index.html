@@ -6,6 +6,7 @@
   <title>DVK</title>
   <script src="bindings.js"></script>
   <script src="theme.js"></script>
+  <script src="platform.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,6 +15,13 @@
     <defs><linearGradient id="icon-spec" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="sp4"/><stop offset=".5" class="sp5"/><stop offset="1" class="sp6"/></linearGradient></defs>
   </svg>
   <div class="drag" style="--wails-draggable:drag"></div>
+  <!-- Windows: кнопки окна в той же верхней полосе, где на Маке светофор,
+       только справа, как принято в Windows (platform.js). -->
+  <div class="win-caps" id="win-caps" hidden>
+    <button type="button" id="win-min" aria-label="Свернуть"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5.5h10"/></svg></button>
+    <button type="button" id="win-max" aria-label="Развернуть"><svg viewBox="0 0 10 10" aria-hidden="true"><rect x=".5" y=".5" width="9" height="9"/></svg></button>
+    <button type="button" id="win-close" class="close" aria-label="Закрыть"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M.5.5l9 9M9.5.5l-9 9"/></svg></button>
+  </div>
 
   <!-- Первая индексация: журнал команды и одно большое число. -->
   <section id="indexing" class="indexing" hidden>

@@ -87,7 +87,7 @@ func (h *browserHost) Start(bin, chrome string) error {
 	if chrome != "" {
 		args = append(args, "--chrome", chrome)
 	}
-	cmd, errs := exec.Command(bin, args...), &tailBuf{}
+	cmd, errs := noConsole(exec.Command(bin, args...)), &tailBuf{}
 	cmd.Stderr = errs
 	if err := cmd.Start(); err != nil {
 		h.why = "не удалось запустить kbengine: " + err.Error()
