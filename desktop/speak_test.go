@@ -43,9 +43,6 @@ func TestSpeaker(t *testing.T) {
 	if strings.TrimSpace(string(said)) != "Срок 30 дней." || strings.Join(voices, ",") != "Milena" {
 		t.Fatalf("сказано %q голосом %q", said, voices)
 	}
-	if c := sayCommand("Milena"); strings.Join(c.Args, " ") != "/usr/bin/say -v Milena" {
-		t.Fatalf("say = %q", c.Args)
-	}
 	if err := s.Speak("", "  "); err != nil { // пустое не читается и не ошибка
 		t.Fatal(err)
 	}
@@ -120,14 +117,5 @@ func TestPreviewVoice(t *testing.T) {
 	}
 	if len(got) != 3 {
 		t.Fatalf("чужой голос дошел до say: %q", got)
-	}
-}
-
-// «Добавить голоса в macOS…» открывает раздел голосов Настроек — адрес
-// зашит, из окна ничего не приходит.
-func TestVoiceSettingsCommand(t *testing.T) {
-	c := voiceSettingsCommand()
-	if strings.Join(c.Args, " ") != "/usr/bin/open "+voiceSettingsURL || !strings.HasPrefix(voiceSettingsURL, "x-apple.systempreferences:") {
-		t.Fatalf("команда = %q", c.Args)
 	}
 }

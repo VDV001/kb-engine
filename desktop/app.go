@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -50,7 +49,7 @@ type App struct {
 
 func newApp(files fileChecker, settings *folderSettings, index *indexer) *App {
 	return &App{files: files, settings: settings, index: index, run: func(name string, args ...string) error {
-		return exec.Command(name, args...).Run()
+		return command(name, args...).Run()
 	}}
 }
 
@@ -543,15 +542,15 @@ func (a *App) Open(path string) error {
 	if err := a.files.Check(path); err != nil {
 		return err
 	}
-	return a.run("open", path)
+	return a.runArgv(openCmd(path))
 }
 
-// Reveal shows a found file in Finder, under the same check as Open.
+// Reveal shows a found file in Finder (Проводнике), under the same check as Open.
 func (a *App) Reveal(path string) error {
 	if err := a.files.Check(path); err != nil {
 		return err
 	}
-	return a.run("open", "-R", path)
+	return revealResult(a.runArgv(revealCmd(path)))
 }
 
 // Preview opens the file in Quick Look without waiting for the window to close.
@@ -565,7 +564,7 @@ func (a *App) Preview(path string) error {
 	// Потолок: десяток окон просмотра, если кликать не закрывая. Путь: держать
 	// один процесс и убивать прежний.
 	done := make(chan error, 1)
-	go func() { done <- a.run("qlmanage", "-p", path) }()
+	go func() { done <- a.runArgv(previewCmd(path)) }()
 	select {
 	case err := <-done:
 		return err
@@ -573,6 +572,9 @@ func (a *App) Preview(path string) error {
 		return nil
 	}
 }
+
+// runArgv runs a command given as one slice: имя и аргументы из openCmd и соседей.
+func (a *App) runArgv(argv []string) error { return a.run(argv[0], argv[1:]...) }
 
 // previewGrace — сколько ждем, не упал ли просмотр сразу.
 const previewGrace = 400 * time.Millisecond

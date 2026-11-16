@@ -273,7 +273,7 @@ func (r sshRunner) Run(ctx context.Context, args []string, remote string) (strin
 	ctx, cancel := context.WithTimeout(ctx, scanTimeout)
 	defer cancel()
 	full := append([]string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10"}, args...)
-	cmd := exec.CommandContext(ctx, cmp.Or(r.bin, "ssh"), append(full, remote)...)
+	cmd := noConsole(exec.CommandContext(ctx, cmp.Or(r.bin, "ssh"), append(full, remote)...)) // без окна консоли на Windows
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	stdout, err := cmd.StdoutPipe()

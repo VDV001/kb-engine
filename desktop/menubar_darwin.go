@@ -20,6 +20,9 @@ var menuBar atomic.Pointer[tray]
 
 // installMenuBar puts the icon in the menu bar and registers ⌥Space
 // (Carbon RegisterEventHotKey: разрешения «Универсальный доступ» не нужно).
+// removeMenuBar: значок меню-бара уходит вместе с процессом.
+func removeMenuBar() {}
+
 func installMenuBar(t tray) {
 	menuBar.Store(&t)
 	C.kbInstallMenuBar()

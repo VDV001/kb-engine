@@ -58,6 +58,29 @@ desktop: web
     cp desktop/build/icon/menubar.png bin/kb.app/Contents/Resources/menubar.png
     touch bin/kb.app  # Finder и Dock перечитывают иконку по времени изменения пакета
 
+# Окно DVK под Windows (#622, этап 5) — установщик bin/windows/DVK-Setup.exe,
+# собирается с Мака, без cgo и внешних программ. Внутри: kb.exe (значок и
+# DPI-манифест — desktop/winres), kbengine.exe, kb-listen.exe, kb-extract.exe.
+# Помощники — GUI-подсистема (-H windowsgui): окно зовет их через трубы, и
+# консоль не мигает. Без подписи кода SmartScreen скажет «неизвестный
+# издатель»: «Подробнее → Выполнить в любом случае».
+desktop-windows: web
+    find desktop/app-ui -mindepth 1 ! -name .keep -delete
+    cp -R frontend/dist/. desktop/app-ui/
+    cd desktop && go run ./winres -dir build/windows -syso rsrc_windows_amd64.syso -ico build/windows/dvk.ico
+    find desktop/setupwin/payload -mindepth 1 ! -name .gitkeep -delete
+    cd desktop && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -tags desktop,production -ldflags "-s -w -H windowsgui" -o setupwin/payload/kb.exe .
+    cd desktop && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -H windowsgui" -o setupwin/payload/kb-listen.exe ./listenwin
+    cd desktop && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -H windowsgui" -o setupwin/payload/kb-extract.exe ./extractwin
+    GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o desktop/setupwin/payload/kbengine.exe ./cmd/kbengine
+    cp desktop/build/windows/dvk.ico desktop/setupwin/payload/dvk.ico
+    mkdir -p bin/windows
+    cp desktop/rsrc_windows_amd64.syso desktop/setupwin/  # значок DVK и у установщика
+    cd desktop && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -H windowsgui -X main.version=$(git describe --tags --always)" -o ../bin/windows/DVK-Setup.exe ./setupwin
+    find desktop/setupwin/payload -mindepth 1 ! -name .gitkeep -delete
+    rm -f desktop/setupwin/rsrc_windows_amd64.syso
+    @ls -lh bin/windows/DVK-Setup.exe
+
 # DVK для Android (#622) — bin/android/DVK.apk, TWA над /m/ kb-сервера.
 # Запускать в своем Терминале: ключ подписи и пароль — в Связке ключей.
 android host="":
