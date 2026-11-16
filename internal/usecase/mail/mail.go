@@ -140,14 +140,14 @@ func (s Service) UnsubscribePush(ctx context.Context, id domain.UserID, side dom
 // Notify tells the phones the desk answered and returns how many got it.
 // Рассылка идет в запросе окна, а не после ответа: в Serverless Container
 // горутина после ответа замерзает. Срок — ctx вызывающего.
-func (s Service) Notify(ctx context.Context, id domain.UserID, side domain.MailSide) (int, error) {
+func (s Service) Notify(parent context.Context, id domain.UserID, side domain.MailSide) (int, error) {
 	if side != domain.MailDesk {
 		return 0, domain.ErrMailDeskOnly
 	}
 	if s.Push == nil {
 		return 0, domain.ErrPushOff
 	}
-	ctx, cancel := context.WithTimeout(ctx, NotifyTimeout)
+	ctx, cancel := context.WithTimeout(parent, NotifyTimeout)
 	defer cancel()
 	pushes, err := s.Subs.Pushes(ctx, id)
 	if err != nil {
@@ -165,14 +165,25 @@ func (s Service) Notify(ctx context.Context, id domain.UserID, side domain.MailS
 		case err == nil:
 			sent++
 		case errors.Is(err, domain.ErrPushGone):
-			if err := s.Subs.ClearPush(ctx, id, pushes[i].Device); err != nil {
-				s.logf("mail: push: clear %s: %v", pushes[i].Device, err)
+			// По адресу, а не по телефону: телефон мог уже положить новый адрес
+			// на место забытого. Своим сроком: общий мог истечь на медленном соседе.
+			if err := s.dropPush(parent, pushes[i].Sub.Endpoint()); err != nil {
+				s.logf("mail: push: drop %s: %v", pushes[i].Device, err)
 			}
 		default:
 			s.logf("mail: push %s: %v", pushes[i].Device, err)
 		}
 	}
 	return sent, nil
+}
+
+// dropTimeout bounds removing one gone subscription.
+const dropTimeout = 5 * time.Second
+
+func (s Service) dropPush(parent context.Context, endpoint string) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), dropTimeout)
+	defer cancel()
+	return s.Subs.DropPush(ctx, endpoint)
 }
 
 func (s Service) logf(format string, args ...any) {

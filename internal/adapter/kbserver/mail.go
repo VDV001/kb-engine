@@ -178,7 +178,9 @@ func (c Client) Notify(ctx context.Context) (int, error) {
 		Sent int `json:"sent"`
 	}
 	err := c.mail(ctx, mailReq{method: http.MethodPost, path: "/api/mail/notify", want: http.StatusOK, notFound: errPushOff}, &out)
-	if errors.Is(err, errPushOff) {
+	// 400 — сервер до push: он принимает notify за чат без тела. Это тоже
+	// «push выключен», а не сбой после каждого ответа (ревью #643).
+	if errors.Is(err, errPushOff) || errors.Is(err, ErrMailRefused) {
 		return 0, nil
 	}
 	return out.Sent, err

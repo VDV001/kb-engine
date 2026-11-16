@@ -156,7 +156,11 @@ func SetPush(ctx context.Context, s blob.Store, id domain.UserID, device string,
 		return err
 	}
 	return update(ctx, s, PushKey, func(r *pushRegistryDTO) error {
-		r.Subs = slices.DeleteFunc(r.Subs, func(p pushDTO) bool { return p.ID == id.String() && p.Device == device })
+		// Один адрес — одна подписка: телефон, перепривязанный новым токеном
+		// (или к другому человеку), не получает уведомления дважды (ревью #643).
+		r.Subs = slices.DeleteFunc(r.Subs, func(p pushDTO) bool {
+			return (p.ID == id.String() && p.Device == device) || p.Endpoint == sub.Endpoint()
+		})
 		r.Subs = append(r.Subs, pushDTO{ID: id.String(), Device: device, Endpoint: sub.Endpoint(), P256dh: sub.P256dh(), Auth: sub.Auth()})
 		return nil
 	})
@@ -238,7 +242,12 @@ func (p Phones) Pushes(ctx context.Context, id domain.UserID) ([]mail.PhonePush,
 
 // DropPush removes the subscription with this endpoint, whoever holds it:
 // сервис push сказал, что адреса больше нет.
-func DropPush(ctx context.Context, s blob.Store, endpoint string) error { return nil }
+func DropPush(ctx context.Context, s blob.Store, endpoint string) error {
+	return update(ctx, s, PushKey, func(r *pushRegistryDTO) error {
+		r.Subs = slices.DeleteFunc(r.Subs, func(p pushDTO) bool { return p.Endpoint == endpoint })
+		return nil
+	})
+}
 
 // DropPush is DropPush as the mailbox port.
 func (p Phones) DropPush(ctx context.Context, endpoint string) error {

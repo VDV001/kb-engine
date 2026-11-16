@@ -2,7 +2,6 @@
 // base64 — проверяется тестом phonepage в node (ревью #636).
 
 const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
-const sameKey = (a, b) => !!a && !!b && a.length === b.length && a.every((x, i) => x === b[i]);
 
 // repair returns the state after scanning a QR. Тот же ключ (телефон привязан
 // снова, ключ у сервера прежний) — номер ящика, счетчик, отправитель и seen
@@ -163,7 +162,10 @@ export function pushView(o) {
     : { text: "Выключены. Включите, чтобы узнавать об ответе компьютера при закрытой странице.", action: "on" };
 }
 
-// sameKey compares the subscription's applicationServerKey with the server's.
+// sameKey compares two keys: id ключа привязки или applicationServerKey
+// подписки (он приходит ArrayBuffer'ом) с ключом сервера.
 export function sameKey(a, b) {
-  return true;
+  if (!a || !b) return false;
+  const x = new Uint8Array(a), y = new Uint8Array(b);
+  return x.length === y.length && x.every((v, i) => v === y[i]);
 }

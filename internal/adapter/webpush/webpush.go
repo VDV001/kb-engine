@@ -122,8 +122,8 @@ func NewVAPID(key *ecdsa.PrivateKey, subject string) (*VAPID, error) {
 	if key == nil || key.Curve != elliptic.P256() {
 		return nil, ErrBadVAPID
 	}
-	if u, err := url.Parse(subject); err != nil || (u.Scheme != "mailto" && u.Scheme != "https") || (u.Opaque == "" && u.Host == "") {
-		return nil, ErrBadVAPID
+	if err := CheckSubject(subject); err != nil {
+		return nil, err
 	}
 	pub, err := key.PublicKey.Bytes()
 	if err != nil {
@@ -281,4 +281,9 @@ func createVAPID(ctx context.Context, s blob.Store) error {
 func (v *VAPID) PublicKey() string { return v.public }
 
 // CheckSubject checks a VAPID contact: mailto: или https: с адресом.
-func CheckSubject(subject string) error { return nil }
+func CheckSubject(subject string) error {
+	if u, err := url.Parse(subject); err != nil || (u.Scheme != "mailto" && u.Scheme != "https") || (u.Opaque == "" && u.Host == "") {
+		return fmt.Errorf("%w: contact %q: want mailto or https", ErrBadVAPID, subject)
+	}
+	return nil
+}

@@ -238,7 +238,9 @@ func (r *Registry) Invalidate() {
 	r.mu.Unlock()
 }
 
-// LookupDevice is Lookup that also names the phone of the token (DevicesKey).
+// LookupDevice returns the person of the token and, in DevicesKey, the phone.
+// Хэш токена сравнивается со всеми записями за постоянное время и без раннего
+// выхода: время ответа не выдает, на какой записи остановились.
 func (r *Registry) LookupDevice(token string) (domain.UserID, string, bool) {
 	var found knownUser
 	if token == "" {
@@ -246,7 +248,7 @@ func (r *Registry) LookupDevice(token string) (domain.UserID, string, bool) {
 	}
 	sum := sha256.Sum256([]byte(token))
 	ok := false
-	for _, u := range r.current() { // тот же проход без раннего выхода, что в Lookup
+	for _, u := range r.current() {
 		if subtle.ConstantTimeCompare(sum[:], u.sum) == 1 {
 			found, ok = u, true
 		}
@@ -254,23 +256,10 @@ func (r *Registry) LookupDevice(token string) (domain.UserID, string, bool) {
 	return found.id, found.device, ok
 }
 
-// Lookup returns the person whose token this is. Хэш токена сравнивается со
-// всеми записями за постоянное время и без раннего выхода: время ответа не
-// выдает, на какой записи остановились.
+// Lookup returns the person whose token this is (LookupDevice без телефона).
 func (r *Registry) Lookup(token string) (domain.UserID, bool) {
-	var found domain.UserID
-	if token == "" {
-		return found, false
-	}
-	users := r.current()
-	sum := sha256.Sum256([]byte(token))
-	ok := false
-	for _, u := range users {
-		if subtle.ConstantTimeCompare(sum[:], u.sum) == 1 {
-			found, ok = u.id, true
-		}
-	}
-	return found, ok
+	id, _, ok := r.LookupDevice(token)
+	return id, ok
 }
 
 // current returns the known users, re-reading the registry once RefreshEvery

@@ -8,7 +8,7 @@
 // Service worker (sw.js) — только push: «компьютер ответил», когда страница
 // закрыта. Работы без сети нет — страница всегда свежая с сервера.
 import { importKey, seal, open } from "./crypto.js";
-import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView } from "./state.js";
+import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey } from "./state.js";
 
 const POLL_MS = 10_000; // решение 15.11: короткий опрос раз в 10 с
 const UNAUTH_MS = 60_000; // 401: реже, но не сдаемся — сервер мог ошибиться ненадолго
@@ -122,8 +122,14 @@ async function putSubscription(sub) {
 async function pushSync() {
   let view;
   try {
-    const serverOn = (await serverPushKey()) !== "";
-    const sub = pushSupported && serverOn ? await (await swReady).pushManager.getSubscription() : null;
+    const key = await serverPushKey(), serverOn = key !== "";
+    let sub = pushSupported && serverOn ? await (await swReady).pushManager.getSubscription() : null;
+    // Подписка другим ключом (перепривязка, новый ключ сервера) мертва: сервисы
+    // push отклоняют ее молча. Снимаем — карточка предложит включить заново.
+    if (sub && !sameKey(sub.options.applicationServerKey, unb64url(key))) {
+      await sub.unsubscribe();
+      sub = null;
+    }
     if (sub && Notification.permission === "granted") await putSubscription(sub);
     view = pushView({ serverOn, supported: pushSupported, ios: isIOS, standalone, permission: pushSupported ? Notification.permission : "default", subscribed: !!sub });
   } catch (e) {

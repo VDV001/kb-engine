@@ -46,7 +46,16 @@ type pushConfig struct {
 }
 
 // pushContactFromEnv reads KB_PUSH_CONTACT; неверный — ошибка с именем переменной.
-func pushContactFromEnv() (string, error) { return os.Getenv("KB_PUSH_CONTACT"), nil }
+func pushContactFromEnv() (string, error) {
+	c := os.Getenv("KB_PUSH_CONTACT")
+	if c == "" {
+		return "", nil
+	}
+	if err := webpush.CheckSubject(c); err != nil {
+		return "", fmt.Errorf("KB_PUSH_CONTACT: %w", err)
+	}
+	return c, nil
+}
 
 // withPush replaces the push contact and transport (tests).
 func withPush(contact string, rt http.RoundTripper) tenantOption {
@@ -57,7 +66,11 @@ func tenantsHandler(ctx context.Context, store blob.Store, stderr io.Writer, opt
 	lw := &lockedWriter{w: stderr}
 	logf := func(f string, a ...any) { fmt.Fprintf(lw, "serve: "+f+"\n", a...) }
 	phones := userauth.NewRegistry(ctx, store, userauth.WithKey(userauth.DevicesKey))
-	cfg := pushConfig{contact: os.Getenv("KB_PUSH_CONTACT")}
+	contact, err := pushContactFromEnv()
+	if err != nil { // runServeTenants отказывает раньше; здесь — на случай другого входа
+		logf("push off: %v", err)
+	}
+	cfg := pushConfig{contact: contact}
 	for _, o := range opts {
 		o(&cfg)
 	}
@@ -320,6 +333,10 @@ func runServeTenants(location, s3TokenFile, addr, pprofAddr, tlsCert, tlsKey str
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 1
 	}
+	if _, err := pushContactFromEnv(); err != nil {
+		fmt.Fprintf(stderr, "serve: %v\n", err)
+		return 2
+	}
 	h := tenantsHandler(context.Background(), store, stderr)
 	srv := newServeServer(addr, h, "", tlsCfg)
 	fmt.Fprintf(stdout, "kbengine: serving people's bases on %s (tenants %s; tokens %s, TLS %s)\n", addr, location, userauth.RegistryKey, onOff(tlsCfg != nil))
@@ -353,17 +370,27 @@ type lazyPusher struct {
 	contact   string
 	transport http.RoundTripper
 
-	mu     gosync.Mutex
-	vapid  *webpush.VAPID
-	sender *webpush.Sender
+	mu      gosync.Mutex
+	vapid   *webpush.VAPID
+	sender  *webpush.Sender
+	failed  error     // последний сбой чтения ключа
+	retryAt time.Time // до этого момента сбой отдается без нового чтения
 }
+
+// vapidRetry — пауза после сбоя чтения ключа: испорченный ключ или медленный
+// бакет не перечитывается каждым вызовом подряд (ревью #643).
+const vapidRetry = 30 * time.Second
 
 func (l *lazyPusher) load(ctx context.Context) (*webpush.VAPID, *webpush.Sender, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.sender == nil {
+		if l.failed != nil && time.Now().Before(l.retryAt) {
+			return nil, nil, l.failed
+		}
 		v, err := webpush.LoadVAPID(ctx, l.store, l.contact)
 		if err != nil {
+			l.failed, l.retryAt = err, time.Now().Add(vapidRetry)
 			return nil, nil, err
 		}
 		l.vapid, l.sender = v, webpush.NewSender(v, l.transport, time.Now)
