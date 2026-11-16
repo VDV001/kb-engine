@@ -109,6 +109,12 @@ type File struct {
 	Data       []byte
 }
 
+// ChatEditor renames and deletes the window's chats (#649).
+type ChatEditor interface {
+	RenameChat(ctx context.Context, id, title string) error
+	DeleteChat(ctx context.Context, id string) error
+}
+
 // FileOpener decrypts a sealed piece of the mailbox files.
 type FileOpener interface {
 	OpenFile(sealed []byte) ([]byte, error)
@@ -212,6 +218,12 @@ const (
 	AttachTooLarge = "toolarge"
 	// VoiceSilent — код: в вопросе голосом не расслышано слов (тишина).
 	VoiceSilent = "silent"
+	// KindRename — чат переименован (#649): телефон → окно и окно → телефон, Text — название.
+	KindRename = "rename"
+	// KindDelete — чат удален (#649): телефон → окно и окно → телефон.
+	KindDelete = "delete"
+	// KindEdited — окно приняло переименование или удаление с телефона.
+	KindEdited = "edited"
 	// KindRemember — окно предлагает запомнить факты о человеке (#647, Facts).
 	KindRemember = "remember"
 	// KindMemory — решение телефона по факту (Text yes/no, Facts[0]) и ответ окна
@@ -396,6 +408,8 @@ type Relay struct {
 	HearTimeout time.Duration
 	// Open — расшифровка кусков файлов (#650); nil — отказ DeskUnsupported.
 	Open FileOpener
+	// Chats — переименование и удаление чатов окна с телефона (#649); nil — отказ.
+	Chats ChatEditor
 }
 
 // Notifier tells the phones an answer is waiting (kb-сервер, /api/mail/notify).
