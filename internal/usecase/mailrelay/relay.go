@@ -71,6 +71,8 @@ type Payload struct {
 	Sources []Source `json:"sources,omitempty"`
 	// Context — заполнение контекста чата после ответа (#647); нет счета — nil.
 	Context *ContextFill `json:"context,omitempty"`
+	// Facts — «Запомнить о Вас?» (#647): предложение окна или решение телефона.
+	Facts []Fact `json:"facts,omitempty"`
 }
 
 // ContextFill is how full the chat's context is: токены по счету провайдера и
@@ -94,7 +96,44 @@ const (
 	KindStep = "step"
 	// KindAccepted — окно взяло вопрос в работу (#646): телефон пишет «компьютер принял».
 	KindAccepted = "accepted"
+	// KindRemember — окно предлагает запомнить факты о человеке (#647, Facts).
+	KindRemember = "remember"
+	// KindMemory — решение телефона по факту (Text yes/no, Facts[0]) и ответ окна
+	// (Text saved/skipped или слова отказа).
+	KindMemory = "memory"
 )
+
+// Решения и итоги «Запомнить о Вас?».
+const (
+	MemoryYes     = "yes"
+	MemoryNo      = "no"
+	MemorySaved   = "saved"
+	MemorySkipped = "skipped"
+)
+
+// Fact is a fact about the person the window offers to remember.
+type Fact struct {
+	ID    string `json:"id"`
+	Title string `json:"title,omitempty"` // раздел портрета словами
+	Text  string `json:"text,omitempty"`
+}
+
+// Note is something the window says to a phone chat by itself, вне ответа на
+// запрос: Chat — чат окна, ящик находит его чат по State.Chats.
+type Note struct {
+	Chat    string
+	Payload Payload
+}
+
+// Notes gives the notes the window queued since the last tick.
+type Notes interface {
+	Take() []Note
+}
+
+// Memory decides a fact the window offered: yes — запомнить с текстом text.
+type Memory interface {
+	Decide(ctx context.Context, id string, yes bool, text string) error
+}
 
 // Hit is one found document: Ref — чем телефон его откроет; Text — только у
 // открытого.
@@ -184,6 +223,9 @@ type State struct {
 	Outbox      []Outgoing        `json:"outbox"`
 	KeyID       string            `json:"key_id"` // ключ, под который заведено состояние
 	Start       time.Time         `json:"start"`  // вопросы старше — не отвечаются
+	// Offered — факты, предложенные телефону: чат ящика → id. Решение телефона
+	// принимается только по ним (#647).
+	Offered map[string][]string `json:"offered,omitempty"`
 }
 
 // Store keeps the state.
@@ -216,6 +258,10 @@ type Relay struct {
 	Logf func(string, ...any)
 	// Notifier зовет телефоны push после итога хода модели (nil — не зовет).
 	Notifier Notifier
+	// Notes — то, что окно говорит телефону само: «Запомнить о Вас?» (nil — нечего).
+	Notes Notes
+	// Memory — решения телефона по предложенным фактам (nil — отказ словами).
+	Memory Memory
 }
 
 // Notifier tells the phones an answer is waiting (kb-сервер, /api/mail/notify).

@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
@@ -45,8 +46,12 @@ type mailWorker struct {
 	dir      string            // где лежат mail-<id>.json
 	changed  func(chat string) // ответ записан в чат окна: странице перечитать список и чат
 	turn     func(phoneTurn)   // ход по вопросу с телефона — странице (#646)
-	logf     func(string, ...any)
-	creds    map[string]mailCreds // только горутина работника
+	memory   mailrelay.Memory  // решения телефона по «Запомнить о Вас?» (#647); nil — отказ словами
+
+	notesMu sync.Mutex
+	notes   []mailrelay.Note // «Запомнить о Вас?» для телефонов: пишет разбор ответа, забирает круг
+	logf    func(string, ...any)
+	creds   map[string]mailCreds // только горутина работника
 }
 
 // mailCreds is what the worker read from the keychain for a server: ключ чата
@@ -188,6 +193,22 @@ func (w *mailWorker) askAndTell(ctx context.Context, chat, question string) (str
 	}
 	return id, answer, err
 }
+
+// remember queues the facts found in a chat's answer for the phone (#647).
+func (w *mailWorker) remember(n portraitNews) {}
+
+// Take gives the relay what the window queued for the phones.
+func (w *mailWorker) Take() []mailrelay.Note { return nil }
+
+// phoneMemory decides a fact from the phone with the window's portrait (#647):
+// «Да» — одобрить с текстом, «Нет» — убрать; decided — странице снять свою карточку.
+type phoneMemory struct {
+	approve func(id, text string) error
+	remove  func(id string) error
+	decided func(id string, yes bool)
+}
+
+func (m phoneMemory) Decide(_ context.Context, id string, yes bool, text string) error { return nil }
 
 // answerFn runs a model turn and tells where the answer came from; step — ход
 // модели по мере ответа (nil — без хода).

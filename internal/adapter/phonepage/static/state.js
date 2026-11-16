@@ -121,6 +121,9 @@ export function posted(st, o) {
   if (m) m.sent = true;
 }
 
+// deciding marks fact id of chat c sent for a decision (#647).
+export function deciding(c, id) {}
+
 // searchChat is the mailbox chat of this phone's searches: выдача и документы
 // идут им и в список чатов не попадают. От отправителя — повторная привязка
 // тем же ключом сохраняет его.

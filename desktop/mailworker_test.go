@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -267,5 +269,45 @@ func TestMailWorkerShowsThePhoneTurn(t *testing.T) {
 	_, _ = (workerAsker{w}).AskStepped(t.Context(), "", "еще?", nil)
 	if len(got) == 0 || got[len(got)-1] != (phoneTurn{Chat: "w-1", Done: true}) {
 		t.Fatalf("after a failed turn the page heard %+v — «отвечает» would hang", got)
+	}
+}
+
+// Факты из ответа ждут круга работника; второй раз их не отдают (#647).
+func TestMailWorkerQueuesFacts(t *testing.T) {
+	w := newMailWorker(nil, nil, t.TempDir())
+	w.remember(portraitNews{Chat: "w-1", Facts: []factView{{ID: "f1", Title: "Работа", Text: "Ведет закупки"}}})
+	w.remember(portraitNews{Chat: "w-2"})
+	got := w.Take()
+	if len(got) != 1 || got[0].Chat != "w-1" || got[0].Payload.Kind != mailrelay.KindRemember ||
+		len(got[0].Payload.Facts) != 1 || got[0].Payload.Facts[0] != (mailrelay.Fact{ID: "f1", Title: "Работа", Text: "Ведет закупки"}) {
+		t.Fatalf("notes %+v", got)
+	}
+	if again := w.Take(); len(again) != 0 {
+		t.Errorf("notes given twice: %+v", again)
+	}
+}
+
+// «Да» с телефона — одобрить с текстом, «Нет» — убрать; страница снимает свою карточку.
+func TestPhoneMemoryDecides(t *testing.T) {
+	var calls []string
+	m := phoneMemory{
+		approve: func(id, text string) error { calls = append(calls, "approve "+id+" "+text); return nil },
+		remove:  func(id string) error { calls = append(calls, "remove "+id); return nil },
+		decided: func(id string, yes bool) { calls = append(calls, fmt.Sprintf("decided %s %t", id, yes)) },
+	}
+	if err := m.Decide(t.Context(), "f1", true, "Ведет закупки"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Decide(t.Context(), "f2", false, ""); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"approve f1 Ведет закупки", "decided f1 true", "remove f2", "decided f2 false"}
+	if strings.Join(calls, "|") != strings.Join(want, "|") {
+		t.Fatalf("calls %v", calls)
+	}
+	m.approve = func(string, string) error { return errors.New("портрет недоступен") }
+	calls = nil
+	if err := m.Decide(t.Context(), "f3", true, "x"); err == nil || len(calls) != 0 {
+		t.Fatalf("failed approve: %v, %v — the page must not drop its card", err, calls)
 	}
 }
