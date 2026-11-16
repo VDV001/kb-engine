@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -226,5 +227,73 @@ func TestRelayFindHasDeadline(t *testing.T) {
 	}
 	if got := payloads(t, b); len(got) != 1 || got[0].Kind != mailrelay.KindError {
 		t.Fatalf("ответы %+v", got)
+	}
+}
+
+// slowBox posts after a delay, как медленный kb-сервер.
+type slowBox struct {
+	mu    sync.Mutex
+	box   box
+	delay time.Duration
+}
+
+func (b *slowBox) Since(ctx context.Context, after int64) (mailrelay.Page, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.box.Since(ctx, after)
+}
+
+func (b *slowBox) Post(ctx context.Context, chat string, sealed []byte) (int64, error) {
+	time.Sleep(b.delay)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.box.Post(ctx, chat, sealed)
+}
+
+// burst reports three steps at once, then thinks longer than StepEvery.
+type burst struct {
+	sourced
+	slowest time.Duration
+}
+
+func (s *burst) AskStepped(ctx context.Context, chat, question string, step func(mailrelay.Step)) (mailrelay.Answer, error) {
+	for _, text := range []string{"Документы: сроки", "Ozon · Пример: заказы", "Документы: " + strings.Repeat("я", 300)} {
+		began := time.Now()
+		step(mailrelay.Step{Text: text})
+		s.slowest = max(s.slowest, time.Since(began))
+	}
+	time.Sleep(150 * time.Millisecond)
+	return s.AskSourced(ctx, chat, question)
+}
+
+// Шаги хода (ревью #641): отправка не задерживает ход модели, последним уходит
+// самый свежий шаг — телефон видит то же, что окно; длинный шаг
+// обрезан простым «…», без обещания ответа «полностью — в окне».
+func TestRelaySendsTheLatestStepWithoutBlocking(t *testing.T) {
+	b, s := &slowBox{delay: 100 * time.Millisecond}, &store{}
+	b.box.phone("c-1", "A", 1, q("сроки?"))
+	a := &burst{}
+	r := newRelay(&b.box, &asker{}, s)
+	r.Box, r.Asker, r.StepEvery = b, a, 20*time.Millisecond
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if a.slowest > 50*time.Millisecond {
+		t.Errorf("шаг ждал отправку %s: ход модели стоит на ящике", a.slowest)
+	}
+	got := payloads(t, &b.box)
+	var kinds []string
+	for _, p := range got {
+		kinds = append(kinds, p.Kind)
+	}
+	// Шагов — от одного до трех (пачку горутина может застать целиком), но
+	// последним перед ответом уходит самый свежий.
+	n := len(got)
+	if n < 2 || n > 4 || got[n-1].Kind != mailrelay.KindAnswer || got[n-2].Kind != mailrelay.KindStep {
+		t.Fatalf("ящик: %v %+v", kinds, got)
+	}
+	last := got[n-2].Text
+	if !strings.HasPrefix(last, "Документы: яя") || !strings.HasSuffix(last, "…") || strings.Contains(last, "окне") || len(last) > 210 {
+		t.Errorf("последний шаг: %q", last)
 	}
 }
