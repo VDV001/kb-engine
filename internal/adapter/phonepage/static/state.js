@@ -148,6 +148,17 @@ export function unb64(text) {
 }
 
 // pushView is the notifications card: текст и кнопка (on, off или null).
+// iOS дает push только странице с экрана «Домой» (с 16.4); разрешение браузер
+// спрашивает только по нажатию — поэтому кнопка, а не запрос при открытии.
 export function pushView(o) {
-  return { text: "", action: undefined };
+  if (!o.serverOn) return { text: "На этом kb-сервере уведомления не включены.", action: null };
+  if (!o.supported) {
+    return o.ios && !o.standalone
+      ? { text: "На iPhone уведомления приходят, когда DVK открыт с экрана «Домой».", action: null }
+      : { text: "Этот браузер не умеет уведомления.", action: null };
+  }
+  if (o.permission === "denied") return { text: "Уведомления запрещены в настройках браузера для этого сайта.", action: null };
+  return o.subscribed
+    ? { text: "Включены: компьютер ответил — телефон даст знать.", action: "off" }
+    : { text: "Выключены. Включите, чтобы узнавать об ответе компьютера при закрытой странице.", action: "on" };
 }
