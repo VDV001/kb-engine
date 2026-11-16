@@ -56,7 +56,7 @@ func TestClient_Phones(t *testing.T) {
 		t.Fatalf("add: %q %q %v", dev, tok, err)
 	}
 	list, err := c.Phones(ctx)
-	if err != nil || len(list) != 1 || list[0].Device != dev || list[0].At.IsZero() || !list[0].Seen.IsZero() || list[0].Name != "" {
+	if err != nil || len(list) != 1 || list[0].Device != dev || list[0].At.IsZero() || !list[0].Seen.IsZero() || list[0].Name != "" || !list[0].SeenKnown {
 		t.Fatalf("after add: %+v, %v", list, err)
 	}
 	if err := c.RevokePhone(ctx, dev); err != nil {
@@ -167,5 +167,31 @@ func TestClient_RenamePhone(t *testing.T) {
 	}
 	if err := c.RenamePhone(ctx, "p-00000000", "Мой"); !errors.Is(err, kbserver.ErrNoSuchPhone) {
 		t.Fatalf("unknown phone: %v", err)
+	}
+}
+
+// Сервер до #652 не знает входов: окно не должно принимать это за «телефон не
+// входил» (ревью #652, 1-е). Новый сервер говорит seen_known.
+func TestClient_PhonesFromOldServer(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"devices":[{"device":"p-1","at":"2026-11-16T09:04:00Z"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	c := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}
+	list, err := c.Phones(context.Background())
+	if err != nil || len(list) != 1 || list[0].SeenKnown {
+		t.Fatalf("old server: %+v, %v", list, err)
+	}
+}
+
+// 400 по другой причине (тело испорчено, прокси) — не «плохое имя» (ревью #652, 10-е).
+func TestClient_RenamePhoneOtherBadRequest(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "proxy says no", http.StatusBadRequest)
+	}))
+	t.Cleanup(srv.Close)
+	c := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}
+	if err := c.RenamePhone(context.Background(), "p-1", "Мой"); errors.Is(err, kbserver.ErrBadPhoneName) || err == nil {
+		t.Fatalf("400 from a proxy: %v", err)
 	}
 }

@@ -268,7 +268,7 @@ func TestMailPairPhoneWithoutQR(t *testing.T) {
 func TestMailPhonesNameAndSeen(t *testing.T) {
 	seen := time.Date(2026, 11, 16, 9, 6, 0, 0, time.UTC)
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"devices":[{"device":"p-1","at":"2026-11-16T09:04:00Z","seen":"2026-11-16T09:06:00Z","name":"Samsung SM-S918B"},{"device":"p-2","at":"2026-11-16T09:05:00Z"},{"device":"p-3","at":"2026-11-16T09:05:00Z","seen_unknown":true}]}`))
+		_, _ = w.Write([]byte(`{"devices":[{"device":"p-1","at":"2026-11-16T09:04:00Z","seen":"2026-11-16T09:06:00Z","name":"Samsung SM-S918B","seen_known":true},{"device":"p-2","at":"2026-11-16T09:05:00Z","seen_known":true},{"device":"p-3","at":"2026-11-16T09:05:00Z"}]}`))
 	}))
 	t.Cleanup(srv.Close)
 	s, _, _ := newServerSettings(t)
@@ -286,7 +286,8 @@ func TestMailPhonesNameAndSeen(t *testing.T) {
 	if list[1].Name != "" || list[1].Seen != "" || list[1].SeenUnknown {
 		t.Errorf("phone that never came in %+v", list[1])
 	}
-	// Сервер не прочитал входы: окно не ждет молча входа, которого не увидит (ревью #652).
+	// Сервер не прочитал входы или старше #652 (нет seen_known): окно не ждет
+	// молча входа, которого не увидит (ревью #652).
 	if !list[2].SeenUnknown {
 		t.Errorf("phone with unknown visits %+v", list[2])
 	}

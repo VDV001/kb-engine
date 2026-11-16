@@ -1,6 +1,7 @@
 package userauth_test
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"sync"
@@ -22,6 +23,10 @@ type seenStore struct {
 	failPut error         // не nil — Put файла входов отказывает
 	failGet error         // не nil — Get файла входов отказывает
 	hold    chan struct{} // не nil — Put файла входов ждет, пока закроют
+
+	// Только первый Put файла входов: ждет holdFirst и отказывает failFirst.
+	holdFirst chan struct{}
+	failFirst error
 }
 
 func (s *seenStore) Put(ctx context.Context, key string, data []byte, ifMatch string) (string, error) {
@@ -29,6 +34,9 @@ func (s *seenStore) Put(ctx context.Context, key string, data []byte, ifMatch st
 		s.mu.Lock()
 		s.puts++
 		fail, hold := s.failPut, s.hold
+		if s.puts == 1 {
+			fail, hold = cmp.Or(s.failFirst, fail), cmp.Or(s.holdFirst, hold)
+		}
 		s.mu.Unlock()
 		if hold != nil {
 			<-hold
@@ -288,5 +296,48 @@ func TestVisitsRename(t *testing.T) {
 	}
 	if err := v.Rename(ctx, owner, theirs, "Чужой"); !errors.Is(err, domain.ErrNoSuchUser) {
 		t.Fatalf("rename of another person's phone: %v", err)
+	}
+}
+
+// Телефон бросил свой запрос (закрыл приложение, пропала сеть) — это не сбой
+// бакета: пауза для всех телефонов процесса не нужна (ревью #652, 3-е).
+func TestVisitsNoPauseOnCancel(t *testing.T) {
+	ctx := context.Background()
+	s, owner, dev, quiet := visitsFixture(t)
+	v := &userauth.Visits{Store: s}
+	s.failFirst = context.Canceled
+	if err := v.Visit(ctx, owner, dev, domain.PhoneIPhone, t0); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled write: %v", err)
+	}
+	if err := v.Visit(ctx, owner, quiet, domain.PhoneAndroid, t0.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if seen, _ := v.Seen(ctx, owner); seen[quiet].At.IsZero() {
+		t.Fatal("another phone's visit dropped after a canceled request")
+	}
+}
+
+// Неудачная запись не откатывает кэш поверх удачной соседней: опрос с моделью,
+// записанный, пока первый ждал, остается в кэше (ревью #652, 4-е).
+func TestVisitsFailedWriteKeepsNewerCache(t *testing.T) {
+	ctx := context.Background()
+	s, owner, dev, _ := visitsFixture(t)
+	v := &userauth.Visits{Store: s}
+	s.holdFirst, s.failFirst = make(chan struct{}), context.Canceled
+	first := make(chan error)
+	go func() { first <- v.Visit(ctx, owner, dev, domain.PhoneAndroid, t0) }()
+	for s.writes() == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	if err := v.Visit(ctx, owner, dev, "Samsung SM-S918B", t0.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	close(s.holdFirst)
+	if err := <-first; err == nil {
+		t.Fatal("first write did not fail")
+	}
+	_ = v.Visit(ctx, owner, dev, "Samsung SM-S918B", t0.Add(10*time.Second))
+	if n := s.writes(); n != 2 {
+		t.Fatalf("visits written %d times, want 2: the failed write rolled the cache back", n)
 	}
 }

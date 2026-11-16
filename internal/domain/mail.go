@@ -60,6 +60,10 @@ func NewPhoneName(s string) (string, error) {
 // maxPhoneName bounds the phone name in runes: строка списка в окне.
 const maxPhoneName = 40
 
+// IsPhoneModel accepts a model name from the browser: латиница, цифры, пробел,
+// - _ . и не длиннее maxPhoneName — значение пришло от клиента.
+func IsPhoneModel(m string) bool { return false }
+
 // genericPhoneNames are the names without a model; пустое — имени еще нет.
 var genericPhoneNames = map[string]bool{"": true, PhoneIPhone: true, PhoneIPad: true, PhoneIPadOrMac: true, PhoneAndroid: true, PhoneWindows: true}
 

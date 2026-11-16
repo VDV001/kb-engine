@@ -31,6 +31,24 @@ func TestNewPhoneName(t *testing.T) {
 	}
 }
 
+// Модель из Client Hints — от клиента и показывается в окне: правило имени
+// телефона живет в домене, а не в разборе заголовков (ревью #652, 8-е).
+func TestIsPhoneModel(t *testing.T) {
+	for m, want := range map[string]bool{
+		"SM-S918B":              true,
+		"Pixel 8":               true,
+		"":                      false,
+		"<script>":              false,
+		strings.Repeat("a", 40): true,
+		strings.Repeat("a", 41): false,
+		"Модель":                false,
+	} {
+		if got := domain.IsPhoneModel(m); got != want {
+			t.Errorf("IsPhoneModel(%q) = %v, want %v", m, got, want)
+		}
+	}
+}
+
 // Менее точное имя не заменяет точное: Chrome шлет модель не в каждом запросе,
 // и «Samsung SM-S918B» не должен прыгать в «Android» и обратно (ревью #652).
 func TestBetterPhoneName(t *testing.T) {
@@ -42,6 +60,9 @@ func TestBetterPhoneName(t *testing.T) {
 		{"Samsung SM-S918B", "Pixel 8", "Pixel 8"},
 		{domain.PhoneIPhone, domain.PhoneIPadOrMac, domain.PhoneIPadOrMac},
 		{"Pixel 8", domain.PhoneIPhone, "Pixel 8"},
+		// Браузер, не назвавший себя (Chrome «версия для ПК»), не стирает имя (ревью #652, 2-е).
+		{domain.PhoneAndroid, "", domain.PhoneAndroid},
+		{domain.PhoneIPhone, "", domain.PhoneIPhone},
 	} {
 		if got := domain.BetterPhoneName(c.prev, c.next); got != c.want {
 			t.Errorf("BetterPhoneName(%q, %q) = %q, want %q", c.prev, c.next, got, c.want)
