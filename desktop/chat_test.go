@@ -608,7 +608,7 @@ func TestChat_PhoneTurnBeginsFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 	began := ""
-	a, err := chatAnswerer(d)(t.Context(), "", "с телефона", func(id string) { began = id }, nil)
+	a, err := chatAnswerer(d)(t.Context(), "", "с телефона", nil, func(id string) { began = id }, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -631,12 +631,12 @@ func TestChat_PhoneTurnReportsContext(t *testing.T) {
 	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3", ContextWindow: 12000}, ""); err != nil {
 		t.Fatal(err)
 	}
-	a, err := chatAnswerer(d)(t.Context(), "", "с телефона", nil, nil)
+	a, err := chatAnswerer(d)(t.Context(), "", "с телефона", nil, nil, nil)
 	if err != nil || a.Context == nil || *a.Context != (mailrelay.ContextFill{Used: 6000, Window: 12000}) {
 		t.Fatalf("context %+v, %v", a.Context, err)
 	}
 	m.usage = chat.Usage{}
-	if a, err = chatAnswerer(d)(t.Context(), a.Chat, "еще", nil, nil); err != nil || a.Context != nil || a.Text == "" {
+	if a, err = chatAnswerer(d)(t.Context(), a.Chat, "еще", nil, nil, nil); err != nil || a.Context != nil || a.Text == "" {
 		t.Errorf("no provider count — no ring: %+v, %v", a, err)
 	}
 }

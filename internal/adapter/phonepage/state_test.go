@@ -1,10 +1,14 @@
 package phonepage_test
 
 import (
+	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/daniil/kb-engine/internal/usecase/mailrelay"
 )
 
 // stateCheck runs static/state.js in node: логика страницы без DOM и сети —
@@ -292,6 +296,12 @@ want(st21.chats.c.say?.text === "30 дней" && st21.chats.c.say.at > 0, "the a
 want(s.voiceLimit({ hear: "apple" }) < 60_000 && s.voiceLimit({ hear: "device" }) === 90_000, "Apple through the network takes under a minute");
 want(/без сети/.test(s.hearNote("device")) && /Apple/.test(s.hearNote("apple")) && /облак/.test(s.hearNote("cloud")) && s.hearNote("") === "", "who hears the voice, in words");
 
+// 22. «+» (#650): файл больше 10 МБ — отказ словами; пустой — тоже; куски —
+// подряд, без дыр и перекрытий, не больше предела куска.
+want(/10 МБ/.test(s.attachRefusal(s.MAX_ATTACH + 1)) && /пуст/.test(s.attachRefusal(0)) && s.attachRefusal(s.MAX_ATTACH) === "", "the 10 MB limit and an empty file are refused in words");
+const pb = s.pieceBounds(7, 3);
+want(JSON.stringify(pb) === JSON.stringify([[0, 3], [3, 6], [6, 7]]), "pieces cover the file in order");
+want(s.pieceBounds(6, 3).length === 2 && s.pieceBounds(1, 3).length === 1, "pieces: exact and small");
 // 23. Повторное ревью #660: свежесть «читать вслух» — по времени сообщения;
 // отказ голоса снимает признак заглушки, и диктовка потом не трогает «ждет»
 // текстового вопроса; тишина вопроса — код silent словами.
@@ -310,6 +320,15 @@ want(st23.chats.c.pending === true && st23.chats.c.heard === "диктовка",
 s.take(st23, { seq: 4, chat: "c", from: "desk" }, dk14(4, { kind: "error", text: "silent" }));
 want(/не расслышал/.test(st23.chats.c.msgs.at(-1).text), "silence of a voice question is told in words");
 
+// 25. Ревью #661: отказ по вопросу с файлом — словами про файл, а не про
+// голос; у «больше 10 МБ» свои слова.
+const st25 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { c: { title: "Чат", msgs: [{ who: "me", text: "📎 договор.pdf", attach: true }], pending: true, updated: 1 } } };
+s.take(st25, { seq: 1, chat: "c", from: "desk" }, dk14(1, { kind: "error", text: "mismatch" }));
+want(/файл/i.test(st25.chats.c.msgs.at(-1).text) && !/запис|голос/i.test(st25.chats.c.msgs.at(-1).text), "a file refusal speaks of the file");
+st25.chats.c.msgs.push({ who: "me", text: "📎 big.pdf", attach: true });
+s.take(st25, { seq: 2, chat: "c", from: "desk" }, dk14(2, { kind: "error", text: "toolarge" }));
+want(/10 МБ/.test(st25.chats.c.msgs.at(-1).text), "too large has words");
+
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 
@@ -324,5 +343,18 @@ func TestPhoneStateLogic(t *testing.T) {
 	out, err := exec.Command(node, "--input-type=module", "-e", stateCheck, "file://"+mod).CombinedOutput()
 	if got := strings.TrimSpace(string(out)); err != nil || got != "ok" {
 		t.Fatalf("node: %v\n%s", err, got)
+	}
+}
+
+// Предел файла на телефоне — тот же, что у окна (ревью #661): разойдутся —
+// телефон пропустит, окно ответит отказом.
+func TestPhoneAttachLimitMatchesTheRelay(t *testing.T) {
+	src, err := os.ReadFile("static/state.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("export const MAX_ATTACH = %d;", mailrelay.MaxAttachment)
+	if !strings.Contains(string(src), want) {
+		t.Errorf("state.js has no %q", want)
 	}
 }

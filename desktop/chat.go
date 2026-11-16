@@ -95,6 +95,8 @@ type askReq struct {
 	Sources  []string `json:"sources"`
 	// Portrait — как портрет идет в чат, когда не помещается: "", full, relevant.
 	Portrait string `json:"portrait"`
+	// docs — прочитанное приложенное телефоном (#650); со страницы не приходит.
+	docs []chat.Doc
 }
 
 type chatMessage struct {
@@ -152,6 +154,9 @@ type chatDesk struct {
 	step func(chat.Use)
 	// attach reads one attached document by ref (attach.go); nil — только в окне.
 	attach func(ctx context.Context, ref string) (chat.Doc, error)
+	// ext reads files from the phone (#650): PDF и картинки — помощником, без
+	// него — только текст и docx.
+	ext extraction
 	// versions — итерации документов для инструментов versions и open_version
 	// режима «модель ищет»; nil — инструментов нет (тесты без вкладки «Артефакты»).
 	versions *versionsDesk
@@ -370,6 +375,7 @@ func (d *chatDesk) ask(parent context.Context, r askReq, out askOut) (chatRecord
 	if err != nil {
 		return chatRecord{}, err
 	}
+	attached = append(attached, r.docs...)
 	linked, notes := d.readQuestionLinks(ctx, auto, maxAttached-len(attached))
 	attached = append(attached, linked...)
 	read := make([]string, 0, len(attached))

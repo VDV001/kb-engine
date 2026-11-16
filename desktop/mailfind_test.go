@@ -115,7 +115,7 @@ func TestAnswerSources(t *testing.T) {
 // «Документы», «Интернет · … · вне Ваших источников», имя подключения.
 func TestWorkerAskerSteps(t *testing.T) {
 	w := &mailWorker{changed: func(string) {}}
-	w.answer = func(_ context.Context, _, _ string, _ func(string), step func(chat.Use)) (mailrelay.Answer, error) {
+	w.answer = func(_ context.Context, _, _ string, _ []mailrelay.File, _ func(string), step func(chat.Use)) (mailrelay.Answer, error) {
 		if step != nil {
 			step(chat.Use{Kind: chat.UseConnection, ID: "ozon-1", Name: "Ozon · Пример", What: "заказы"})
 			step(chat.Use{Kind: chat.UseDocs, What: "поставки"})

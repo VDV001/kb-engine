@@ -62,6 +62,10 @@ var (
 	blockBreak  = map[string]bool{"p": true, "div": true, "br": true, "li": true, "tr": true, "h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true, "section": true, "article": true, "table": true, "pre": true, "blockquote": true}
 )
 
+// KindOfMIME names the file kind of a MIME type (pdf, docx, png, jpg, heic,
+// tiff); "" — прочее, читается как текст.
+func KindOfMIME(mime string) string { return fileByMIME[mime] }
+
 // ExportURL turns a link to a Google document into its plain export:
 // страница редактора — скрипты, а не документ. Остальные ссылки — как есть.
 func ExportURL(link string) string {

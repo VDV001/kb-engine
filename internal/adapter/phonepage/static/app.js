@@ -7,8 +7,8 @@
 //
 // Service worker (sw.js) — только push: «компьютер ответил», когда страница
 // закрыта. Работы без сети нет — страница всегда свежая с сервера.
-import { importKey, seal, open, sealFile } from "./crypto.js";
-import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted, deciding, hideFact, deskChat, choiceView , wavOf, voiceLimit, hearNote } from "./state.js";
+import { importKey, seal, open, sealFile, MAX_FILE_PLAIN } from "./crypto.js";
+import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted, deciding, hideFact, deskChat, choiceView , wavOf, voiceLimit, hearNote, attachRefusal, pieceBounds } from "./state.js";
 
 const POLL_MS = 10_000; // решение 15.11: короткий опрос раз в 10 с
 const UNAUTH_MS = 60_000; // 401: реже, но не сдаемся — сервер мог ошибиться ненадолго
@@ -500,8 +500,33 @@ async function send(chat, payload, mark) {
 }
 
 async function ask(text) {
-  const c = st.chats[ui.chat];
-  await send(ui.chat, { kind: "question", text }, (counter) => asked(c, text, counter, Date.now()));
+  const chat = ui.chat, c = st.chats[chat], p = { kind: "question", text };
+  const att = ui.attach?.chat === chat ? ui.attach : null; // файл — того чата, где его приложили (ревью #661)
+  if (att) { // «+» (#650): файл — кусками в файлах ящика, вопрос называет их по порядку
+    ui.attach = null;
+    const pieces = [];
+    try {
+      const data = new Uint8Array(await att.file.arrayBuffer());
+      const bounds = pieceBounds(data.length, MAX_FILE_PLAIN);
+      for (const [i, [a, b]] of bounds.entries()) {
+        note("Файл уходит: кусок " + (i + 1) + " из " + bounds.length + "…", false);
+        pieces.push(await putPiece(await sealFile(st.pair, data.subarray(a, b))));
+      }
+      p.attach = { name: att.file.name, type: att.file.type, size: data.length, pieces };
+    } catch (err) {
+      // Загруженное без вопроса никому не нужно — убрать; файл и текст остаются
+      // для повтора, вопрос не ушел (ревью #661).
+      for (const f of pieces) api(API + "/files/" + f.id, { method: "DELETE" }).catch(() => {});
+      ui.attach = att;
+      err.kept = true;
+      throw err;
+    }
+  }
+  const shown = att ? "📎 " + att.file.name + (text ? "\n" + text : "") : text;
+  await send(chat, p, (counter) => {
+    asked(c, shown, counter, Date.now());
+    if (att) c.msgs[c.msgs.length - 1].attach = true; // отказ по нему — словами про файл
+  });
 }
 
 // flush posts the outbox in order; неотправленное остается до следующего опроса.
@@ -692,10 +717,9 @@ async function startVoice(mode) {
   proc.connect(ac.destination);
 }
 
-// sendVoice puts the recording into the mailbox files and names it in chat:
-// три попытки — запись 90 с не пропадает от одного сбоя сети.
-async function sendVoice(chat, mode, wav) {
-  const sealed = await sealFile(st.pair, wav);
+// putPiece puts a sealed piece into the mailbox files and names it: три
+// попытки — запись и файл не пропадают от одного сбоя сети.
+async function putPiece(sealed) {
   let r = null;
   for (const wait of [0, 2000, 5000]) {
     if (wait) await new Promise((ok) => setTimeout(ok, wait));
@@ -704,11 +728,18 @@ async function sendVoice(chat, mode, wav) {
   }
   if (!r) throw new Error("нет связи с kb-сервером");
   if (r.status === 401) throw unauth();
-  if (r.status === 501 || r.status === 404 || r.status === 400 || r.status === 415) throw new Error("kb-сервер старше голоса с телефона");
-  if (r.status === 429) throw new Error("много записей подряд — подождите немного");
+  if (r.status === 501 || r.status === 404 || r.status === 400 || r.status === 415) throw new Error("kb-сервер старше файлов с телефона");
+  if (r.status === 429) throw new Error("много файлов подряд — подождите немного");
+  if (r.status === 413) throw new Error("кусок больше предела kb-сервера");
   if (!r.ok) throw new Error("kb-сервер ответил " + r.status);
   const { id } = await r.json();
-  const file = { id, sha256: hexOf(new Uint8Array(await crypto.subtle.digest("SHA-256", sealed))), size: sealed.length };
+  return { id, sha256: hexOf(new Uint8Array(await crypto.subtle.digest("SHA-256", sealed))), size: sealed.length };
+}
+
+// sendVoice puts the recording into the mailbox files and names it in chat:
+// три попытки — запись 90 с не пропадает от одного сбоя сети.
+async function sendVoice(chat, mode, wav) {
+  const file = await putPiece(await sealFile(st.pair, wav));
   const c = st.chats[chat];
   await send(chat, { kind: "voice", text: mode, file }, (counter) => {
     if (!c) return;
@@ -729,6 +760,9 @@ function localRussianVoice() {
 
 // paintVoice shows the voice state and takes what the window heard.
 function paintVoice(c) {
+  const att = ui.attach?.chat === ui.chat ? ui.attach : null;
+  $("att").hidden = !att;
+  if (att) $("att").textContent = "📎 " + att.file.name + " · убрать";
   const hear = st.desk?.hear || "";
   $("mic").hidden = $("talk").hidden = !hear; // окно не слышит — кнопок нет
   $("mic").setAttribute("aria-pressed", String(rec?.mode === "dictate"));
@@ -776,6 +810,19 @@ async function sayAloud(text) {
 $("mic").addEventListener("click", () => { askDesk(); startVoice("dictate"); }); // кто слышит — освежить
 $("talk").addEventListener("click", () => { askDesk(); startVoice("ask"); });
 if ("speechSynthesis" in window) speechSynthesis.getVoices(); // Chrome грузит голоса по первому вопросу
+// «+» (#650): одно поле файла — iPhone и Android сами предлагают камеру,
+// галерею и файлы. Файл живет в памяти до отправки, в хранилище не пишется.
+$("plus").addEventListener("click", () => $("file").click());
+$("file").addEventListener("change", () => {
+  const f = $("file").files[0];
+  $("file").value = "";
+  if (!f) return;
+  const why = attachRefusal(f.size);
+  if (why) { note(why); return; }
+  ui.attach = { file: f, chat: ui.chat };
+  show();
+});
+$("att").addEventListener("click", () => { ui.attach = null; show(); }); // нажатие на плашку — убрать файл
 
 $("q").addEventListener("input", () => { // поле растет с текстом до 40% экрана
   $("q").style.height = "auto";
@@ -815,7 +862,7 @@ $("ctx").addEventListener("click", () => { // нажатие на круг — �
 });
 $("ask").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const text = $("q").value.trim();
+  const text = $("q").value.trim() || (ui.attach?.chat === ui.chat ? "Что в этом файле?" : "");
   if (!text || !ui.chat) return;
   const c = st.chats[ui.chat];
   if (!c.msgs.length) c.title = text.slice(0, 60);
@@ -826,7 +873,12 @@ $("ask").addEventListener("submit", async (e) => {
     await ask(text);
     note("");
   } catch (err) {
-    note(err.unauth ? "kb-сервер не пускает телефон: вопрос сохранен и уйдет, когда пустит." : "Пока не отправлено: " + err.message + ". Уйдет со следующим опросом.");
+    if (err.kept) { // файл не ушел — и вопрос не ушел: вернуть текст, сказать правду
+      if ($("q").value === "" && text !== "Что в этом файле?") $("q").value = text;
+      note("Файл не отправлен: " + err.message + ". Вопрос и файл остались — отправьте еще раз.");
+    } else {
+      note(err.unauth ? "kb-сервер не пускает телефон: вопрос сохранен и уйдет, когда пустит." : "Пока не отправлено: " + err.message + ". Уйдет со следующим опросом.");
+    }
   }
   $("send").disabled = false;
   show(true);

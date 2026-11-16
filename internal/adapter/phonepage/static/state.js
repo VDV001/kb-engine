@@ -63,7 +63,8 @@ export function take(st, m, o) {
   if (!answer && !(m.from === "phone" && p.kind === "question")) return false; // чат не заводится
   const c = (st.chats[m.chat] ||= { title: "Чат", msgs: [], updated: 0 });
   if (answer) {
-    const text = p.kind === "error" ? VOICE_WORDS[p.text] || p.text : p.text;
+    const withFile = [...c.msgs].reverse().find((x) => x.who === "me")?.attach;
+    const text = p.kind === "error" ? (withFile && ATTACH_WORDS[p.text]) || VOICE_WORDS[p.text] || p.text : p.text;
     c.msgs.push({ who: p.kind === "error" ? "error" : "desk", text, at, sources: p.sources || [] });
     c.pending = false;
     delete c.step;
@@ -352,6 +353,14 @@ export function hearNote(hear) {
   return HEAR_NOTE[hear] || "";
 }
 
+// ATTACH_WORDS — те же коды по вопросу с файлом (ревью #661): о файле, а не о голосе.
+const ATTACH_WORDS = {
+  unsupported: "Окно DVK на компьютере старше файлов с телефона — обновите его.",
+  mismatch: "Файл подменили по дороге, компьютер его не взял — приложите еще раз.",
+  gone: "Файл не дошел до компьютера — приложите еще раз.",
+  toolarge: "Файл больше 10 МБ — компьютер его не взял.",
+};
+
 // VOICE_WORDS — коды отказа голоса (mailrelay.Voice*) словами человеку.
 const VOICE_WORDS = {
   unsupported: "Окно DVK на компьютере старше голоса с телефона — обновите его.",
@@ -360,3 +369,20 @@ const VOICE_WORDS = {
   unheard: "Компьютер не смог распознать запись — проверьте «Слушает» в настройках окна.",
   silent: "Компьютер не расслышал вопрос — скажите еще раз.",
 };
+
+// MAX_ATTACH — предел файла с телефона (#650, mailrelay.MaxAttachment).
+export const MAX_ATTACH = 10485760; // 10 МБ; сверено тестом с Go
+
+// attachRefusal says why a file can't go; "" — может.
+export function attachRefusal(size) {
+  if (!size) return "Файл пустой — прикладывать нечего.";
+  if (size > MAX_ATTACH) return "Файл больше 10 МБ — так много телефон не передаст. Сожмите фото или приложите часть.";
+  return "";
+}
+
+// pieceBounds cuts size bytes into pieces of at most max: [начало, конец).
+export function pieceBounds(size, max) {
+  const out = [];
+  for (let at = 0; at < size; at += max) out.push([at, Math.min(size, at + max)]);
+  return out;
+}

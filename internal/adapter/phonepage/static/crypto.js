@@ -85,6 +85,8 @@ export async function open(k, chat, from, sealed) {
 const FILE_HEADER = 17;
 const FILE_OVERHEAD = FILE_HEADER + 16;
 const MAX_FILE = 3 << 20; // domain.MaxMailFile: предел запроса Serverless Container
+// MAX_FILE_PLAIN — самый длинный кусок файла до шифрования (#650).
+export const MAX_FILE_PLAIN = MAX_FILE - 33;
 
 // sealFile encrypts one file piece.
 export async function sealFile(k, plain) {

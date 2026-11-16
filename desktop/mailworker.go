@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	goruntime "runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -186,7 +187,8 @@ func (w *mailWorker) tickServer(ctx context.Context, id string, notes []mailrela
 
 		FindTimeout: phoneFindTimeout,
 	}
-	if w.hear != nil { // без распознавания — отказ кодом, не интерфейс с nil внутри
+	relay.Open = mailOpener{c.key} // файлы с телефона (#650)
+	if w.hear != nil {             // без распознавания — отказ кодом, не интерфейс с nil внутри
 		relay.Hear = phoneHearer{key: c.key, hear: w.hear}
 	}
 	return relay.Tick(ctx)
@@ -342,6 +344,11 @@ func (f mailVoiceFiles) Delete(ctx context.Context, id string) error {
 	return f.c.MailFileDelete(ctx, id)
 }
 
+// mailOpener opens the phone's file pieces with the chat key (#650).
+type mailOpener struct{ key mailcrypt.Key }
+
+func (o mailOpener) OpenFile(sealed []byte) ([]byte, error) { return mailcrypt.OpenFile(o.key, sealed) }
+
 // phoneHearer opens the phone's recording with the chat key and hears it.
 type phoneHearer struct {
 	key  mailcrypt.Key
@@ -420,7 +427,8 @@ func (m phoneMemory) Decide(ctx context.Context, id string, yes bool, text strin
 // answerFn runs a model turn and tells where the answer came from; step — ход
 // модели по мере ответа (nil — без хода).
 // began — чат окна, в котором пойдет ход, известен (до ответа модели, #646).
-type answerFn func(ctx context.Context, chat, question string, began func(id string), step func(chat.Use)) (mailrelay.Answer, error)
+// files — приложенное телефоном (#650).
+type answerFn func(ctx context.Context, chat, question string, files []mailrelay.File, began func(id string), step func(chat.Use)) (mailrelay.Answer, error)
 
 // phoneTurn is what the window page hears about a phone's question (#646):
 // начало хода, шаг или конец; Chat — чат окна.
@@ -441,6 +449,14 @@ func (a workerAsker) Ask(ctx context.Context, chat, question string) (string, st
 // AskStepped is AskSourced with the turn's steps for the phone (#622); step
 // nil — без хода.
 func (a workerAsker) AskStepped(ctx context.Context, id, question string, step func(mailrelay.Step)) (mailrelay.Answer, error) {
+	return a.AskAttached(ctx, id, question, nil, step)
+}
+
+// AskAttached is AskStepped with the phone's files (#650).
+func (a workerAsker) AskAttached(ctx context.Context, id, question string, files []mailrelay.File, step func(mailrelay.Step)) (mailrelay.Answer, error) {
+	if a.w.answer == nil && len(files) > 0 { // файл не выбрасывается молча (ревью #661)
+		return mailrelay.Answer{}, errors.New("окно собрано без вложений с телефона")
+	}
 	if a.w.answer == nil {
 		c, text, err := a.Ask(ctx, id, question)
 		return mailrelay.Answer{Chat: c, Text: text}, err
@@ -465,7 +481,7 @@ func (a workerAsker) AskStepped(ctx context.Context, id, question string, step f
 			step(mailrelay.Step{Text: stepLabel(u)})
 		}
 	}
-	ans, err := a.w.answer(ctx, id, question, began, each)
+	ans, err := a.w.answer(ctx, id, question, files, began, each)
 	if err == nil {
 		a.w.changed(ans.Chat)
 	}
@@ -505,18 +521,34 @@ func stepLabel(u chat.Use) string {
 func chatAsker(d *chatDesk) askFn {
 	answer := chatAnswerer(d)
 	return func(ctx context.Context, chat, question string) (string, string, error) {
-		a, err := answer(ctx, chat, question, nil, nil)
+		a, err := answer(ctx, chat, question, nil, nil, nil)
 		return a.Chat, a.Text, err
 	}
 }
 
 // chatAnswerer is chatAsker with the «взято» labels of the answer (answerSources).
 func chatAnswerer(d *chatDesk) answerFn {
-	return func(ctx context.Context, chat, question string, began func(string), step func(chat.Use)) (mailrelay.Answer, error) {
+	return func(ctx context.Context, chat, question string, files []mailrelay.File, began func(string), step func(chat.Use)) (mailrelay.Answer, error) {
 		quiet := askOut{worker: true, step: step, began: began}
-		rec, err := d.ask(ctx, askReq{ID: chat, Question: question}, quiet)
+		if len(files) > 0 { // в чате окна вопрос назван с файлом (ревью #661)
+			names := make([]string, 0, len(files))
+			for _, f := range files {
+				names = append(names, "📎 "+f.Name)
+			}
+			question = strings.Join(names, "\n") + "\n" + question
+		}
+		req := askReq{ID: chat, Question: question}
+		for _, f := range files {
+			doc, err := d.phoneDoc(ctx, f)
+			if err != nil {
+				return mailrelay.Answer{}, err
+			}
+			req.docs = append(req.docs, doc)
+		}
+		rec, err := d.ask(ctx, req, quiet)
 		if chat != "" && errors.Is(err, fs.ErrNotExist) {
-			rec, err = d.ask(ctx, askReq{Question: question}, quiet)
+			req.ID = ""
+			rec, err = d.ask(ctx, req, quiet)
 		}
 		if err != nil {
 			return mailrelay.Answer{}, err
