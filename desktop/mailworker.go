@@ -43,17 +43,18 @@ type askFn func(ctx context.Context, chat, question string) (string, string, err
 type mailWorker struct {
 	settings *folderSettings
 	ask      askFn
-	answer   answerFn           // ход модели с метками «взято»; nil — ask без меток
-	find     mailrelay.Finder   // поиск с телефона; nil — отказ словами
-	dir      string             // где лежат mail-<id>.json
-	changed  func(chat string)  // ответ записан в чат окна: странице перечитать список и чат
-	turn     func(phoneTurn)    // ход по вопросу с телефона — странице (#646)
-	memory   mailrelay.Memory   // решения телефона по «Запомнить о Вас?» (#647); nil — отказ словами
-	desk     mailrelay.DeskInfo // модель и источники окна для телефона (#647); nil — отказ словами
-	hear     transcriber        // голос телефона (#648): запись → текст; nil — отказ кодом
-	listen   *dictation         // помощник kb-listen для Apple Speech (#648)
-	apple    string             // что сказал kb-listen --check: mailrelay.Hear* или ""
-	appleAt  time.Time          // когда спрашивали: не чаще раза в 5 минут
+	answer   answerFn             // ход модели с метками «взято»; nil — ask без меток
+	find     mailrelay.Finder     // поиск с телефона; nil — отказ словами
+	dir      string               // где лежат mail-<id>.json
+	changed  func(chat string)    // ответ записан в чат окна: странице перечитать список и чат
+	turn     func(phoneTurn)      // ход по вопросу с телефона — странице (#646)
+	memory   mailrelay.Memory     // решения телефона по «Запомнить о Вас?» (#647); nil — отказ словами
+	desk     mailrelay.DeskInfo   // модель и источники окна для телефона (#647); nil — отказ словами
+	hear     transcriber          // голос телефона (#648): запись → текст; nil — отказ кодом
+	chats    mailrelay.ChatEditor // переименование и удаление чатов окна с телефона (#649)
+	listen   *dictation           // помощник kb-listen для Apple Speech (#648)
+	apple    string               // что сказал kb-listen --check: mailrelay.Hear* или ""
+	appleAt  time.Time            // когда спрашивали: не чаще раза в 5 минут
 
 	notesMu sync.Mutex
 	notes   []mailrelay.Note // «Запомнить о Вас?» для телефонов: пишет разбор ответа, забирает круг
@@ -187,7 +188,10 @@ func (w *mailWorker) tickServer(ctx context.Context, id string, notes []mailrela
 		FindTimeout: phoneFindTimeout,
 	}
 	relay.Open = mailOpener{c.key} // файлы с телефона (#650)
-	if w.hear != nil {             // без распознавания — отказ кодом, не интерфейс с nil внутри
+	if w.chats != nil {
+		relay.Chats = w.chats
+	}
+	if w.hear != nil { // без распознавания — отказ кодом, не интерфейс с nil внутри
 		relay.Hear = phoneHearer{key: c.key, hear: w.hear}
 	}
 	return relay.Tick(ctx)
@@ -201,6 +205,16 @@ func (w *mailWorker) useChat(d *chatDesk) {
 	w.find = newPhoneFinder(d.find, d.openFound) // ставит useSources в main до старта окна
 	w.quiet = func() bool { return d.config().MemoryQuiet }
 	w.desk = phoneDesk{settings: d.settings, hear: w.hearLabel}
+	// Один чат в двух местах (#649): правка с телефона — в чат окна, правка в
+	// окне — заметкой телефону.
+	w.chats = phoneChats{d: d, changed: func(id string) { w.changed(id) }}
+	prev := d.edited
+	d.edited = func(id, title string, deleted bool) {
+		if prev != nil {
+			prev(id, title, deleted)
+		}
+		w.chatEdited(id, title, deleted)
+	}
 }
 
 // phoneDesk tells the phone the window's state (#647): модель настроек — для
@@ -341,6 +355,40 @@ func (f mailVoiceFiles) Get(ctx context.Context, id string) ([]byte, error) {
 
 func (f mailVoiceFiles) Delete(ctx context.Context, id string) error {
 	return f.c.MailFileDelete(ctx, id)
+}
+
+// chatEdited queues the window's rename or delete for the phones (#649).
+func (w *mailWorker) chatEdited(id, title string, deleted bool) {
+	p := mailrelay.Payload{Kind: mailrelay.KindRename, Text: title}
+	if deleted {
+		p = mailrelay.Payload{Kind: mailrelay.KindDelete, Text: "chat"}
+	}
+	w.notesMu.Lock()
+	defer w.notesMu.Unlock()
+	w.notes = append(w.notes, mailrelay.Note{Chat: id, Payload: p})
+}
+
+// phoneChats renames and deletes the window's chats for the relay (#649);
+// changed — странице перечитать список.
+type phoneChats struct {
+	d       *chatDesk
+	changed func(id string)
+}
+
+func (c phoneChats) RenameChat(_ context.Context, id, title string) error {
+	if err := c.d.RenameChat(id, title); err != nil {
+		return err
+	}
+	c.changed(id)
+	return nil
+}
+
+func (c phoneChats) DeleteChat(_ context.Context, id string) error {
+	if err := c.d.Delete(id); err != nil {
+		return err
+	}
+	c.changed(id)
+	return nil
 }
 
 // mailOpener opens the phone's file pieces with the chat key (#650).

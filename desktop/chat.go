@@ -535,7 +535,13 @@ func (d *chatDesk) Delete(id string) error {
 	}
 	_ = d.DropDraft(id) // черновик не переживает свой чат
 	d.dropChatProposals(id)
-	return os.Remove(p)
+	if err := os.Remove(p); err != nil {
+		return err
+	}
+	if d.edited != nil {
+		d.edited(id, "", true) // и телефону (#649)
+	}
+	return nil
 }
 
 var chatIDRe = regexp.MustCompile(`^[0-9a-f]{16}$`)
