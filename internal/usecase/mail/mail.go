@@ -4,6 +4,7 @@ package mail
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
@@ -35,11 +36,36 @@ type Phones interface {
 	Revoke(ctx context.Context, id domain.UserID, device string) error
 }
 
+// PhonePush is a phone's push subscription.
+type PhonePush struct {
+	Device string
+	Sub    domain.PushSubscription
+}
+
+// Subscriptions keeps the phones' push subscriptions.
+type Subscriptions interface {
+	SetPush(ctx context.Context, id domain.UserID, device string, sub domain.PushSubscription) error
+	ClearPush(ctx context.Context, id domain.UserID, device string) error
+	Pushes(ctx context.Context, id domain.UserID) ([]PhonePush, error)
+}
+
+// Pusher sends one push message; domain.ErrPushGone — подписки больше нет.
+type Pusher interface {
+	Send(ctx context.Context, sub domain.PushSubscription, payload []byte) error
+}
+
+// NotifyAnswer is the push payload: вид события, без текста. Подпись рисует
+// телефон, сервер переписку не видит и в уведомление ее не кладет.
+const NotifyAnswer = `{"kind":"answer"}`
+
 // Service is the mailbox of the server.
 type Service struct {
 	Box    Box
 	Phones Phones
+	Subs   Subscriptions
+	Push   Pusher
 	Now    func() time.Time
+	Logf   func(string, ...any)
 }
 
 // Post writes a message of side into chat.
@@ -78,4 +104,19 @@ func (s Service) RevokePhone(ctx context.Context, id domain.UserID, side domain.
 		return domain.ErrMailDeskOnly
 	}
 	return s.Phones.Revoke(ctx, id, device)
+}
+
+// SubscribePush stores the push subscription of the calling phone.
+func (s Service) SubscribePush(ctx context.Context, id domain.UserID, side domain.MailSide, device, endpoint string, p256dh, auth []byte) error {
+	return errors.ErrUnsupported
+}
+
+// UnsubscribePush removes the calling phone's subscription.
+func (s Service) UnsubscribePush(ctx context.Context, id domain.UserID, side domain.MailSide, device string) error {
+	return errors.ErrUnsupported
+}
+
+// Notify tells the phones the desk answered and returns how many got it.
+func (s Service) Notify(ctx context.Context, id domain.UserID, side domain.MailSide) (int, error) {
+	return 0, errors.ErrUnsupported
 }

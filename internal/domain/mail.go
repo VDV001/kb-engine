@@ -22,6 +22,10 @@ var (
 	ErrMailDeskOnly = errors.New("mail: only the desk manages phones")
 	// ErrMailTooManyPhones — у человека уже предельное число телефонов.
 	ErrMailTooManyPhones = errors.New("mail: too many phones")
+	// ErrMailPhoneOnly — на push подписывается сам телефон: подписка его.
+	ErrMailPhoneOnly = errors.New("mail: only a phone subscribes to push")
+	// ErrPushGone — сервис push забыл подписку (404, 410): ее пора удалить.
+	ErrPushGone = errors.New("push subscription is gone")
 )
 
 // mailReserved — имена, занятые маршрутами ящика (/api/mail/devices).
