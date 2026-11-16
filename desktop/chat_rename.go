@@ -18,7 +18,7 @@ func (d *chatDesk) RenameChat(id, name string) error {
 		return err
 	}
 	rec.Title = name
-	if err := d.save(rec); err != nil {
+	if err := d.saveLive(rec, true); err != nil {
 		return err
 	}
 	if d.edited != nil {

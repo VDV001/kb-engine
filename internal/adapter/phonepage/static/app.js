@@ -8,7 +8,7 @@
 // Service worker (sw.js) — только push: «компьютер ответил», когда страница
 // закрыта. Работы без сети нет — страница всегда свежая с сервера.
 import { importKey, seal, open, sealFile, MAX_FILE_PLAIN } from "./crypto.js";
-import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted, deciding, hideFact, deskChat, choiceView , wavOf, voiceLimit, hearNote, attachRefusal, pieceBounds } from "./state.js";
+import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted, deciding, hideFact, deskChat, choiceView , wavOf, voiceLimit, hearNote, attachRefusal, pieceBounds, forget } from "./state.js";
 
 const POLL_MS = 10_000; // решение 15.11: короткий опрос раз в 10 с
 const UNAUTH_MS = 60_000; // 401: реже, но не сдаемся — сервер мог ошибиться ненадолго
@@ -536,15 +536,16 @@ async function ask(text) {
 const flush = single(async () => {
   while (st?.outbox.length) {
     const o = st.outbox[0];
+    if (o.drop) { st.outbox.shift(); continue; } // удаленного чата (forget): не отправлять
     const r = await api(API + "/" + o.chat, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sealed: o.sealed }) });
     if (r.status === 401) throw unauth();
     if (r.status === 400 || r.status === 413) { // отказ насовсем: не затыкать исходящие
-      st.outbox.shift();
+      if (st.outbox[0] === o) st.outbox.shift();
       note("Сервер не принял запрос: " + (await r.text()));
       continue;
     }
     if (!r.ok) throw new Error("kb-сервер ответил " + r.status);
-    st.outbox.shift();
+    if (st.outbox[0] === o) st.outbox.shift(); // снимать только отправленное
     posted(st, o);
     await persist();
     if (ui.view === "chat" && ui.chat === o.chat) show(); // «Ждет отправки» → «Отправлено» сразу
@@ -637,7 +638,7 @@ document.querySelector(".tabs").addEventListener("click", (e) => {
 // Один чат в двух местах (#649): правка — сразу на телефоне и уходит в окно.
 $("chat-rename").addEventListener("click", async () => {
   const id = ui.chat, c = st.chats[id];
-  const name = c && prompt("Новое название чата — и на телефоне, и в окне DVK на компьютере", c.title)?.trim().slice(0, 120);
+  const name = c && Array.from(prompt("Новое название чата — и на телефоне, и в окне DVK на компьютере", c.title)?.trim() || "").slice(0, 60).join(""); // 60 — как в окне; по знакам, не по половинкам эмодзи
   if (!name) return;
   c.title = name;
   await persist();
@@ -646,8 +647,8 @@ $("chat-rename").addEventListener("click", async () => {
 });
 $("chat-delete").addEventListener("click", async () => {
   const id = ui.chat, c = st.chats[id];
-  if (!c || !confirm("Удалить чат «" + c.title + "»? Он исчезнет и на телефоне, и в окне DVK на компьютере. Вернуть будет нельзя.")) return;
-  delete st.chats[id];
+  if (!c || !confirm("Удалить чат «" + c.title + "»? Он исчезнет и на телефоне, и в окне DVK на компьютере. В окне его можно вернуть из корзины в течение недели.")) return;
+  forget(st, id);
   ui.view = "";
   await persist();
   show(false);

@@ -830,6 +830,7 @@ body:not(.no-fin-src) .fin-src-name { background: var(--sp-cool); -webkit-backgr
 .chat-rename .chat-find { width: 100%; margin: 0; box-sizing: border-box; }
 .chat-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 7px 10px; font-size: 12px; color: var(--z-ink-2); }
 .chat-confirm span { flex-basis: 100%; }
+.chat-trash { padding: 7px 10px; font-size: 12px; color: var(--z-muted); } /* корзина чатов (ревью #662) */
 .chat-model { display: grid; gap: 8px; padding: 6px 4px; }
 .chat-model[hidden] { display: none; }
 .chat-model label { display: grid; gap: 4px; font-size: 11px; color: var(--z-muted); }
