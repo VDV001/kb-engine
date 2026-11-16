@@ -1775,6 +1775,9 @@ body:not(.no-mk-load) .sh-progress-bar span::after { content: ""; position: abso
 .mk-check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--z-ink-2); cursor: pointer; }
 .mk-check input { accent-color: color-mix(in srgb, var(--mk2) 70%, var(--z-ink)); width: 15px; height: 15px; }
 .mk-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 360px); gap: 14px; align-items: start; }
+/* Таблица — на высоту строки (карточка справа длинная), но не ниже 62vh и не
+   выше окна; в высоту строки сама не вкладывается — contain (отзыв 17.11). */
+.mk-grid > .mk-scroll { align-self: stretch; contain: size; min-height: 62vh; max-height: calc(100vh - 120px); }
 .mk-scroll { min-height: 0; max-height: 62vh; overflow: auto; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg); padding: 0 10px; }
 .mk-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .mk-table th { position: sticky; top: 0; z-index: 1; background: var(--z-bg); text-align: left; font-weight: 400; color: var(--z-muted); padding: 0; border-bottom: 1px solid var(--z-rule); }
