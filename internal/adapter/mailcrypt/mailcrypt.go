@@ -259,10 +259,40 @@ const (
 
 // SealFile encrypts one file piece.
 func SealFile(k Key, plain []byte) ([]byte, error) {
-	return append([]byte(nil), plain...), nil
+	switch {
+	case k.s == nil:
+		return nil, fmt.Errorf("%w: no key", ErrFormat)
+	case len(plain) == 0:
+		return nil, domain.ErrMailEmpty
+	case len(plain) > MaxFilePlain:
+		return nil, fmt.Errorf("%w: %d bytes of file, limit %d", domain.ErrMailTooLarge, len(plain), MaxFilePlain)
+	}
+	st := k.s()
+	out := make([]byte, fileHeaderSize, FileOverhead+len(plain))
+	out[0] = version
+	copy(out[1:5], st.id[:])
+	_, _ = rand.Read(out[5:fileHeaderSize])
+	return st.aead.Seal(out, out[5:fileHeaderSize], plain, fileAAD(out)), nil
 }
 
 // OpenFile checks and decrypts one file piece.
 func OpenFile(k Key, sealed []byte) ([]byte, error) {
-	return sealed, nil
+	switch {
+	case len(sealed) < FileOverhead || sealed[0] != version:
+		return nil, fmt.Errorf("%w: sealed file", ErrFormat)
+	case k.s == nil:
+		return nil, fmt.Errorf("%w: no key", ErrFormat)
+	case KeyID(sealed[1:5]) != k.s().id:
+		return nil, ErrWrongKey
+	}
+	header := sealed[:fileHeaderSize]
+	plain, err := k.s().aead.Open(nil, header[5:], sealed[fileHeaderSize:], fileAAD(header))
+	if err != nil {
+		return nil, ErrNotAuthentic
+	}
+	return plain, nil
+}
+
+func fileAAD(header []byte) []byte {
+	return append([]byte("kbmail file\x00"), header[:fileHeaderSize]...)
 }

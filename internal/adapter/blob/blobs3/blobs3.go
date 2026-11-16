@@ -396,6 +396,18 @@ func (m *MetadataToken) fetch(ctx context.Context) (string, time.Duration, error
 }
 
 // Delete removes key; ключа нет — не ошибка (S3 отвечает 204 и на него).
-func (s *Store) Delete(_ context.Context, key string) error {
-	return nil
+func (s *Store) Delete(ctx context.Context, key string) error {
+	if err := s.checkKey(key); err != nil {
+		return err
+	}
+	resp, err := s.do(ctx, http.MethodDelete, key, nil, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	switch resp.StatusCode {
+	case http.StatusNoContent, http.StatusOK, http.StatusNotFound:
+		return nil
+	}
+	return statusError("delete", key, resp)
 }

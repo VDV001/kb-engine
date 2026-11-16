@@ -93,8 +93,9 @@ func BetterPhoneName(prev, next string) string {
 	return next
 }
 
-// mailReserved — имена, занятые маршрутами ящика (/api/mail/devices, /push, /notify).
-var mailReserved = map[string]bool{"devices": true, "push": true, "notify": true}
+// mailReserved — имена, занятые маршрутами ящика (/api/mail/devices, /push,
+// /notify, /files).
+var mailReserved = map[string]bool{"devices": true, "push": true, "notify": true, "files": true}
 
 // MaxMailSealed bounds one sealed message: ход задачи и итог — текст, вложения
 // в ящик не кладутся.
@@ -193,5 +194,8 @@ const MaxMailFile = 3 << 20
 // ValidateMailFileID checks a file id: 32 строчные шестнадцатеричные цифры —
 // столько выдает сервер; иное в ключ хранилища не попадет.
 func ValidateMailFileID(id string) error {
+	if len(id) != 32 || strings.ContainsFunc(id, func(r rune) bool { return (r < '0' || r > '9') && (r < 'a' || r > 'f') }) {
+		return fmt.Errorf("%w: %q", ErrMailFile, id)
+	}
 	return nil
 }
