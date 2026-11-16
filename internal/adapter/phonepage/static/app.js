@@ -309,18 +309,20 @@ function chips(sources) {
 
 // paintCtx draws the context ring of the open chat (#647); числа — только из ctxView.
 function paintCtx(c) {
-  const v = ctxView(c?.context), b = $("ctx");
+  const v = ctxView(c?.context, !!c?.msgs.some((m) => m.who === "desk")), b = $("ctx");
   b.hidden = !v;
   if (!v) return;
   const R = 8, C = 2 * Math.PI * R;
   b.dataset.tone = v.tone;
-  b.setAttribute("aria-label", v.text === "?" ? "Контекст чата: размер окна модели не указан" : "Контекст чата заполнен на " + v.text);
+  b.setAttribute("aria-label", v.unknown ? "Контекст чата: счета провайдера пока нет" : v.text === "?" ? "Контекст чата: размер окна модели не указан" : "Контекст чата заполнен на " + v.text);
   b.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true"><circle class="bg" cx="10" cy="10" r="${R}"/><circle class="fg" cx="10" cy="10" r="${R}" stroke-dasharray="${C * v.fill} ${C}" transform="rotate(-90 10 10)"/></svg><span>${v.text}</span>`;
 }
 
 // ctxNote is the words under the field after a tap on the ring: как подсказка окна.
 function ctxNote(v) {
+  if (v.unknown) return "Счета провайдера для этого чата пока нет — заполнение неизвестно. Он придет с ближайшим ответом.";
   if (v.text === "?") return "Размер контекста модели не указан в окне DVK — заполнение неизвестно.";
+  if (v.over) return "Контекст переполнен: запрос не помещается в окно модели — часть разговора она не видит или провайдер откажет. Начните новый чат.";
   if (v.tone === "ok") return "Контекст чата: " + v.text + " — места хватает.";
   return (v.tone === "bad" ? "Контекст почти полон" : "Контекст наполовину полон") + ": дальше ответы дороже и хуже — начните новый чат.";
 }
@@ -535,7 +537,7 @@ $("q").addEventListener("input", () => { // поле растет с текст�
   $("q").style.height = $("q").scrollHeight + "px";
 });
 $("ctx").addEventListener("click", () => { // нажатие на круг — что значит заполнение
-  const v = ctxView(st.chats[ui.chat]?.context);
+  const c = st.chats[ui.chat], v = ctxView(c?.context, !!c?.msgs.some((m) => m.who === "desk"));
   if (v) note(ctxNote(v), false);
 });
 $("ask").addEventListener("submit", async (e) => {
