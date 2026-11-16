@@ -23,6 +23,10 @@ var ErrFactExists = errors.New("fact already exists")
 // ErrFactNotFound — факта с таким id в портрете нет.
 var ErrFactNotFound = errors.New("fact not found")
 
+// ErrFactDecided — факт уже одобрен: решение «запомнить или нет» по нему не
+// принимается (решение с телефона, ревью безопасности #655).
+var ErrFactDecided = errors.New("fact already decided")
+
 // MaxFactRunes — потолок текста факта: факт — одна мысль, а не заметка.
 const MaxFactRunes = 300
 

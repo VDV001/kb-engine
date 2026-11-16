@@ -370,15 +370,6 @@ func TestRelaySavesOncePerQuietPage(t *testing.T) {
 	}
 }
 
-// notes queues what the window says by itself.
-type notes struct{ q []mailrelay.Note }
-
-func (n *notes) Take() []mailrelay.Note {
-	q := n.q
-	n.q = nil
-	return q
-}
-
 // memory records decisions.
 type memory struct{ got []string }
 
@@ -391,10 +382,10 @@ func (m *memory) Decide(_ context.Context, id string, yes bool, text string) err
 // окна, которого телефон не знает, пропадает (#647).
 func TestRelayOffersFactsToThePhone(t *testing.T) {
 	b, s := &box{}, &store{st: mailrelay.State{Chats: map[string]string{"c-1": "w-1"}}}
-	n := &notes{q: []mailrelay.Note{
+	n := []mailrelay.Note{
 		{Chat: "w-1", Payload: mailrelay.Payload{Kind: mailrelay.KindRemember, Facts: []mailrelay.Fact{{ID: "f1", Title: "Работа", Text: "Ведет закупки"}}}},
 		{Chat: "w-9", Payload: mailrelay.Payload{Kind: mailrelay.KindRemember, Facts: []mailrelay.Fact{{ID: "f9", Text: "чужое"}}}},
-	}}
+	}
 	r := newRelay(b, &asker{}, s)
 	r.Notes = n
 	if err := r.Tick(t.Context()); err != nil {
@@ -430,10 +421,71 @@ func TestRelayDecidesOnlyOfferedFacts(t *testing.T) {
 	}
 	got := payloads(t, b)
 	if len(got) != 3 || got[0].Kind != mailrelay.KindMemory || got[0].Text != mailrelay.MemorySaved || got[0].Facts[0].ID != "f1" ||
-		got[1].Text == mailrelay.MemorySaved || got[1].Text == mailrelay.MemorySkipped || got[1].Facts[0].ID != "f2" {
+		got[1].Text != mailrelay.MemoryGone || got[1].Facts[0].ID != "f2" || got[2].Text != mailrelay.MemoryGone {
 		t.Fatalf("replies %+v", got)
 	}
 	if len(s.st.Offered["c-1"]) != 0 {
 		t.Errorf("decided fact still offered: %v", s.st.Offered)
+	}
+}
+
+// gone answers that the fact is already decided in the window.
+type gone struct{}
+
+func (gone) Decide(context.Context, string, bool, string) error { return domain.ErrFactDecided }
+
+// Факт решили в окне — решение телефона не проходит, ему уходит gone (карточку
+// снять), из предложенного факт убирается; неразобранное — bad с id; окно без
+// памяти — unsupported (ревью #655).
+func TestRelayDecisionCodes(t *testing.T) {
+	b := &box{}
+	s := &store{st: mailrelay.State{Chats: map[string]string{"c-1": "w-1"}, Offered: map[string][]string{"c-1": {"f1", "f2"}}}}
+	r := newRelay(b, &asker{}, s)
+	r.Memory = gone{}
+	b.phone("c-1", "A", 1, mailrelay.Payload{Kind: mailrelay.KindMemory, Text: mailrelay.MemoryNo, Facts: []mailrelay.Fact{{ID: "f1"}}})
+	b.phone("c-1", "A", 2, mailrelay.Payload{Kind: mailrelay.KindMemory, Text: "maybe", Facts: []mailrelay.Fact{{ID: "f2"}}})
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	got := payloads(t, b)
+	if len(got) != 2 || got[0].Text != mailrelay.MemoryGone || got[1].Text != mailrelay.MemoryBad || len(got[1].Facts) != 1 || got[1].Facts[0].ID != "f2" {
+		t.Fatalf("replies %+v", got)
+	}
+	if o := s.st.Offered["c-1"]; len(o) != 1 || o[0] != "f2" {
+		t.Errorf("decided in the window — still offered: %v", o)
+	}
+	r.Memory = nil
+	b.phone("c-1", "A", 3, mailrelay.Payload{Kind: mailrelay.KindMemory, Text: mailrelay.MemoryYes, Facts: []mailrelay.Fact{{ID: "f2"}}})
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got := payloads(t, b); got[len(got)-1].Text != mailrelay.MemoryUnsupported {
+		t.Fatalf("no Memory: %+v", got[len(got)-1])
+	}
+}
+
+// tight is crypto with the mailbox limit: больше 1000 байт — ErrMailTooLarge.
+type tight struct{ crypto }
+
+func (t tight) Seal(chat string, counter uint64, plain []byte) ([]byte, error) {
+	if len(plain) > 1000 {
+		return nil, domain.ErrMailTooLarge
+	}
+	return t.crypto.Seal(chat, counter, plain)
+}
+
+// Предложение, что не лезет в ящик, пропускается, а не срывает круг: вопросы
+// телефона в этом круге все равно отвечаются (ревью #655).
+func TestRelayOversizedOfferDoesNotStopTheTick(t *testing.T) {
+	b, s := &box{}, &store{st: mailrelay.State{Chats: map[string]string{"c-1": "w-1"}}}
+	b.phone("c-2", "A", 1, q("сроки?"))
+	r := newRelay(b, &asker{}, s)
+	r.Crypto = tight{}
+	r.Notes = []mailrelay.Note{{Chat: "w-1", Payload: mailrelay.Payload{Kind: mailrelay.KindRemember, Facts: []mailrelay.Fact{{ID: "f1", Text: strings.Repeat("я", 2000)}}}}}
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got := replies(t, b); len(got) != 1 || !strings.Contains(got[0], "answer|ответ на сроки?") {
+		t.Fatalf("mailbox %v", got)
 	}
 }

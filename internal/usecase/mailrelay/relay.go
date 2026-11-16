@@ -110,6 +110,12 @@ const (
 	MemoryNo      = "no"
 	MemorySaved   = "saved"
 	MemorySkipped = "skipped"
+	// MemoryGone — факт не предлагался этому чату, уже решен или забыт: карточку
+	// телефон снимает (ревью #655). Слова рисует телефон: здесь только коды.
+	MemoryGone = "gone"
+	// MemoryBad — решение не разобрано; MemoryUnsupported — окно не умеет.
+	MemoryBad         = "bad"
+	MemoryUnsupported = "unsupported"
 )
 
 // Fact is a fact about the person the window offers to remember.
@@ -124,11 +130,6 @@ type Fact struct {
 type Note struct {
 	Chat    string
 	Payload Payload
-}
-
-// Notes gives the notes the window queued since the last tick.
-type Notes interface {
-	Take() []Note
 }
 
 // Memory decides a fact the window offered: yes — запомнить с текстом text.
@@ -259,8 +260,9 @@ type Relay struct {
 	Logf func(string, ...any)
 	// Notifier зовет телефоны push после итога хода модели (nil — не зовет).
 	Notifier Notifier
-	// Notes — то, что окно говорит телефону само: «Запомнить о Вас?» (nil — нечего).
-	Notes Notes
+	// Notes — то, что окно говорит телефону само: «Запомнить о Вас?». Круг берет
+	// чаты своего ящика, остальное — мимо.
+	Notes []Note
 	// Memory — решения телефона по предложенным фактам (nil — отказ словами).
 	Memory Memory
 }
@@ -436,11 +438,8 @@ const maxOffered = 20
 // offer queues the window's notes for their phone chats (#647): чат окна →
 // чат ящика по State.Chats; чат, которого телефон не заводил, — мимо.
 func (r Relay) offer(st *State) error {
-	if r.Notes == nil {
-		return nil
-	}
 	queued := false
-	for _, n := range r.Notes.Take() {
+	for _, n := range r.Notes {
 		chat := mailChat(st, n.Chat)
 		if chat == "" {
 			continue

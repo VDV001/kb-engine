@@ -428,3 +428,40 @@ func TestService_ExtractLoads(t *testing.T) {
 		}
 	})
 }
+
+// Решение с телефона — только по факту, что ждет одобрения: одобренный в окне
+// телефон не удалит и не перепишет (ревью безопасности #655).
+func TestService_DecidePending(t *testing.T) {
+	ctx := t.Context()
+	m := &fakeModel{reply: `[{"section":"prefs","text":"Отвечать коротко"},{"section":"work","text":"Ведет закупки"}]`}
+	s, st := newSvc(t, m)
+	kept, err := s.Add(ctx, sect(t, "work"), "Пишет на Go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Extract(ctx, "q", "a")
+	if err != nil || len(got) != 2 {
+		t.Fatalf("extract %+v %v", got, err)
+	}
+	for _, yes := range []bool{false, true} {
+		if err := s.Decide(ctx, kept.ID(), yes, "Подмена"); !errors.Is(err, domain.ErrFactDecided) {
+			t.Fatalf("decide approved (yes=%t): %v", yes, err)
+		}
+	}
+	if err := s.Decide(ctx, got[0].ID(), true, "Отвечать очень коротко"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Decide(ctx, got[1].ID(), false, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Decide(ctx, "нет-такого", true, ""); !errors.Is(err, domain.ErrFactNotFound) {
+		t.Fatalf("missing: %v", err)
+	}
+	var texts []string
+	for _, f := range st.p.Facts() {
+		texts = append(texts, fmt.Sprintf("%s|%t", f.Text(), f.Approved()))
+	}
+	if strings.Join(texts, ",") != "Пишет на Go|true,Отвечать очень коротко|true" {
+		t.Fatalf("portrait %v", texts)
+	}
+}

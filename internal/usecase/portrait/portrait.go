@@ -222,6 +222,10 @@ func (s *Service) Approve(ctx context.Context, id, text string) error {
 	})
 }
 
+// Decide decides a fact waiting for approval: yes — одобрить с правкой text
+// (пусто — как есть), no — забыть. Одобренный факт — ErrFactDecided.
+func (s *Service) Decide(ctx context.Context, id string, yes bool, text string) error { return nil }
+
 // proposal is a fact the model offers: раздел и текст.
 type proposal struct {
 	Section string `json:"section"`

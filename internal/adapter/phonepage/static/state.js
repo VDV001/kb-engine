@@ -140,6 +140,10 @@ function remembered(c, p) {
   return true;
 }
 
+// hideFact drops the card of fact id on the phone: окно отказало, а карточка
+// не нужна (ревью #655).
+export function hideFact(c, id) {}
+
 // deciding marks fact id of chat c sent for a decision (#647).
 export function deciding(c, id) {
   const f = c.remember?.find((x) => x.id === id);

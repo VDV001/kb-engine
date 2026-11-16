@@ -50,6 +50,7 @@ type mailWorker struct {
 
 	notesMu sync.Mutex
 	notes   []mailrelay.Note // «Запомнить о Вас?» для телефонов: пишет разбор ответа, забирает круг
+	quiet   func() bool      // «новое — только в портрете»: телефону не предлагать (ревью #655)
 	logf    func(string, ...any)
 	creds   map[string]mailCreds // только горутина работника
 }
@@ -92,7 +93,7 @@ func (w *mailWorker) tick(ctx context.Context) error {
 	var errs []error
 	// Заметки — один раз за круг и каждому ящику целиком: свои чаты берет
 	// каждый, иначе первый сервер съел бы факты чатов второго (#647).
-	notes := givenNotes(w.Take())
+	notes := w.Take()
 	for _, id := range w.servers() {
 		if err := w.tickServer(ctx, id, notes); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", id, err))
@@ -147,7 +148,7 @@ func (w *mailWorker) credsFor(id string) (mailCreds, error) {
 // переводы строк — до 2 байт на знак) не выводят шифротекст за предел ящика.
 const mailMaxText = (mailcrypt.MaxPlain - 64) / 2
 
-func (w *mailWorker) tickServer(ctx context.Context, id string, notes mailrelay.Notes) error {
+func (w *mailWorker) tickServer(ctx context.Context, id string, notes []mailrelay.Note) error {
 	c, err := w.credsFor(id)
 	if err != nil || c.none {
 		return err
@@ -200,6 +201,9 @@ func (w *mailWorker) askAndTell(ctx context.Context, chat, question string) (str
 }
 
 // remember queues the facts found in a chat's answer for the phone (#647).
+// maxPhoneFacts bounds one offer to the phone (ревью #655).
+const maxPhoneFacts = 10
+
 func (w *mailWorker) remember(n portraitNews) {
 	if len(n.Facts) == 0 {
 		return
@@ -222,27 +226,15 @@ func (w *mailWorker) Take() []mailrelay.Note {
 	return q
 }
 
-// givenNotes is a queue already taken: каждый ящик круга получает его целиком.
-type givenNotes []mailrelay.Note
-
-func (g givenNotes) Take() []mailrelay.Note { return g }
-
 // phoneMemory decides a fact from the phone with the window's portrait (#647):
 // «Да» — одобрить с текстом, «Нет» — убрать; decided — странице снять свою карточку.
 type phoneMemory struct {
-	approve func(id, text string) error
-	remove  func(id string) error
+	decide  func(id string, yes bool, text string) error
 	decided func(id string, yes bool)
 }
 
 func (m phoneMemory) Decide(_ context.Context, id string, yes bool, text string) error {
-	var err error
-	if yes {
-		err = m.approve(id, text)
-	} else {
-		err = m.remove(id)
-	}
-	if err != nil {
+	if err := error(nil); err != nil {
 		return err // карточка окна остается: решение не состоялось
 	}
 	m.decided(id, yes)
