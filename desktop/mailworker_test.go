@@ -261,7 +261,7 @@ func TestMailWorkerShowsThePhoneTurn(t *testing.T) {
 	var got []phoneTurn
 	w.turn = func(e phoneTurn) { got = append(got, e) }
 	fail := error(nil)
-	w.answer = func(_ context.Context, _, _ string, began func(string), step func(chat.Use)) (mailrelay.Answer, error) {
+	w.answer = func(_ context.Context, _, _ string, _ []mailrelay.File, began func(string), step func(chat.Use)) (mailrelay.Answer, error) {
 		began("w-1")
 		step(chat.Use{Kind: chat.UseDocs, What: "поставки"})
 		return mailrelay.Answer{Chat: "w-1", Text: "12"}, fail
@@ -417,7 +417,7 @@ func TestPhoneTurnKeepsTheChatSources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := chatAnswerer(d)(t.Context(), rec.ID, "еще?", nil, nil)
+	a, err := chatAnswerer(d)(t.Context(), rec.ID, "еще?", nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -523,5 +523,52 @@ func TestUseVoiceSweepsRecordings(t *testing.T) {
 	left, _ := os.ReadDir(tmp)
 	if len(left) != 1 || left[0].Name() != "other.wav" {
 		t.Errorf("left %v", left)
+	}
+}
+
+// Файл с телефона доходит до модели настоящим кругом (#650): куски в файлах
+// ящика, окно собирает, расшифровывает ключом чата и прикладывает к вопросу.
+func TestMailWorkerAttachesThePhoneFile(t *testing.T) {
+	s, tok, srv, _ := newWorkerSettings(t)
+	key := mailcrypt.NewKey()
+	tok.m[mailKeyAccount("srv1")] = key.Encode()
+	d, m, _, _ := newTestChatDesk(t)
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	phone := kbserver.Client{URL: srv.URL, Token: phoneToken, HTTP: srv.Client()}
+	var pieces []mailrelay.FileRef
+	text := "Срок поставки по договору — 45 дней."
+	for _, part := range []string{text[:20], text[20:]} {
+		sealed, err := mailcrypt.SealFile(key, []byte(part))
+		if err != nil {
+			t.Fatal(err)
+		}
+		id, err := phone.MailFilePut(t.Context(), sealed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256(sealed)
+		pieces = append(pieces, mailrelay.FileRef{ID: id, SHA256: hex.EncodeToString(sum[:]), Size: len(sealed)})
+	}
+	phoneSends(t, srv, key, "c-1", 1, mailrelay.Payload{Kind: mailrelay.KindQuestion, Text: "какой срок?",
+		Attach: &mailrelay.Attachment{Name: "договор.txt", Type: "text/plain", Size: len(text), Pieces: pieces}})
+	w := newMailWorker(s, chatAsker(d), t.TempDir())
+	w.useChat(d)
+	if err := w.tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	got := phoneReads(t, srv, key)
+	if len(got) == 0 || got[len(got)-1].Kind != mailrelay.KindAnswer {
+		t.Fatalf("phone got %+v", got)
+	}
+	var seen bool
+	for _, turn := range m.asked {
+		for _, msg := range turn {
+			seen = seen || strings.Contains(msg.Content, "45 дней")
+		}
+	}
+	if !seen {
+		t.Error("the model never saw the attached file")
 	}
 }

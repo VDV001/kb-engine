@@ -392,7 +392,8 @@ func (m phoneMemory) Decide(ctx context.Context, id string, yes bool, text strin
 // answerFn runs a model turn and tells where the answer came from; step — ход
 // модели по мере ответа (nil — без хода).
 // began — чат окна, в котором пойдет ход, известен (до ответа модели, #646).
-type answerFn func(ctx context.Context, chat, question string, began func(id string), step func(chat.Use)) (mailrelay.Answer, error)
+// files — приложенное телефоном (#650).
+type answerFn func(ctx context.Context, chat, question string, files []mailrelay.File, began func(id string), step func(chat.Use)) (mailrelay.Answer, error)
 
 // phoneTurn is what the window page hears about a phone's question (#646):
 // начало хода, шаг или конец; Chat — чат окна.
@@ -437,7 +438,7 @@ func (a workerAsker) AskStepped(ctx context.Context, id, question string, step f
 			step(mailrelay.Step{Text: stepLabel(u)})
 		}
 	}
-	ans, err := a.w.answer(ctx, id, question, began, each)
+	ans, err := a.w.answer(ctx, id, question, nil, began, each)
 	if err == nil {
 		a.w.changed(ans.Chat)
 	}
@@ -446,6 +447,11 @@ func (a workerAsker) AskStepped(ctx context.Context, id, question string, step f
 
 func (a workerAsker) AskSourced(ctx context.Context, id, question string) (mailrelay.Answer, error) {
 	return a.AskStepped(ctx, id, question, nil)
+}
+
+// AskAttached is AskStepped with the phone's files (#650).
+func (a workerAsker) AskAttached(ctx context.Context, id, question string, _ []mailrelay.File, step func(mailrelay.Step)) (mailrelay.Answer, error) {
+	return a.AskStepped(ctx, id, question, step)
 }
 
 // stepLabel words a step as the window shows it (useName в frontend/app.js):
@@ -477,14 +483,14 @@ func stepLabel(u chat.Use) string {
 func chatAsker(d *chatDesk) askFn {
 	answer := chatAnswerer(d)
 	return func(ctx context.Context, chat, question string) (string, string, error) {
-		a, err := answer(ctx, chat, question, nil, nil)
+		a, err := answer(ctx, chat, question, nil, nil, nil)
 		return a.Chat, a.Text, err
 	}
 }
 
 // chatAnswerer is chatAsker with the «взято» labels of the answer (answerSources).
 func chatAnswerer(d *chatDesk) answerFn {
-	return func(ctx context.Context, chat, question string, began func(string), step func(chat.Use)) (mailrelay.Answer, error) {
+	return func(ctx context.Context, chat, question string, _ []mailrelay.File, began func(string), step func(chat.Use)) (mailrelay.Answer, error) {
 		quiet := askOut{worker: true, step: step, began: began}
 		rec, err := d.ask(ctx, askReq{ID: chat, Question: question}, quiet)
 		if chat != "" && errors.Is(err, fs.ErrNotExist) {
