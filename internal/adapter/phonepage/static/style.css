@@ -21,8 +21,10 @@
   --sp-cool: linear-gradient(100deg, var(--z-sp4), var(--z-sp5), var(--z-sp6));
   --top: 52px;
 }
+/* Тема: как в системе или явно — кнопка в шапке ставит data-theme на <html>,
+   как в окне на Маке (решение владельца 16.11: обе темы и на телефоне). */
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme="dark"]) {
     color-scheme: light;
     --z-bg: #fff; --z-bg-2: #f6f6f7; --z-bg-3: #ececee;
     --z-ink: #17171a; --z-ink-2: #2f2f34; --z-muted: #55555a; --z-faint: #6e6e74;
@@ -31,6 +33,15 @@
     --z-ok: #1e7f45; --z-bad: #b3261e; --z-warn: #8a5d00; --z-warn-wash: #f0a5001f;
     --z-dot: rgb(128 128 132 / .30);
   }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --z-bg: #fff; --z-bg-2: #f6f6f7; --z-bg-3: #ececee;
+  --z-ink: #17171a; --z-ink-2: #2f2f34; --z-muted: #55555a; --z-faint: #6e6e74;
+  --z-rule: #e2e2e5; --z-rule-2: #a8a8ae;
+  --z-accent: #2f6fd0; --z-accent-hi: #1f55a8; --z-accent-ink: #fff; --z-accent-wash: #2f6fd01a;
+  --z-ok: #1e7f45; --z-bad: #b3261e; --z-warn: #8a5d00; --z-warn-wash: #f0a5001f;
+  --z-dot: rgb(128 128 132 / .30);
 }
 
 * { box-sizing: border-box; }
@@ -89,6 +100,10 @@ button { font: inherit; color: inherit; }
 .top h1 { flex: 1; min-width: 0; margin: 0; font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .back { display: inline-flex; align-items: center; gap: 2px; min-height: 44px; margin-left: -10px; padding: 0 6px; border: 0; background: none; color: var(--z-accent-hi); cursor: pointer; }
 .back svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* кнопка темы: значок как в шапке окна на Маке */
+.theme { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; margin-right: -4px; border: 0; background: none; color: var(--z-ink-2); cursor: pointer; }
+.theme svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
 
 /* значок компьютера: зеленый — на связи, янтарь — спит */
 .pc { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 10px; border: 1px solid var(--z-rule-2); border-radius: 15px; background: none; font-size: 11px; color: var(--z-ink-2); white-space: nowrap; cursor: pointer; max-width: 58%; overflow: hidden; text-overflow: ellipsis; }

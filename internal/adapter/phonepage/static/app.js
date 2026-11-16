@@ -8,7 +8,7 @@
 // ponytail: без service worker — Chrome ставит страницу и так; push и работа
 // без сети — следующим шагом (iOS шлет push только странице с экрана «Домой»).
 import { importKey, seal, open } from "./crypto.js";
-import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds } from "./state.js";
+import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, nextTheme, themeColor } from "./state.js";
 
 const POLL_MS = 10_000; // решение 15.11: короткий опрос раз в 10 с
 const UNAUTH_MS = 60_000; // 401: реже, но не сдаемся — сервер мог ошибиться ненадолго
@@ -516,6 +516,34 @@ $("unpair").addEventListener("click", async () => {
   location.reload();
 });
 wide.addEventListener("change", () => show(false));
+
+// --- тема: как в системе → светлая → темная, как кнопка окна на Маке. Выбор —
+// удобство этого телефона (localStorage); theme.js применяет его до отрисовки.
+const THEMES = { system: "как в системе", light: "светлая", dark: "темная" };
+const systemDark = matchMedia("(prefers-color-scheme: dark)");
+const currentTheme = () => document.documentElement.dataset.theme || "system";
+function paintTheme() {
+  const t = currentTheme();
+  document.querySelectorAll("[data-theme-icon]").forEach((svg) => svg.toggleAttribute("hidden", svg.dataset.themeIcon !== t));
+  document.querySelectorAll("[data-theme-btn]").forEach((b) => b.setAttribute("aria-label", "Тема: " + THEMES[t]));
+  // Полоса состояния и строка адреса — цветом выбранной темы, а не системы.
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => {
+    m.content = themeColor(t, t === "system" ? m.media.includes("dark") : systemDark.matches);
+  });
+}
+document.querySelectorAll("[data-theme-btn]").forEach((b) => b.addEventListener("click", () => {
+  const t = nextTheme(currentTheme());
+  if (t === "system") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = t;
+  try {
+    if (t === "system") localStorage.removeItem("theme");
+    else localStorage.setItem("theme", t);
+  } catch { /* только на сеанс */ }
+  paintTheme();
+  note("Тема: " + THEMES[t], false);
+}));
+systemDark.addEventListener("change", paintTheme);
+paintTheme();
 // ponytail: «пишет только вкладка на экране» — две вкладки рядом (планшет,
 // два окна) все еще затирают друг другу чаты. Путь: слияние чатов и
 // исходящих при persist, как счетчика.
