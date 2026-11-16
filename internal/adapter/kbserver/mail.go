@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/daniil/kb-engine/internal/domain"
 )
 
 // ErrNoMailbox — у сервера нет ящика чата с телефона (#622): одна база без
@@ -105,6 +107,10 @@ func (c Client) MailSince(ctx context.Context, after int64) (MailPage, error) {
 
 // MailPost puts a sealed message into chat and returns its number in the log.
 func (c Client) MailPost(ctx context.Context, chat string, sealed []byte) (int64, error) {
+	// Имя чата — до запроса: «files» и прочие занятые адреса — маршруты ящика.
+	if err := domain.ValidateMailChat(chat); err != nil {
+		return 0, fmt.Errorf("%w: %w", ErrMailRefused, err)
+	}
 	body, err := json.Marshal(map[string][]byte{"sealed": sealed})
 	if err != nil {
 		return 0, err
@@ -118,6 +124,56 @@ func (c Client) MailPost(ctx context.Context, chat string, sealed []byte) (int64
 	return out.Seq, nil
 }
 
+// ErrNoSuchMailFile — файла в ящике нет: забран, удален по сроку (#658).
+var ErrNoSuchMailFile = fmt.Errorf("%w: no such mailbox file", ErrRejected)
+
+// ErrNoMailFiles — у сервера ящик есть, а файлов нет: сервер старше #658 или
+// собран без хранилища, которое удаляет.
+var ErrNoMailFiles = errors.New("kbserver: no mailbox files")
+
+// maxMailFile bounds the answer with a piece: domain.MaxMailFile и запас.
+const maxMailFile = domain.MaxMailFile + 1<<20
+
+// MailFilePut keeps a sealed file piece and returns its id (#658). Пустой и
+// сверх предела — отказ до запроса: мегабайты не уходят в сеть зря.
+func (c Client) MailFilePut(ctx context.Context, sealed []byte) (string, error) {
+	switch {
+	case len(sealed) == 0:
+		return "", fmt.Errorf("%w: %w", ErrMailRefused, domain.ErrMailEmpty)
+	case len(sealed) > domain.MaxMailFile:
+		return "", fmt.Errorf("%w: %w: %d bytes", ErrMailRefused, domain.ErrMailTooLarge, len(sealed))
+	}
+	var out struct {
+		ID string `json:"id"`
+	}
+	if err := c.mail(ctx, mailReq{method: http.MethodPost, path: "/api/mail/files", body: sealed, raw: true, want: http.StatusCreated}, &out); err != nil {
+		return "", err
+	}
+	if out.ID == "" {
+		return "", fmt.Errorf("%w: /api/mail/files: no id", ErrNotKB)
+	}
+	return out.ID, nil
+}
+
+// MailFileGet reads a sealed file piece.
+func (c Client) MailFileGet(ctx context.Context, id string) ([]byte, error) {
+	if err := domain.ValidateMailFileID(id); err != nil { // «..» в адресе — опрос журнала
+		return nil, fmt.Errorf("%w: %w", ErrMailRefused, err)
+	}
+	var out []byte
+	err := c.mail(ctx, mailReq{method: http.MethodGet, path: "/api/mail/files/" + url.PathEscape(id), want: http.StatusOK,
+		notFound: ErrNoSuchMailFile, limit: maxMailFile}, &out)
+	return out, err
+}
+
+// MailFileDelete removes a piece the desk has taken; удаленный — не ошибка.
+func (c Client) MailFileDelete(ctx context.Context, id string) error {
+	if err := domain.ValidateMailFileID(id); err != nil {
+		return fmt.Errorf("%w: %w", ErrMailRefused, err)
+	}
+	return c.mail(ctx, mailReq{method: http.MethodDelete, path: "/api/mail/files/" + url.PathEscape(id), want: http.StatusNoContent, notFound: ErrNoSuchMailFile}, nil)
+}
+
 // mailReq is one mailbox request: want — код успеха, notFound — что значит 404
 // (nil — ErrNoMailbox), limit — предел ответа (0 — maxBody).
 type mailReq struct {
@@ -128,6 +184,7 @@ type mailReq struct {
 	notFound      error
 	unprocessable error // 422 этого запроса: сервер понял запрос и отказал по делу
 	limit         int64
+	raw           bool // тело — байты файла, не JSON (#658)
 }
 
 // refusal names the error of answer code; ожидаемый код — nil.
@@ -137,12 +194,14 @@ func (r mailReq) refusal(code int, body []byte) error {
 		return nil
 	case http.StatusNotFound:
 		return cmp.Or(r.notFound, ErrNoMailbox)
+	case http.StatusNotImplemented: // ящик есть, файлов нет (#658)
+		return ErrNoMailFiles
 	case http.StatusUnprocessableEntity:
 		if r.unprocessable != nil {
 			return fmt.Errorf("%w: %s", r.unprocessable, strings.TrimSpace(string(body)))
 		}
 		return fmt.Errorf("%w: %s", ErrMailRefused, strings.TrimSpace(string(body)))
-	case http.StatusBadRequest, http.StatusConflict, http.StatusRequestEntityTooLarge:
+	case http.StatusBadRequest, http.StatusConflict, http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType:
 		// Слова сервера: «too many phones» — человеку есть что сделать.
 		return fmt.Errorf("%w: %s", ErrMailRefused, strings.TrimSpace(string(body)))
 	}
@@ -162,7 +221,10 @@ func (c Client) mail(ctx context.Context, r mailReq, into any) error {
 		target += "?" + r.query.Encode()
 	}
 	var header http.Header
-	if r.body != nil {
+	switch {
+	case r.raw:
+		header = http.Header{"Content-Type": {"application/octet-stream"}}
+	case r.body != nil:
 		header = http.Header{"Content-Type": {"application/json"}}
 	}
 	resp, err := c.send(ctx, r.method, target, r.path, r.body, header)
@@ -178,6 +240,10 @@ func (c Client) mail(ctx context.Context, r mailReq, into any) error {
 		return err
 	}
 	if into == nil {
+		return nil
+	}
+	if b, ok := into.(*[]byte); ok { // кусок файла — как есть
+		*b = body
 		return nil
 	}
 	if err := json.Unmarshal(body, into); err != nil {

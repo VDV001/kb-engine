@@ -4,7 +4,10 @@ package mail
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -101,6 +104,16 @@ const NotifyAnswer = `{"kind":"answer"}`
 // NotifyTimeout bounds one notify call for all phones together.
 const NotifyTimeout = 5 * time.Second
 
+// Files keeps the sealed file pieces of the mailbox (#658): голос и вложения
+// телефона идут мимо журнала — журнал один объект и переписывается целиком.
+type Files interface {
+	Put(ctx context.Context, id domain.UserID, file string, sealed []byte) error
+	// Get returns the piece; нет его или он чужой — domain.ErrNoSuchMailFile.
+	Get(ctx context.Context, id domain.UserID, file string) ([]byte, error)
+	// Delete removes the piece; нет его — не ошибка.
+	Delete(ctx context.Context, id domain.UserID, file string) error
+}
+
 // Service is the mailbox of the server.
 type Service struct {
 	Box    Box
@@ -108,8 +121,58 @@ type Service struct {
 	Subs   Subscriptions
 	Push   Pusher
 	Visits Visits
+	Files  Files // nil — файлов нет: domain.ErrMailFilesOff
 	Now    func() time.Time
 	Logf   func(string, ...any)
+}
+
+// PutFile keeps a sealed file piece of either side and returns its id: id
+// выдает сервер — случайный, клиент его не выбирает и чужой не перезапишет.
+func (s Service) PutFile(ctx context.Context, id domain.UserID, side domain.MailSide, sealed []byte) (string, error) {
+	if _, err := domain.ParseMailSide(string(side)); err != nil {
+		return "", err
+	}
+	switch {
+	case len(sealed) == 0:
+		return "", domain.ErrMailEmpty
+	case len(sealed) > domain.MaxMailFile:
+		return "", fmt.Errorf("%w: %d bytes, limit %d", domain.ErrMailTooLarge, len(sealed), domain.MaxMailFile)
+	case s.Files == nil:
+		return "", domain.ErrMailFilesOff
+	}
+	var raw [16]byte
+	_, _ = rand.Read(raw[:]) // с Go 1.24 Read не возвращает ошибку
+	file := hex.EncodeToString(raw[:])
+	if err := s.Files.Put(ctx, id, file, sealed); err != nil {
+		return "", err // id без записи — ссылка в никуда
+	}
+	return file, nil
+}
+
+// GetFile returns a piece of the person's mailbox.
+func (s Service) GetFile(ctx context.Context, id domain.UserID, file string) ([]byte, error) {
+	if err := s.fileCall(file); err != nil {
+		return nil, err
+	}
+	return s.Files.Get(ctx, id, file)
+}
+
+// DeleteFile removes a piece: получатель забрал его.
+func (s Service) DeleteFile(ctx context.Context, id domain.UserID, file string) error {
+	if err := s.fileCall(file); err != nil {
+		return err
+	}
+	return s.Files.Delete(ctx, id, file)
+}
+
+func (s Service) fileCall(file string) error {
+	if err := domain.ValidateMailFileID(file); err != nil {
+		return err
+	}
+	if s.Files == nil {
+		return domain.ErrMailFilesOff
+	}
+	return nil
 }
 
 // Post writes a message of side into chat.

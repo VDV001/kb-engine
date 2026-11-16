@@ -100,3 +100,78 @@ func TestPhoneCryptoMatchesGo(t *testing.T) {
 		}
 	}
 }
+
+// fileCheck runs the file sealing of static/crypto.js against Go (#658).
+const fileCheck = `
+const [mod, task] = process.argv.slice(1);
+const c = await import(mod);
+const t = JSON.parse(task);
+const hex = (b) => Buffer.from(b).toString("hex");
+const unhex = (s) => new Uint8Array(Buffer.from(s, "hex"));
+const k = await c.importKey(t.key);
+const fail = async (f) => { try { await f(); return "opened"; } catch (e) { return e.code || String(e); } };
+const out = {};
+out.fromGo = new TextDecoder().decode(await c.openFile(k, unhex(t.fromGo)));
+out.toGo = hex(await c.sealFile(k, new TextEncoder().encode("голос с телефона")));
+const bad = unhex(t.fromGo); bad[bad.length - 1] ^= 1;
+out.tampered = await fail(() => c.openFile(k, bad));
+const other = await c.importKey(t.other);
+out.wrongKey = await fail(() => c.openFile(other, unhex(t.fromGo)));
+out.message = await fail(() => c.openFile(k, unhex(t.message)));
+out.empty = await fail(() => c.sealFile(k, new Uint8Array(0)));
+out.tooLarge = await fail(() => c.sealFile(k, new Uint8Array(t.maxPlain + 1)));
+out.atLimit = (await c.sealFile(k, new Uint8Array(t.maxPlain))).length;
+out.filesChat = await fail(() => c.seal(k, { chat: "files", from: "phone", sender: new Uint8Array(8), counter: 1n }, new Uint8Array([1])));
+console.log(JSON.stringify(out));
+`
+
+// Кусок файла (#658) телефон и окно запечатывают одним форматом: Go → JS и
+// JS → Go; правка, чужой ключ, сообщение вместо файла, пустой и сверх
+// предела — отказ; чат «files» занят маршрутом и на телефоне.
+func TestPhoneFileCryptoMatchesGo(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("нет node: шифр файлов телефона не сверен с Go")
+	}
+	key := mailcrypt.NewKey()
+	fromGo, err := mailcrypt.SealFile(key, []byte("файл окна"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg, err := mailcrypt.Seal(key, mailcrypt.Meta{Chat: "c-1", From: domain.MailDesk}, []byte("сообщение"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, _ := json.Marshal(map[string]any{"key": key.Encode(), "other": mailcrypt.NewKey().Encode(), "fromGo": hex.EncodeToString(fromGo),
+		"message": hex.EncodeToString(msg), "maxPlain": mailcrypt.MaxFilePlain})
+	mod, _ := filepath.Abs("static/crypto.js")
+	raw, err := exec.Command(node, "--input-type=module", "-e", fileCheck, "file://"+mod, string(task)).CombinedOutput()
+	if err != nil {
+		t.Fatalf("node: %v\n%s", err, raw)
+	}
+	var out struct {
+		FromGo, ToGo, Tampered, WrongKey, Message, Empty, TooLarge, FilesChat string
+		AtLimit                                                               int
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(raw))), &out); err != nil {
+		t.Fatalf("node said: %s", raw)
+	}
+	if out.FromGo != "файл окна" {
+		t.Errorf("JS opened Go's file as %q", out.FromGo)
+	}
+	toGo, _ := hex.DecodeString(out.ToGo)
+	if plain, err := mailcrypt.OpenFile(key, toGo); err != nil || string(plain) != "голос с телефона" {
+		t.Errorf("Go opened JS's file: %q, %v", plain, err)
+	}
+	if out.AtLimit != domain.MaxMailFile {
+		t.Errorf("sealed at the limit: %d bytes, want %d", out.AtLimit, domain.MaxMailFile)
+	}
+	for name, got := range map[string][2]string{
+		"tampered": {out.Tampered, "not-authentic"}, "wrong key": {out.WrongKey, "wrong-key"}, "message as a file": {out.Message, "not-authentic"},
+		"empty": {out.Empty, "format"}, "too large": {out.TooLarge, "format"}, "chat files": {out.FilesChat, "format"},
+	} {
+		if got[0] != got[1] {
+			t.Errorf("%s: %s, want %s", name, got[0], got[1])
+		}
+	}
+}

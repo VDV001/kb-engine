@@ -22,6 +22,16 @@ func TestContract(t *testing.T) {
 	})
 }
 
+func TestDeleteContract(t *testing.T) {
+	blobtest.RunDeleter(t, func(t *testing.T) blobtest.DeleteStore {
+		s, err := blobfs.New(t.TempDir())
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		return s
+	})
+}
+
 // Отказанный ключ не должен оставить на диске ничего — ни файла рядом с
 // корнем, ни каталога: проверка ключа стоит раньше любого mkdir.
 func TestInvalidKeyTouchesNothingOutsideRoot(t *testing.T) {

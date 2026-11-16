@@ -1,6 +1,7 @@
 package kbserver_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -31,7 +32,8 @@ func mailKB(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: s}, Phones: userauth.Phones{Store: s}, Visits: &userauth.Visits{Store: s}, Now: time.Now},
+	h := httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: s}, Phones: userauth.Phones{Store: s}, Visits: &userauth.Visits{Store: s},
+		Files: mailbox.Files{Blob: s, Del: s}, Now: time.Now},
 		func(string, ...any) {})
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get(kbserver.TokenHeader) != token {
@@ -193,5 +195,85 @@ func TestClient_RenamePhoneOtherBadRequest(t *testing.T) {
 	c := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}
 	if err := c.RenamePhone(context.Background(), "p-1", "Мой"); errors.Is(err, kbserver.ErrBadPhoneName) || err == nil {
 		t.Fatalf("400 from a proxy: %v", err)
+	}
+}
+
+// Файлы ящика (#658): кусок кладется, читается тем же и удаляется; удаленный
+// — свой отказ; пустой, сверх предела и плохой id — отказ сервера.
+func TestClient_MailFiles(t *testing.T) {
+	srv := mailKB(t)
+	c := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}
+	ctx := context.Background()
+	piece := bytes.Repeat([]byte{7, 0, 255}, 1<<20) // 3 МБ без малого, с нулями
+	id, err := c.MailFilePut(ctx, piece)
+	if err != nil || domain.ValidateMailFileID(id) != nil {
+		t.Fatalf("put: %q, %v", id, err)
+	}
+	if got, err := c.MailFileGet(ctx, id); err != nil || !bytes.Equal(got, piece) {
+		t.Fatalf("get: %d bytes, %v", len(got), err)
+	}
+	if err := c.MailFileDelete(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.MailFileGet(ctx, id); !errors.Is(err, kbserver.ErrNoSuchMailFile) {
+		t.Errorf("after delete: %v", err)
+	}
+	if err := c.MailFileDelete(ctx, id); err != nil {
+		t.Errorf("second delete: %v", err)
+	}
+	for name, body := range map[string][]byte{"empty": {}, "too large": make([]byte, domain.MaxMailFile+1)} {
+		if _, err := c.MailFilePut(ctx, body); !errors.Is(err, kbserver.ErrMailRefused) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if _, err := c.MailFileGet(ctx, "../log"); err == nil {
+		t.Error("bad id read")
+	}
+	// Чат «files» занят маршрутом: сообщение туда не ляжет.
+	if _, err := c.MailPost(ctx, "files", []byte("x")); !errors.Is(err, kbserver.ErrRejected) {
+		t.Errorf("chat files: %v", err)
+	}
+}
+
+// Ревью #659: id и размер куска проверяются до запроса — «..» не уходит
+// опросом журнала, лишние мегабайты не уходят в сеть; сервер без файлов —
+// свой отказ, а не «нет ящика».
+func TestClient_MailFilesRefusedBeforeTheRequest(t *testing.T) {
+	var hits int
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { hits++; w.WriteHeader(http.StatusOK) }))
+	t.Cleanup(srv.Close)
+	c := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}
+	ctx := context.Background()
+	if _, err := c.MailFileGet(ctx, ".."); !errors.Is(err, domain.ErrMailFile) {
+		t.Errorf("get ..: %v", err)
+	}
+	if err := c.MailFileDelete(ctx, "."); !errors.Is(err, domain.ErrMailFile) {
+		t.Errorf("delete .: %v", err)
+	}
+	if _, err := c.MailFilePut(ctx, make([]byte, domain.MaxMailFile+1)); !errors.Is(err, domain.ErrMailTooLarge) {
+		t.Errorf("too large: %v", err)
+	}
+	if _, err := c.MailFilePut(ctx, nil); !errors.Is(err, domain.ErrMailEmpty) {
+		t.Errorf("empty: %v", err)
+	}
+	if hits != 0 {
+		t.Errorf("%d requests went out", hits)
+	}
+}
+
+func TestClient_MailFilesOff(t *testing.T) {
+	s, err := blobfs.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := domain.NewUserID("alpha")
+	h := httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: s}, Phones: userauth.Phones{Store: s}, Now: time.Now}, func(string, ...any) {})
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.ServeHTTP(w, r.WithContext(httpapi.WithMailCaller(r.Context(), id, domain.MailDesk)))
+	}))
+	t.Cleanup(srv.Close)
+	c := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}
+	if _, err := c.MailFilePut(context.Background(), []byte("x")); !errors.Is(err, kbserver.ErrNoMailFiles) {
+		t.Errorf("files off: %v", err)
 	}
 }

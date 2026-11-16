@@ -76,6 +76,9 @@ func tenantsHandler(ctx context.Context, store blob.Store, stderr io.Writer, opt
 	}
 	svc := mail.Service{Box: mailbox.Store{Blob: store, Seen: &mailbox.Seen{}}, Phones: freshPhones{userauth.Phones{Store: store}, phones},
 		Subs: userauth.Phones{Store: store}, Visits: &userauth.Visits{Store: store}, Now: time.Now, Logf: logf}
+	if d, ok := store.(blob.Deleter); ok { // файлы ящика (#658): хранилище умеет удалять
+		svc.Files = mailbox.Files{Blob: store, Del: d}
+	}
 	if cfg.contact != "" { // без контакта push выключен: Push nil, маршруты — 404
 		svc.Push = &lazyPusher{store: store, contact: cfg.contact, transport: cfg.transport}
 	}
@@ -85,6 +88,7 @@ func tenantsHandler(ctx context.Context, store blob.Store, stderr io.Writer, opt
 		phones:    phones,
 		handlers:  map[domain.UserID]http.Handler{},
 		limits:    map[mailKey]*rate.Limiter{},
+		fileBytes: map[domain.UserID]*rate.Limiter{},
 		phonePage: phonepage.Handler(),
 		// Приложение Android (mobile/android): «пакет:отпечаток ключа» из окружения
 		// сервера; не задано — 404, как без приложения.
@@ -123,9 +127,10 @@ type tenants struct {
 	// assetLinks — /.well-known/assetlinks.json приложения Android (#622).
 	assetLinks http.Handler
 
-	limitsMu gosync.Mutex
-	limits   map[mailKey]*rate.Limiter // токен и вид запроса → предел частоты ящика
-	now      func() time.Time          // часы предела; тест их подменяет
+	limitsMu  gosync.Mutex
+	limits    map[mailKey]*rate.Limiter       // токен и вид запроса → предел частоты ящика
+	fileBytes map[domain.UserID]*rate.Limiter // человек → бюджет байт файлов (#658)
+	now       func() time.Time                // часы предела; тест их подменяет
 
 	mu       gosync.Mutex
 	handlers map[domain.UserID]http.Handler
@@ -185,8 +190,12 @@ func (t *tenants) serveMail(w http.ResponseWriter, r *http.Request) {
 			side = domain.MailPhone
 		}
 		if ok {
-			k := mailKey{sum: sha256.Sum256([]byte(tok)), poll: r.Method == http.MethodGet && r.URL.Path == "/api/mail"}
-			if wait, ok := t.allowMail(k); !ok {
+			k := mailKey{sum: sha256.Sum256([]byte(tok)), kind: mailKindOf(r)}
+			wait, ok := t.allowMail(k)
+			if ok && k.kind == mailFile {
+				wait, ok = t.allowFileBytes(id, fileBytesOf(r))
+			}
+			if !ok {
 				w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
 				http.Error(w, "too many mailbox requests; poll every 10 s", http.StatusTooManyRequests)
 				return
@@ -205,24 +214,58 @@ func (t *tenants) serveMail(w http.ResponseWriter, r *http.Request) {
 // Опрос: договорной темп раз в 10 с, предел вдвое чаще, сразу — 10 страниц
 // истории (2000 / DefaultPage) и запас. Отправка и телефоны: раз в секунду.
 //
+// Файлы (#658) — своя корзина на токен: сразу 8 запросов (два файла по
+// 10 МБ), дальше раз в 10 с; сообщения она не глушит. Сверх того — бюджет
+// байт на человека, общий для его компьютера и телефонов, загрузки и
+// скачивания (выход трафика платный): 300 МБ в сутки, сразу 60 МБ. Скачивание
+// списывает худший кусок, 3 МБ: размер до чтения неизвестен (ревью
+// безопасности #659: корзина на токен давала ×11 токенов человека).
+//
 // ponytail: предел — в памяти экземпляра; при нескольких экземплярах он
 // умножается на их число. Путь апгрейда — предел в API Gateway. Сломанный
 // клиент с after=0 все равно читает журнал целиком раз в 5 с (до 8 МБ) —
-// потолок снимет нарезка журнала (mailbox.DefaultMaxBytes).
+// потолок снимет нарезка журнала (mailbox.DefaultMaxBytes). Файлы держит
+// бакет до правила жизненного цикла (deploy/yandex, 2 дня и день версий, до
+// суток на исполнение): потолок занятого места — 300 МБ × 3 экземпляра × ~4
+// дня ≈ 3,6 ГБ на человека. Путь — отдельный бакет файлов с max-size.
 var (
 	mailPollRate = rate.Every(5 * time.Second)
 	mailSendRate = rate.Limit(1)
+	mailFileRate = rate.Every(10 * time.Second)
+	// mailFileByteRate и mailFileByteBurst — бюджет байт файлов человека.
+	mailFileByteRate  = rate.Limit(float64(300<<20) / (24 * 60 * 60))
+	mailFileByteBurst = 60 << 20
 )
 
 const (
 	mailPollBurst = 12
 	mailSendBurst = 30
+	mailFileBurst = 8
 	mailLimitsCap = 4096 // корзин сверх этого — повод выбросить простаивающие
 )
 
+// mailKind is the bucket of a mailbox request.
+type mailKind uint8
+
+const (
+	mailSend mailKind = iota
+	mailPoll
+	mailFile
+)
+
+func mailKindOf(r *http.Request) mailKind {
+	switch {
+	case r.Method == http.MethodGet && r.URL.Path == "/api/mail":
+		return mailPoll
+	case r.URL.Path == "/api/mail/files" || strings.HasPrefix(r.URL.Path, "/api/mail/files/"):
+		return mailFile
+	}
+	return mailSend
+}
+
 type mailKey struct {
 	sum  [sha256.Size]byte // хэш токена: сам токен в памяти предела не держим
-	poll bool
+	kind mailKind
 }
 
 // allowMail takes a token from the key's bucket or says how long to wait.
@@ -237,14 +280,63 @@ func (t *tenants) allowMail(k mailKey) (time.Duration, bool) {
 	}
 	l, ok := t.limits[k]
 	if !ok {
-		l = rate.NewLimiter(mailSendRate, mailSendBurst)
-		if k.poll {
+		switch k.kind {
+		case mailPoll:
 			l = rate.NewLimiter(mailPollRate, mailPollBurst)
+		case mailFile:
+			l = rate.NewLimiter(mailFileRate, mailFileBurst)
+		default:
+			l = rate.NewLimiter(mailSendRate, mailSendBurst)
 		}
 		t.limits[k] = l
 	}
 	t.limitsMu.Unlock()
 	res := l.ReserveN(now, 1)
+	if wait := res.DelayFrom(now); wait > 0 {
+		res.CancelAt(now)
+		return wait, false
+	}
+	return 0, true
+}
+
+// fileBytesOf is what a file request takes from the person's budget: загрузка —
+// длину тела (больше предела куска сервер все равно не прочтет), скачивание —
+// худший кусок, удаление — ничего.
+func fileBytesOf(r *http.Request) int {
+	switch r.Method {
+	case http.MethodPost:
+		if r.ContentLength > 0 && r.ContentLength <= domain.MaxMailFile {
+			return int(r.ContentLength)
+		}
+		return domain.MaxMailFile
+	case http.MethodGet:
+		return domain.MaxMailFile
+	}
+	return 0
+}
+
+// allowFileBytes takes n bytes from the person's file budget or says how long to wait.
+func (t *tenants) allowFileBytes(id domain.UserID, n int) (time.Duration, bool) {
+	if n == 0 {
+		return 0, true
+	}
+	now := t.now()
+	t.limitsMu.Lock()
+	if len(t.fileBytes) >= mailLimitsCap {
+		maps.DeleteFunc(t.fileBytes, func(_ domain.UserID, l *rate.Limiter) bool {
+			return l.TokensAt(now) >= float64(l.Burst())
+		})
+	}
+	l, ok := t.fileBytes[id]
+	if !ok {
+		l = rate.NewLimiter(mailFileByteRate, mailFileByteBurst)
+		t.fileBytes[id] = l
+	}
+	t.limitsMu.Unlock()
+	res := l.ReserveN(now, n)
+	if !res.OK() {
+		return time.Hour, false
+	}
 	if wait := res.DelayFrom(now); wait > 0 {
 		res.CancelAt(now)
 		return wait, false

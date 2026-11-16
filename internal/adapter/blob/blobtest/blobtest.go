@@ -250,3 +250,45 @@ func mustRead(t *testing.T, s blob.Store, key, want string) {
 		t.Fatalf("Get(%q) = %q, want %q", key, got.Data, want)
 	}
 }
+
+// DeleteStore is a store that also deletes.
+type DeleteStore interface {
+	blob.Store
+	blob.Deleter
+}
+
+// RunDeleter checks the delete contract (#658): удаленного больше нет, его
+// ключ можно создать заново, повтор и отсутствующий ключ — не ошибка, плохой
+// ключ отказан до всякого ввода-вывода.
+func RunDeleter(t *testing.T, newStore func(t *testing.T) DeleteStore) {
+	t.Helper()
+	ctx := context.Background()
+	t.Run("deleted key is gone and can be created again", func(t *testing.T) {
+		s := newStore(t)
+		if _, err := s.Put(ctx, "m/f1", []byte("x"), ""); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Delete(ctx, "m/f1"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Get(ctx, "m/f1"); !errors.Is(err, blob.ErrNotFound) {
+			t.Fatalf("Get after Delete: err = %v, want ErrNotFound", err)
+		}
+		if _, err := s.Put(ctx, "m/f1", []byte("y"), ""); err != nil {
+			t.Fatalf("create after Delete: %v", err)
+		}
+	})
+	t.Run("delete of a missing key is not an error", func(t *testing.T) {
+		if err := newStore(t).Delete(ctx, "m/none"); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("delete with an invalid key is refused", func(t *testing.T) {
+		s := newStore(t)
+		for _, key := range InvalidKeys {
+			if err := s.Delete(ctx, key); !errors.Is(err, blob.ErrInvalidKey) {
+				t.Errorf("Delete(%q): err = %v, want ErrInvalidKey", key, err)
+			}
+		}
+	})
+}

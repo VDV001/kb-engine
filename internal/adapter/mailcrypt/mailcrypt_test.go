@@ -249,3 +249,44 @@ func TestKeyIsNeverPrinted(t *testing.T) {
 		t.Errorf("slog prints the key: %s", buf.String())
 	}
 }
+
+// Файл ящика (#658): туда и обратно; сервер не прочтет и не подменит;
+// чужой ключ и сообщение вместо файла — отказ; пустой и сверх предела — нет.
+func TestSealFile(t *testing.T) {
+	k := mailcrypt.NewKey()
+	plain := []byte("RIFF....WAVEfmt голос")
+	sealed, err := mailcrypt.SealFile(k, plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(sealed, plain[:8]) || len(sealed) != len(plain)+mailcrypt.FileOverhead {
+		t.Fatalf("sealed %d bytes, plain visible: %t", len(sealed), bytes.Contains(sealed, plain[:8]))
+	}
+	if got, err := mailcrypt.OpenFile(k, sealed); err != nil || !bytes.Equal(got, plain) {
+		t.Fatalf("open: %q, %v", got, err)
+	}
+	bad := bytes.Clone(sealed)
+	bad[len(bad)-1] ^= 1
+	if _, err := mailcrypt.OpenFile(k, bad); !errors.Is(err, mailcrypt.ErrNotAuthentic) {
+		t.Errorf("tampered: %v", err)
+	}
+	if _, err := mailcrypt.OpenFile(mailcrypt.NewKey(), sealed); !errors.Is(err, mailcrypt.ErrWrongKey) {
+		t.Errorf("other key: %v", err)
+	}
+	msg, err := mailcrypt.Seal(k, mailcrypt.Meta{Chat: "c", From: domain.MailPhone}, plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mailcrypt.OpenFile(k, msg); err == nil {
+		t.Error("a message opened as a file")
+	}
+	if _, err := mailcrypt.SealFile(k, nil); !errors.Is(err, domain.ErrMailEmpty) {
+		t.Errorf("empty: %v", err)
+	}
+	if _, err := mailcrypt.SealFile(k, make([]byte, mailcrypt.MaxFilePlain+1)); !errors.Is(err, domain.ErrMailTooLarge) {
+		t.Errorf("too large: %v", err)
+	}
+	if s, err := mailcrypt.SealFile(k, make([]byte, mailcrypt.MaxFilePlain)); err != nil || len(s) != domain.MaxMailFile {
+		t.Errorf("at the limit: %d bytes, %v", len(s), err)
+	}
+}

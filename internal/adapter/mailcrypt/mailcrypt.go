@@ -244,3 +244,55 @@ func Open(k Key, chat string, from domain.MailSide, sealed []byte) (Meta, []byte
 	m := Meta{Chat: chat, From: from, Sender: Sender(header[5:13]), Counter: binary.BigEndian.Uint64(header[13:21])}
 	return m, plain, nil
 }
+
+// Файл ящика (#658), версия 1: версия (1) | id ключа (4) | нонс (12) | AES-256-GCM: файл и тег (16).
+// AAD = "kbmail file\x00" + заголовок: сообщение не откроется как файл, и
+// наоборот. С сообщением в журнале файл связывает хеш, который несет само
+// сообщение: подмену куска сервером видит получатель.
+const (
+	fileHeaderSize = 1 + 4 + nonceSize
+	// FileOverhead is what sealing adds to a file piece.
+	FileOverhead = fileHeaderSize + 16
+	// MaxFilePlain is the longest piece whose sealed form fits domain.MaxMailFile.
+	MaxFilePlain = domain.MaxMailFile - FileOverhead
+)
+
+// SealFile encrypts one file piece.
+func SealFile(k Key, plain []byte) ([]byte, error) {
+	switch {
+	case k.s == nil:
+		return nil, fmt.Errorf("%w: no key", ErrFormat)
+	case len(plain) == 0:
+		return nil, domain.ErrMailEmpty
+	case len(plain) > MaxFilePlain:
+		return nil, fmt.Errorf("%w: %d bytes of file, limit %d", domain.ErrMailTooLarge, len(plain), MaxFilePlain)
+	}
+	st := k.s()
+	out := make([]byte, fileHeaderSize, FileOverhead+len(plain))
+	out[0] = version
+	copy(out[1:5], st.id[:])
+	_, _ = rand.Read(out[5:fileHeaderSize])
+	return st.aead.Seal(out, out[5:fileHeaderSize], plain, fileAAD(out)), nil
+}
+
+// OpenFile checks and decrypts one file piece.
+func OpenFile(k Key, sealed []byte) ([]byte, error) {
+	switch {
+	case len(sealed) < FileOverhead || sealed[0] != version:
+		return nil, fmt.Errorf("%w: sealed file", ErrFormat)
+	case k.s == nil:
+		return nil, fmt.Errorf("%w: no key", ErrFormat)
+	case KeyID(sealed[1:5]) != k.s().id:
+		return nil, ErrWrongKey
+	}
+	header := sealed[:fileHeaderSize]
+	plain, err := k.s().aead.Open(nil, header[5:], sealed[fileHeaderSize:], fileAAD(header))
+	if err != nil {
+		return nil, ErrNotAuthentic
+	}
+	return plain, nil
+}
+
+func fileAAD(header []byte) []byte {
+	return append([]byte("kbmail file\x00"), header[:fileHeaderSize]...)
+}

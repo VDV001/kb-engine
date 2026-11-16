@@ -105,6 +105,9 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		f.objs[key] = body
 		w.Header().Set("ETag", etagOf(body))
+	case http.MethodDelete: // DeleteObject: 204 и на отсутствующий ключ
+		delete(f.objs, key)
+		w.WriteHeader(http.StatusNoContent)
 	default:
 		http.Error(w, "method", http.StatusMethodNotAllowed)
 	}
@@ -121,6 +124,13 @@ func newStore(t *testing.T, endpoint string, tok blobs3.TokenSource) *blobs3.Sto
 
 func TestContract(t *testing.T) {
 	blobtest.Run(t, func(t *testing.T) blob.Store {
+		_, srv := newFakeS3(t)
+		return newStore(t, srv.URL, blobs3.StaticToken(token))
+	})
+}
+
+func TestDeleteContract(t *testing.T) {
+	blobtest.RunDeleter(t, func(t *testing.T) blobtest.DeleteStore {
 		_, srv := newFakeS3(t)
 		return newStore(t, srv.URL, blobs3.StaticToken(token))
 	})

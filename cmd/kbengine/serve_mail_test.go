@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/time/rate"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/adapter/userauth"
@@ -269,7 +272,7 @@ func TestMailLimitsForgetIdle(t *testing.T) {
 		tn.allowMail(mailKey{sum: sha256.Sum256([]byte(strconv.Itoa(i)))})
 	}
 	*now = now.Add(time.Hour)
-	tn.allowMail(mailKey{poll: true})
+	tn.allowMail(mailKey{kind: mailPoll})
 	if n := len(tn.limits); n > 1 {
 		t.Errorf("%d limiters kept after an idle hour, want only the fresh one", n)
 	}
@@ -338,6 +341,107 @@ func TestMailPhoneVisitAndName(t *testing.T) {
 			if d.Name != "" || d.Seen != nil {
 				t.Errorf("phone that never came in: %+v", d)
 			}
+		}
+	}
+}
+
+// putFile posts a file piece as the phone or the desk would: байты, не JSON.
+func putFile(f tenantFixture, body []byte, token string) *httptest.ResponseRecorder {
+	return putFileAs(f, body, token, "application/octet-stream")
+}
+
+func putFileAs(f tenantFixture, body []byte, token, contentType string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/api/mail/files", bytes.NewReader(body))
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	f.h.ServeHTTP(rec, req)
+	return rec
+}
+
+// Файлы ящика в настоящей сборке serve --tenants (#658): телефон кладет,
+// компьютер читает и удаляет, сосед не видит; у загрузки своя корзина —
+// строже отправки, и сообщения она не глушит.
+func TestMailFiles(t *testing.T) {
+	f := newTenants(t)
+	frozen(f)
+	_, phone := addPhone(t, f, f.tokA)
+	piece := []byte("sealed-file-piece")
+	rec := putFile(f, piece, phone)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("phone put: %d %s", rec.Code, rec.Body.String())
+	}
+	var out struct{ ID string }
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || domain.ValidateMailFileID(out.ID) != nil {
+		t.Fatalf("put answer %s, %v", rec.Body.String(), err)
+	}
+	if rec := do(f.h, http.MethodGet, "/api/mail/files/"+out.ID, "", f.tokA); rec.Code != http.StatusOK || !bytes.Equal(rec.Body.Bytes(), piece) {
+		t.Fatalf("desk get: %d %q", rec.Code, rec.Body.String())
+	}
+	if rec := do(f.h, http.MethodGet, "/api/mail/files/"+out.ID, "", f.tokB); rec.Code != http.StatusNotFound {
+		t.Errorf("B reads A's file: %d", rec.Code)
+	}
+	if rec := do(f.h, http.MethodDelete, "/api/mail/files/"+out.ID, "", f.tokA); rec.Code != http.StatusNoContent {
+		t.Errorf("desk delete: %d", rec.Code)
+	}
+	if rec := do(f.h, http.MethodGet, "/api/mail/files/"+out.ID, "", f.tokA); rec.Code != http.StatusNotFound {
+		t.Errorf("after delete: %d", rec.Code)
+	}
+	// Корзина загрузки: 8 подряд (два файла по 10 МБ), девятая — 429.
+	for i := range 7 {
+		if rec := putFile(f, piece, phone); rec.Code != http.StatusCreated {
+			t.Fatalf("put %d: %d", i+2, rec.Code)
+		}
+	}
+	if rec := putFile(f, piece, phone); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("put 9: %d, want 429", rec.Code)
+	}
+	if rec := do(f.h, http.MethodPost, "/api/mail/c-1", `{"sealed":"`+sealed+`"}`, phone); rec.Code != http.StatusCreated {
+		t.Errorf("message limited by files: %d", rec.Code)
+	}
+}
+
+// Бюджет байт файлов — на человека, а не на токен (ревью безопасности #659):
+// компьютер и телефоны тратят один бюджет, скачивание тоже тратит (выход
+// трафика платный); сосед со своим бюджетом.
+func TestMailFileBudgetIsPerPerson(t *testing.T) {
+	defer func(r rate.Limit, b int) { mailFileByteRate, mailFileByteBurst = r, b }(mailFileByteRate, mailFileByteBurst)
+	mailFileByteRate, mailFileByteBurst = rate.Limit(1), 2*domain.MaxMailFile+64
+	f := newTenants(t)
+	frozen(f)
+	_, phone1 := addPhone(t, f, f.tokA)
+	_, phone2 := addPhone(t, f, f.tokA)
+	rec := putFile(f, []byte("sealed"), phone1)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("put: %d", rec.Code)
+	}
+	var out struct{ ID string }
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	for i, tok := range []string{f.tokA, phone2} { // скачивание — по худшему куску, 3 МБ
+		if rec := do(f.h, http.MethodGet, "/api/mail/files/"+out.ID, "", tok); rec.Code != http.StatusOK {
+			t.Fatalf("get %d: %d", i+1, rec.Code)
+		}
+	}
+	if rec := do(f.h, http.MethodGet, "/api/mail/files/"+out.ID, "", phone1); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("third get of A by another token: %d, want 429 — the budget is the person's", rec.Code)
+	}
+	if rec := putFile(f, []byte("sealed"), f.tokB); rec.Code != http.StatusCreated {
+		t.Errorf("B limited by A: %d", rec.Code)
+	}
+}
+
+// Тип тела — по смыслу, а не строкой (ревью #659): параметры и регистр не
+// мешают; JSON старого клиента в чат «files» — 415.
+func TestMailFileContentType(t *testing.T) {
+	f := newTenants(t)
+	for ct, want := range map[string]int{
+		"application/octet-stream; charset=binary": http.StatusCreated,
+		"Application/Octet-Stream":                 http.StatusCreated,
+		"application/json":                         http.StatusUnsupportedMediaType,
+		"":                                         http.StatusUnsupportedMediaType,
+	} {
+		if rec := putFileAs(f, []byte("x"), f.tokA, ct); rec.Code != want {
+			t.Errorf("%q: %d, want %d", ct, rec.Code, want)
 		}
 	}
 }

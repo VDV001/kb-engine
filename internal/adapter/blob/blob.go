@@ -61,6 +61,13 @@ type Store interface {
 	Put(ctx context.Context, key string, data []byte, ifMatch string) (string, error)
 }
 
+// Deleter removes objects. Отдельно от Store: удалять нужно только файлам
+// ящика (#658), остальные данные пишутся версиями и не удаляются.
+type Deleter interface {
+	// Delete removes key; ключа нет — не ошибка: удаление повторяемо.
+	Delete(ctx context.Context, key string) error
+}
+
 // ValidKey refuses keys that could name something outside their own place:
 // абсолютный путь, сегменты `.` и `..`, пустой сегмент, обратная косая черта
 // и управляющие символы. На диске такой ключ вышел бы из корня, в бакете — из

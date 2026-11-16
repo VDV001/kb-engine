@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -66,6 +68,9 @@ func MailHandler(svc mail.Service, logf func(string, ...any)) http.Handler {
 	mux.HandleFunc("PUT /api/mail/push", h.with(h.subscribe))
 	mux.HandleFunc("DELETE /api/mail/push", h.with(h.unsubscribe))
 	mux.HandleFunc("POST /api/mail/notify", h.with(h.notify))
+	mux.HandleFunc("POST /api/mail/files", h.with(h.putFile))
+	mux.HandleFunc("GET /api/mail/files/{file}", h.with(h.getFile))
+	mux.HandleFunc("DELETE /api/mail/files/{file}", h.with(h.deleteFile))
 	mux.HandleFunc("POST /api/mail/{chat}", h.with(h.post))
 	mux.HandleFunc("GET /api/mail", h.with(h.since))
 	return mux
@@ -100,7 +105,7 @@ func (h mailRoutes) with(next func(http.ResponseWriter, *http.Request, mailCalle
 
 func (h mailRoutes) fail(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, domain.ErrMailChat), errors.Is(err, domain.ErrMailEmpty), errors.Is(err, domain.ErrMailSide):
+	case errors.Is(err, domain.ErrMailChat), errors.Is(err, domain.ErrMailEmpty), errors.Is(err, domain.ErrMailSide), errors.Is(err, domain.ErrMailFile):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, domain.ErrMailTooLarge):
 		http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
@@ -119,6 +124,11 @@ func (h mailRoutes) fail(w http.ResponseWriter, err error) {
 		http.Error(w, "the mailbox kept changing under the write; retry", http.StatusConflict)
 	case errors.Is(err, domain.ErrNoSuchUser):
 		http.Error(w, "no such phone", http.StatusNotFound)
+	case errors.Is(err, domain.ErrNoSuchMailFile):
+		http.Error(w, "no such file", http.StatusNotFound)
+	case errors.Is(err, domain.ErrMailFilesOff):
+		// 501, а не 404: окно отличит «у сервера нет файлов» от «кусок истек».
+		http.Error(w, err.Error(), http.StatusNotImplemented)
 	default:
 		h.logf("mail: %v", err) // причина — в журнал: в ней ключ хранилища
 		http.Error(w, "mailbox unavailable", http.StatusServiceUnavailable)
@@ -341,4 +351,50 @@ func withBrand(m string) string {
 		return "Samsung " + m
 	}
 	return m
+}
+
+// putFile keeps a sealed file piece (#658): тело — сами байты, не JSON и не
+// base64: кусок до 3 МБ и так у предела запроса Serverless Container.
+func (h mailRoutes) putFile(w http.ResponseWriter, r *http.Request, c mailCaller) {
+	// Только байты: сообщение старого клиента в чат «files» (JSON) не ляжет
+	// файлом молча — до #658 этот адрес был чатом.
+	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/octet-stream" {
+		http.Error(w, "a file piece is application/octet-stream", http.StatusUnsupportedMediaType)
+		return
+	}
+	sealed, err := io.ReadAll(http.MaxBytesReader(w, r.Body, domain.MaxMailFile+1))
+	if err != nil {
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			http.Error(w, "file piece over the mailbox limit", http.StatusRequestEntityTooLarge)
+			return
+		}
+		http.Error(w, "unreadable body", http.StatusBadRequest)
+		return
+	}
+	id, err := h.svc.PutFile(r.Context(), c.id, c.side, sealed)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusCreated, map[string]string{"id": id})
+}
+
+func (h mailRoutes) getFile(w http.ResponseWriter, r *http.Request, c mailCaller) {
+	sealed, err := h.svc.GetFile(r.Context(), c.id, r.PathValue("file"))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(sealed)
+}
+
+func (h mailRoutes) deleteFile(w http.ResponseWriter, r *http.Request, c mailCaller) {
+	if err := h.svc.DeleteFile(r.Context(), c.id, r.PathValue("file")); err != nil {
+		h.fail(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
