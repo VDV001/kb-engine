@@ -249,7 +249,9 @@ func (d *dictation) Check() listenStatus {
 	if d.bin == "" {
 		return listenStatus{}
 	}
-	out, err := exec.Command(d.bin, "--check").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second) // зовется и работником ящика: не держать его
+	defer cancel()
+	out, err := exec.CommandContext(ctx, d.bin, "--check").Output()
 	st := listenStatus{Helper: true}
 	if err == nil {
 		_ = json.Unmarshal(out, &st)

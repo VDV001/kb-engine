@@ -754,10 +754,14 @@ function paintVoice(c) {
   $("mic").hidden = $("talk").hidden = !hear; // окно не слышит — кнопок нет
   $("mic").setAttribute("aria-pressed", String(rec?.mode === "dictate"));
   $("talk").setAttribute("aria-pressed", String(rec?.mode === "ask"));
-  const waitedTooLong = c?.listening && Date.now() - c.listening > 150_000;
+  // Окно одно на все телефоны и серверы: распознавание ждет очереди — 5 минут.
+  // Старое true без времени — не повод для тревоги.
+  const waitedTooLong = typeof c?.listening === "number" && Date.now() - c.listening > 300_000;
   if (waitedTooLong) { delete c.listening; note("Компьютер не ответил на голос: окно закрыто или старше голоса с телефона.", false); persist(); }
   $("ask-note").textContent = rec ? (rec.mode === "ask" ? "слушаю вопрос · пауза — конец" : "слушаю · нажмите еще раз, чтобы закончить") + (hear ? " · " + hearNote(hear) : "")
-    : c?.listening ? "компьютер распознает…" : "ответ считает компьютер · переписка зашифрована";
+    : c?.listening ? "компьютер распознает…"
+      : hear && hear !== "device" ? "переписка зашифрована · голос " + hearNote(hear) // до нажатия, а не после (повторное ревью #660)
+        : "ответ считает компьютер · переписка зашифрована";
   if (!c) return;
   if (c.heard !== undefined) { // диктовка: текст — в поле, отправляет человек
     const q = $("q");
@@ -771,16 +775,28 @@ function paintVoice(c) {
   delete c.say;
   persist();
   if (typeof say !== "object" || Date.now() - say.at > SAY_FRESH_MS || !("speechSynthesis" in window)) return;
-  const voice = localRussianVoice();
+  sayAloud(say.text);
+}
+
+// sayAloud reads text with a local Russian voice; голоса в Chrome приходят не
+// сразу (voiceschanged) — ждать их до 2 с (повторное ревью #660).
+async function sayAloud(text) {
+  let voice = localRussianVoice();
+  if (!voice) {
+    await new Promise((ok) => { speechSynthesis.addEventListener("voiceschanged", ok, { once: true }); setTimeout(ok, 2000); });
+    voice = localRussianVoice();
+  }
   if (!voice) { note("На телефоне нет русского голоса без сети — ответ не прочитан вслух.", false); return; }
-  const u = new SpeechSynthesisUtterance(say.text);
+  const u = new SpeechSynthesisUtterance(text);
   u.voice = voice;
   u.lang = voice.lang;
   speechSynthesis.cancel();
   speechSynthesis.speak(u);
 }
 
-$("mic").addEventListener("click", () => startVoice("dictate"));
+$("mic").addEventListener("click", () => { askDesk(); startVoice("dictate"); }); // кто слышит — освежить
+$("talk").addEventListener("click", () => { askDesk(); startVoice("ask"); });
+if ("speechSynthesis" in window) speechSynthesis.getVoices(); // Chrome грузит голоса по первому вопросу
 // «+» (#650): одно поле файла — iPhone и Android сами предлагают камеру,
 // галерею и файлы. Файл живет в памяти до отправки, в хранилище не пишется.
 $("plus").addEventListener("click", () => $("file").click());
@@ -794,7 +810,6 @@ $("file").addEventListener("change", () => {
   show();
 });
 $("att").addEventListener("click", () => { ui.attach = null; show(); }); // нажатие на плашку — убрать файл
-$("talk").addEventListener("click", () => startVoice("ask"));
 
 $("q").addEventListener("input", () => { // поле растет с текстом до 40% экрана
   $("q").style.height = "auto";

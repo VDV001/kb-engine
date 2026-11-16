@@ -52,6 +52,8 @@ type mailWorker struct {
 	desk     mailrelay.DeskInfo // модель и источники окна для телефона (#647); nil — отказ словами
 	hear     transcriber        // голос телефона (#648): запись → текст; nil — отказ кодом
 	listen   *dictation         // помощник kb-listen для Apple Speech (#648)
+	apple    string             // что сказал kb-listen --check: mailrelay.Hear* или ""
+	appleAt  time.Time          // когда спрашивали: не чаще раза в 5 минут
 
 	notesMu sync.Mutex
 	notes   []mailrelay.Note // «Запомнить о Вас?» для телефонов: пишет разбор ответа, забирает круг
@@ -256,38 +258,64 @@ func searched(cfg desktopconfig.Config, s desktopconfig.Source) bool {
 // chatConnKinds are the connections a chat can ask (CHAT_CONN в frontend/app.js).
 var chatConnKinds = map[desktopconfig.ConnKind]string{desktopconfig.ConnOzon: "Ozon", desktopconfig.ConnMPStats: "MPStats"}
 
-// useVoice wires the phone's voice (#648): распознает то, что выбрано в «Чат и
-// модель → Слушает»; Apple Speech — помощником kb-listen --file, только на Маке.
 // hearLabel says who hears the phone's voice: mailrelay.Hear*; пусто — никто.
+// Только то, что сработает: выключенное или чужое подключение, запрет Apple
+// Speech — голоса нет (повторное ревью #660). Проверка Apple — раз в 5 минут.
 func (w *mailWorker) hearLabel() string {
 	if w.hear == nil {
 		return ""
 	}
 	w.settings.mu.Lock()
-	id := w.settings.cfg.Chat.Listen
+	cfg := w.settings.cfg
 	w.settings.mu.Unlock()
+	id := cfg.Chat.Listen
 	switch {
 	case id != "" && cloudListen[id] != "":
 		return mailrelay.HearCloud
 	case id != "":
+		c, ok := cfg.Connection(id)
+		if !ok || !c.Enabled || c.Kind != desktopconfig.ConnSpeech {
+			return ""
+		}
 		return mailrelay.HearServer
-	case goruntime.GOOS != "darwin" || w.listen == nil || w.listen.bin == "":
-		return ""
-	case w.listen.Check().OnDevice:
-		return mailrelay.HearDevice
 	}
-	return mailrelay.HearApple
+	return w.appleLabel()
 }
 
+// appleLabel asks kb-listen --check, не чаще раза в 5 минут: Apple Speech
+// без разрешения или недоступный — голоса нет.
+func (w *mailWorker) appleLabel() string {
+	if goruntime.GOOS != "darwin" || w.listen == nil || w.listen.bin == "" {
+		return ""
+	}
+	if time.Since(w.appleAt) > 5*time.Minute {
+		st := w.listen.Check()
+		w.apple, w.appleAt = "", time.Now()
+		switch {
+		case st.Auth != "authorized" || !st.Available:
+		case st.OnDevice:
+			w.apple = mailrelay.HearDevice
+		default:
+			w.apple = mailrelay.HearApple
+		}
+	}
+	return w.apple
+}
+
+// useVoice wires the phone's voice (#648): распознает то, что выбрано в «Чат и
+// модель → Слушает»; Apple Speech — помощником kb-listen --file, только на Маке.
 func (w *mailWorker) useVoice(listen *dictation) {
-	w.listen = listen
+	w.listen, w.appleAt = listen, time.Time{}
 	// Запись, оставленная упавшим окном, — расшифрованная речь: убрать до
 	// первого круга (ревью безопасности #660).
 	dir := cmp.Or(listen.tmpDir, os.TempDir())
 	for _, pat := range []string{"kb-phone-*.wav", "kb-listen-*.wav"} {
 		old, _ := filepath.Glob(filepath.Join(dir, pat))
 		for _, f := range old {
-			_ = os.Remove(f)
+			// Свежая — запись другого окна (отладочная сборка рядом): не трогать.
+			if info, err := os.Stat(f); err == nil && time.Since(info.ModTime()) > 10*time.Minute {
+				_ = os.Remove(f)
+			}
 		}
 	}
 	w.hear = func(ctx context.Context, wav []byte) (string, error) {

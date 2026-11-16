@@ -280,8 +280,8 @@ want(q20.text === "какой срок?" && !q20.voice && st20.chats.c.say?.text
 // голоса — словами; ответ читается вслух, только пока свежий; Apple через сеть
 // берет до минуты — запись короче; телефон говорит, кто слышит его голос.
 const st21 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { c: { title: "Чат", msgs: [{ who: "me", text: "🎤", voice: true }], pending: true, updated: 1 } } };
-s.take(st21, { seq: 1, chat: "c", from: "desk" }, dk14(1, { kind: "heard", text: "" }));
-want(!st21.chats.c.pending && !st21.chats.c.msgs.some((x) => x.voice), "a silent voice question stops waiting and loses its placeholder");
+s.take(st21, { seq: 1, chat: "c", from: "desk" }, dk14(1, { kind: "error", text: "silent" }));
+want(!st21.chats.c.pending && !st21.chats.c.msgs.some((x) => x.voice), "a silent voice question stops waiting and loses its placeholder flag");
 s.take(st21, { seq: 2, chat: "c", from: "desk" }, dk14(2, { kind: "error", text: "unheard" }));
 const e21 = st21.chats.c.msgs.at(-1);
 want(e21.who === "error" && e21.text !== "unheard" && /распозна/.test(e21.text), "a voice refusal code is told in words");
@@ -298,6 +298,23 @@ want(/10 МБ/.test(s.attachRefusal(s.MAX_ATTACH + 1)) && /пуст/.test(s.atta
 const pb = s.pieceBounds(7, 3);
 want(JSON.stringify(pb) === JSON.stringify([[0, 3], [3, 6], [6, 7]]), "pieces cover the file in order");
 want(s.pieceBounds(6, 3).length === 2 && s.pieceBounds(1, 3).length === 1, "pieces: exact and small");
+// 23. Повторное ревью #660: свежесть «читать вслух» — по времени сообщения;
+// отказ голоса снимает признак заглушки, и диктовка потом не трогает «ждет»
+// текстового вопроса; тишина вопроса — код silent словами.
+const st23 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { c: { title: "Чат", msgs: [{ who: "me", text: "🎤", voice: true }], pending: true, updated: 1 } } };
+const hourAgo = new Date(Date.now() - 3600_000).toISOString();
+s.take(st23, { seq: 1, chat: "c", from: "desk", at: hourAgo }, dk14(1, { kind: "answer", text: "30 дней", heard: "срок?" }));
+want(Date.now() - st23.chats.c.say.at > 3000_000, "an old answer is old for reading aloud");
+st23.chats.c.msgs.push({ who: "me", text: "🎤", voice: true });
+st23.chats.c.pending = true;
+s.take(st23, { seq: 2, chat: "c", from: "desk" }, dk14(2, { kind: "error", text: "unheard" }));
+want(!st23.chats.c.msgs.some((x) => x.voice), "a voice refusal clears the placeholder flag");
+st23.chats.c.msgs.push({ who: "me", text: "текстом", counter: "9" });
+st23.chats.c.pending = true;
+s.take(st23, { seq: 3, chat: "c", from: "desk" }, dk14(3, { kind: "heard", text: "диктовка" }));
+want(st23.chats.c.pending === true && st23.chats.c.heard === "диктовка", "dictation does not stop a typed question waiting");
+s.take(st23, { seq: 4, chat: "c", from: "desk" }, dk14(4, { kind: "error", text: "silent" }));
+want(/не расслышал/.test(st23.chats.c.msgs.at(-1).text), "silence of a voice question is told in words");
 
 console.log(fails.length ? fails.join("\n") : "ok");
 `
