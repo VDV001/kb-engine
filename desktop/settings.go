@@ -24,6 +24,7 @@ import (
 // errors.Is, а не подстроку.
 var (
 	errNoFolders  = errors.New("нужна хотя бы одна включенная папка")
+	errNoSources  = errors.New("нужен хотя бы один включенный источник")
 	errBadFolder  = errors.New("не подходит")
 	errBadCatalog = errors.New("файла каталога нет")
 )
@@ -227,6 +228,9 @@ func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []strin
 	if err := next.Validate(); err != nil {
 		return err
 	}
+	if err := next.CheckServers(); err != nil {
+		return err
+	}
 	if err := checkDriveConns(f.cfg, next); err != nil {
 		return err
 	}
@@ -392,7 +396,12 @@ func (f *folderSettings) openableFolders(next desktopconfig.Config) (roots, miss
 		}
 	}
 	if enabled == 0 {
-		return nil, nil, errNoFolders
+		// Без папок можно (отзыв тестера 16.11: только kb-сервер), но что-то
+		// включенное нужно — иначе искать негде.
+		if !slices.ContainsFunc(next.Sources, func(s desktopconfig.Source) bool { return s.Enabled }) {
+			return nil, nil, errNoSources
+		}
+		return nil, nil, nil
 	}
 	if len(roots) == 0 {
 		// Включены только сохраненные, но сейчас недоступные папки: сохранение

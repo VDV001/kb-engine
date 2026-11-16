@@ -116,12 +116,15 @@ func TestSetSources_Rejects(t *testing.T) {
 		{"папка внутри папки", func(h string) []desktopconfig.Source {
 			return []desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, h, true), src("folder-2", desktopconfig.KindFolder, filepath.Join(h, "notes"), true)}
 		}, errBadFolder},
-		{"ни одной включенной папки", func(h string) []desktopconfig.Source {
-			return []desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, filepath.Join(h, "notes"), false)}
-		}, errNoFolders},
+		{"ни одного включенного источника", func(h string) []desktopconfig.Source {
+			return []desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, filepath.Join(h, "notes"), false), src("server-1", desktopconfig.KindServer, "https://kb.example", false)}
+		}, errNoSources},
 		{"файла каталога нет", func(h string) []desktopconfig.Source {
 			return []desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, filepath.Join(h, "notes"), true), src("catalog-1", desktopconfig.KindCatalog, filepath.Join(h, "nope.json"), true)}
 		}, errBadCatalog},
+		{"kb-сервер дважды", func(h string) []desktopconfig.Source {
+			return []desktopconfig.Source{src("server-1", desktopconfig.KindServer, "https://kb.example", true), src("server-2", desktopconfig.KindServer, "https://kb.example/", true)}
+		}, desktopconfig.ErrSourceDup},
 		// Одна папка двумя записями попала бы в индекс и в MCP дважды.
 		{"одна папка дважды", func(h string) []desktopconfig.Source {
 			return []desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, "~/notes", true), src("folder-2", desktopconfig.KindFolder, filepath.Join(h, "notes"), false)}
@@ -143,6 +146,18 @@ func TestSetSources_Rejects(t *testing.T) {
 				t.Fatalf("apply calls = %d, конфиг изменен: %v", got.calls, string(before) != string(after))
 			}
 		})
+	}
+}
+
+// Только kb-сервер, без папок (отзыв тестера 16.11: на Windows папки по
+// умолчанию нет) — сохраняется: индекс файлов просто пуст.
+func TestSetSources_ServerWithoutFolders(t *testing.T) {
+	s, got, _ := newSourcesSettings(t)
+	if err := s.SetSources([]desktopconfig.Source{src("server-1", desktopconfig.KindServer, "https://kb.example", true)}, nil, map[string]string{"server-1": "t"}); err != nil {
+		t.Fatal(err)
+	}
+	if got.calls != 1 || len(s.cfg.FolderRoots()) != 0 || len(s.cfg.Sources) != 1 {
+		t.Fatalf("apply calls = %d, sources = %+v", got.calls, s.cfg.Sources)
 	}
 }
 
