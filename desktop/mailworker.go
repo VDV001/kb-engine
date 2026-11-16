@@ -161,6 +161,7 @@ func (w *mailWorker) tickServer(ctx context.Context, id string) error {
 		// предел отправки окна — раз в секунду.
 		StepEvery: 3 * time.Second,
 		Logf:      w.logf,
+		Notifier:  mailNotify{c.client},
 
 		FindTimeout: phoneFindTimeout,
 	}
@@ -274,6 +275,14 @@ func chatAnswerer(d *chatDesk) answerFn {
 }
 
 // mailBox is the kb server's mailbox for the relay.
+// mailNotify asks the kb-server to push the phones after an answer.
+type mailNotify struct{ c kbserver.Client }
+
+func (n mailNotify) Notify(ctx context.Context) error {
+	_, err := n.c.Notify(ctx)
+	return err
+}
+
 type mailBox struct{ c kbserver.Client }
 
 func (b mailBox) Since(ctx context.Context, after int64) (mailrelay.Page, error) {
