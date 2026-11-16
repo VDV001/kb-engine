@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"sync"
 	"time"
 
@@ -178,8 +179,12 @@ func (w *mailWorker) tickServer(ctx context.Context, id string, notes []mailrela
 		Notes:     notes,
 		Memory:    w.memory,
 		Desk:      w.desk,
+		Files:     mailVoiceFiles{c.client},
 
 		FindTimeout: phoneFindTimeout,
+	}
+	if w.hear != nil { // без распознавания — отказ кодом, не интерфейс с nil внутри
+		relay.Hear = phoneHearer{key: c.key, hear: w.hear}
 	}
 	return relay.Tick(ctx)
 }
@@ -245,7 +250,45 @@ var chatConnKinds = map[desktopconfig.ConnKind]string{desktopconfig.ConnOzon: "O
 
 // useVoice wires the phone's voice (#648): распознает то, что выбрано в «Чат и
 // модель → Слушает»; Apple Speech — помощником kb-listen --file, только на Маке.
-func (w *mailWorker) useVoice(listen *dictation) {}
+func (w *mailWorker) useVoice(listen *dictation) {
+	w.hear = func(ctx context.Context, wav []byte) (string, error) {
+		tr, err := w.settings.listenTranscriber()
+		switch {
+		case err != nil:
+			return "", err
+		case tr != nil:
+			return tr(ctx, wav)
+		case goruntime.GOOS != "darwin" || listen == nil:
+			return "", errors.New("компьютер не слышит телефон: выберите распознавание в «Чат и модель → Слушает»")
+		}
+		return listen.TranscribeFile(ctx, wav)
+	}
+}
+
+// mailVoiceFiles is the server's mailbox files for the relay (#648).
+type mailVoiceFiles struct{ c kbserver.Client }
+
+func (f mailVoiceFiles) Get(ctx context.Context, id string) ([]byte, error) {
+	return f.c.MailFileGet(ctx, id)
+}
+
+func (f mailVoiceFiles) Delete(ctx context.Context, id string) error {
+	return f.c.MailFileDelete(ctx, id)
+}
+
+// phoneHearer opens the phone's recording with the chat key and hears it.
+type phoneHearer struct {
+	key  mailcrypt.Key
+	hear transcriber
+}
+
+func (h phoneHearer) Hear(ctx context.Context, sealed []byte) (string, error) {
+	wav, err := mailcrypt.OpenFile(h.key, sealed)
+	if err != nil {
+		return "", fmt.Errorf("запись с телефона не открылась: %w", err)
+	}
+	return h.hear(ctx, wav)
+}
 
 // phoneFindTimeout bounds one search or open for the phone: работник один на
 // все серверы, подвисший источник или огромный PDF не держат его круг.
