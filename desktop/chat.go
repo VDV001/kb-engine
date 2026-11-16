@@ -95,6 +95,9 @@ type askReq struct {
 	Sources  []string `json:"sources"`
 	// Portrait — как портрет идет в чат, когда не помещается: "", full, relevant.
 	Portrait string `json:"portrait"`
+	// Model — модель этого вопроса (выбор телефона, #647): только из списка окна;
+	// пусто — модель настроек.
+	Model string `json:"model,omitempty"`
 }
 
 type chatMessage struct {

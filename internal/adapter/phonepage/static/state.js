@@ -146,6 +146,11 @@ export function deciding(c, id) {
   if (f) Object.assign(f, { busy: true, err: "" });
 }
 
+// questionPayload is the question of chat c with its choice (#647).
+export function questionPayload(c, text) {
+  return { kind: "question", text };
+}
+
 // searchChat is the mailbox chat of this phone's searches: выдача и документы
 // идут им и в список чатов не попадают. От отправителя — повторная привязка
 // тем же ключом сохраняет его.

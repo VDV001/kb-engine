@@ -250,13 +250,13 @@ func TestMailWorkerShowsThePhoneTurn(t *testing.T) {
 	var got []phoneTurn
 	w.turn = func(e phoneTurn) { got = append(got, e) }
 	fail := error(nil)
-	w.answer = func(_ context.Context, _, _ string, began func(string), step func(chat.Use)) (mailrelay.Answer, error) {
+	w.answer = func(_ context.Context, _, _ string, _ mailrelay.Options, began func(string), step func(chat.Use)) (mailrelay.Answer, error) {
 		began("w-1")
 		step(chat.Use{Kind: chat.UseDocs, What: "поставки"})
 		return mailrelay.Answer{Chat: "w-1", Text: "12"}, fail
 	}
 	var steps []string
-	if _, err := (workerAsker{w}).AskStepped(t.Context(), "", "сколько?", func(s mailrelay.Step) { steps = append(steps, s.Text) }); err != nil {
+	if _, err := (workerAsker{w}).AskStepped(t.Context(), "", "сколько?", mailrelay.Options{}, func(s mailrelay.Step) { steps = append(steps, s.Text) }); err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 3 || got[0] != (phoneTurn{Chat: "w-1", Question: "сколько?"}) || got[1].Step == nil || got[1].Step.What != "поставки" || got[2] != (phoneTurn{Chat: "w-1", Done: true}) {
@@ -266,7 +266,7 @@ func TestMailWorkerShowsThePhoneTurn(t *testing.T) {
 		t.Errorf("phone steps %v", steps)
 	}
 	got, fail = nil, errors.New("model down")
-	_, _ = (workerAsker{w}).AskStepped(t.Context(), "", "еще?", nil)
+	_, _ = (workerAsker{w}).AskStepped(t.Context(), "", "еще?", mailrelay.Options{}, nil)
 	if len(got) == 0 || got[len(got)-1] != (phoneTurn{Chat: "w-1", Done: true}) {
 		t.Fatalf("after a failed turn the page heard %+v — «отвечает» would hang", got)
 	}
@@ -309,5 +309,53 @@ func TestPhoneMemoryDecides(t *testing.T) {
 	calls = nil
 	if err := m.Decide(t.Context(), "f3", true, "x"); err == nil || len(calls) != 0 {
 		t.Fatalf("failed approve: %v, %v — the page must not drop its card", err, calls)
+	}
+}
+
+// Выбор телефона — модель и источники — доходит до хода окна (#647).
+func TestMailWorkerPassesThePhoneChoice(t *testing.T) {
+	w := newMailWorker(nil, nil, t.TempDir())
+	var got mailrelay.Options
+	w.answer = func(_ context.Context, _, _ string, opts mailrelay.Options, _ func(string), _ func(chat.Use)) (mailrelay.Answer, error) {
+		got = opts
+		return mailrelay.Answer{Chat: "w-1", Text: "ок"}, nil
+	}
+	want := mailrelay.Options{Model: "qwen3", Only: []string{"f-1"}}
+	if _, err := (workerAsker{w}).AskStepped(t.Context(), "", "сроки?", want, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got.Model != "qwen3" || strings.Join(got.Only, ",") != "f-1" {
+		t.Fatalf("answer got %+v", got)
+	}
+}
+
+// Состояние окна для поля ввода телефона: модель и список, источники и
+// подключения, разрешенные чату (#647).
+func TestPhoneDeskState(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	if err := s.SetSources(serverList("srv1", "https://kb.example.ru", true), nil, map[string]string{"srv1": srvToken}); err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	s.cfg.Connections = append(s.cfg.Connections,
+		desktopconfig.Connection{ID: "oz1", Kind: desktopconfig.ConnOzon, Name: "Пример", Enabled: true, Share: true},
+		desktopconfig.Connection{ID: "oz2", Kind: desktopconfig.ConnOzon, Name: "Закрытый", Enabled: true})
+	s.mu.Unlock()
+	d := phoneDesk{settings: s, models: func() (modelsView, error) {
+		return modelsView{Current: "qwen3", Recent: []modelChoice{{ID: "qwen3"}, {ID: "llama3"}}}, nil
+	}}
+	st, err := d.State(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Model != "qwen3" || strings.Join(st.Models, ",") != "qwen3,llama3" {
+		t.Errorf("models %+v", st)
+	}
+	var names []string
+	for _, x := range st.Sources {
+		names = append(names, fmt.Sprintf("%s|%t", x.Name, x.Conn))
+	}
+	if strings.Join(names, ",") != "notes|false,kb.example.ru|false,Ozon · Пример|true" {
+		t.Errorf("sources %v — закрытое для чата подключение телефону не показывается", names)
 	}
 }

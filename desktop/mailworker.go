@@ -249,10 +249,21 @@ func (m phoneMemory) Decide(_ context.Context, id string, yes bool, text string)
 	return nil
 }
 
+// phoneDesk tells the phone the window's state (#647).
+type phoneDesk struct {
+	settings *folderSettings
+	models   func() (modelsView, error)
+}
+
+func (d phoneDesk) State(context.Context) (mailrelay.DeskState, error) {
+	return mailrelay.DeskState{}, nil
+}
+
 // answerFn runs a model turn and tells where the answer came from; step — ход
 // модели по мере ответа (nil — без хода).
 // began — чат окна, в котором пойдет ход, известен (до ответа модели, #646).
-type answerFn func(ctx context.Context, chat, question string, began func(id string), step func(chat.Use)) (mailrelay.Answer, error)
+// opts — выбор телефона для вопроса (#647): модель и источники.
+type answerFn func(ctx context.Context, chat, question string, opts mailrelay.Options, began func(id string), step func(chat.Use)) (mailrelay.Answer, error)
 
 // phoneTurn is what the window page hears about a phone's question (#646):
 // начало хода, шаг или конец; Chat — чат окна.
@@ -272,7 +283,7 @@ func (a workerAsker) Ask(ctx context.Context, chat, question string) (string, st
 
 // AskStepped is AskSourced with the turn's steps for the phone (#622); step
 // nil — без хода.
-func (a workerAsker) AskStepped(ctx context.Context, id, question string, step func(mailrelay.Step)) (mailrelay.Answer, error) {
+func (a workerAsker) AskStepped(ctx context.Context, id, question string, opts mailrelay.Options, step func(mailrelay.Step)) (mailrelay.Answer, error) {
 	if a.w.answer == nil {
 		c, text, err := a.Ask(ctx, id, question)
 		return mailrelay.Answer{Chat: c, Text: text}, err
@@ -297,7 +308,7 @@ func (a workerAsker) AskStepped(ctx context.Context, id, question string, step f
 			step(mailrelay.Step{Text: stepLabel(u)})
 		}
 	}
-	ans, err := a.w.answer(ctx, id, question, began, each)
+	ans, err := a.w.answer(ctx, id, question, mailrelay.Options{}, began, each)
 	if err == nil {
 		a.w.changed(ans.Chat)
 	}
@@ -305,7 +316,7 @@ func (a workerAsker) AskStepped(ctx context.Context, id, question string, step f
 }
 
 func (a workerAsker) AskSourced(ctx context.Context, id, question string) (mailrelay.Answer, error) {
-	return a.AskStepped(ctx, id, question, nil)
+	return a.AskStepped(ctx, id, question, mailrelay.Options{}, nil)
 }
 
 // stepLabel words a step as the window shows it (useName в frontend/app.js):
@@ -337,14 +348,14 @@ func stepLabel(u chat.Use) string {
 func chatAsker(d *chatDesk) askFn {
 	answer := chatAnswerer(d)
 	return func(ctx context.Context, chat, question string) (string, string, error) {
-		a, err := answer(ctx, chat, question, nil, nil)
+		a, err := answer(ctx, chat, question, mailrelay.Options{}, nil, nil)
 		return a.Chat, a.Text, err
 	}
 }
 
 // chatAnswerer is chatAsker with the «взято» labels of the answer (answerSources).
 func chatAnswerer(d *chatDesk) answerFn {
-	return func(ctx context.Context, chat, question string, began func(string), step func(chat.Use)) (mailrelay.Answer, error) {
+	return func(ctx context.Context, chat, question string, opts mailrelay.Options, began func(string), step func(chat.Use)) (mailrelay.Answer, error) {
 		quiet := askOut{worker: true, step: step, began: began}
 		rec, err := d.ask(ctx, askReq{ID: chat, Question: question}, quiet)
 		if chat != "" && errors.Is(err, fs.ErrNotExist) {

@@ -224,6 +224,15 @@ want(st17.chats.c.remember[0].err === "портрет недоступен" && !
 const st17b = { ...st17, seen: {}, chats: {} };
 want(s.take(st17b, { seq: 5, chat: "x", from: "desk" }, dk14(5, offer)) === false && !st17b.chats.x, "an offer to a chat the phone does not know is dropped");
 
+// 18. Поле ввода как в окне (#647): состояние окна приходит служебным чатом;
+// вопрос несет модель и источники, выбранные для чата; не выбрано — как в окне.
+const st18 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { c: { title: "Чат", msgs: [], updated: 1 } } };
+const desk18 = { model: "qwen3", models: ["qwen3", "llama3"], sources: [{ id: "f-1", name: "notes" }, { id: "oz1", name: "Ozon · Пример", conn: true }] };
+want(s.take(st18, { seq: 1, chat: s.searchChat(st18), from: "desk" }, dk14(1, { kind: "desk", text: "", desk: desk18 })) === true && st18.desk?.model === "qwen3" && st18.desk.sources.length === 2, "the desk state lands in st.desk");
+want(JSON.stringify(s.questionPayload(st18.chats.c, "сроки?")) === JSON.stringify({ kind: "question", text: "сроки?" }), "no choice — the window's settings");
+Object.assign(st18.chats.c, { model: "llama3", only: ["f-1"] });
+want(JSON.stringify(s.questionPayload(st18.chats.c, "сроки?")) === JSON.stringify({ kind: "question", text: "сроки?", model: "llama3", only: ["f-1"] }), "the chat's choice goes with the question");
+
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 

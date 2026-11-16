@@ -115,7 +115,7 @@ func TestAnswerSources(t *testing.T) {
 // «Документы», «Интернет · … · вне Ваших источников», имя подключения.
 func TestWorkerAskerSteps(t *testing.T) {
 	w := &mailWorker{changed: func(string) {}}
-	w.answer = func(_ context.Context, _, _ string, _ func(string), step func(chat.Use)) (mailrelay.Answer, error) {
+	w.answer = func(_ context.Context, _, _ string, _ mailrelay.Options, _ func(string), step func(chat.Use)) (mailrelay.Answer, error) {
 		if step != nil {
 			step(chat.Use{Kind: chat.UseConnection, ID: "ozon-1", Name: "Ozon · Пример", What: "заказы"})
 			step(chat.Use{Kind: chat.UseDocs, What: "поставки"})
@@ -124,7 +124,7 @@ func TestWorkerAskerSteps(t *testing.T) {
 		return mailrelay.Answer{Chat: "w-1", Text: "312"}, nil
 	}
 	var got []string
-	ans, err := workerAsker{w}.AskStepped(t.Context(), "", "заказы?", func(s mailrelay.Step) { got = append(got, s.Text) })
+	ans, err := workerAsker{w}.AskStepped(t.Context(), "", "заказы?", mailrelay.Options{}, func(s mailrelay.Step) { got = append(got, s.Text) })
 	if err != nil || ans.Text != "312" {
 		t.Fatalf("ответ %+v, %v", ans, err)
 	}

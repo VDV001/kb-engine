@@ -608,7 +608,7 @@ func TestChat_PhoneTurnBeginsFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 	began := ""
-	a, err := chatAnswerer(d)(t.Context(), "", "с телефона", func(id string) { began = id }, nil)
+	a, err := chatAnswerer(d)(t.Context(), "", "с телефона", mailrelay.Options{}, func(id string) { began = id }, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -631,12 +631,31 @@ func TestChat_PhoneTurnReportsContext(t *testing.T) {
 	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3", ContextWindow: 12000}, ""); err != nil {
 		t.Fatal(err)
 	}
-	a, err := chatAnswerer(d)(t.Context(), "", "с телефона", nil, nil)
+	a, err := chatAnswerer(d)(t.Context(), "", "с телефона", mailrelay.Options{}, nil, nil)
 	if err != nil || a.Context == nil || *a.Context != (mailrelay.ContextFill{Used: 6000, Window: 12000}) {
 		t.Fatalf("context %+v, %v", a.Context, err)
 	}
 	m.usage = chat.Usage{}
-	if a, err = chatAnswerer(d)(t.Context(), a.Chat, "еще", nil, nil); err != nil || a.Context != nil || a.Text == "" {
+	if a, err = chatAnswerer(d)(t.Context(), a.Chat, "еще", mailrelay.Options{}, nil, nil); err != nil || a.Context != nil || a.Text == "" {
 		t.Errorf("no provider count — no ring: %+v, %v", a, err)
+	}
+}
+
+// Модель с телефона — только из списка окна: иначе телефон выбрал бы любую,
+// в том числе дорогую, за счет ключа человека; источники вопроса — в чат (#647).
+func TestChat_PhoneChoosesModelAndSources(t *testing.T) {
+	d, _, _, used := newTestChatDesk(t)
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	a, err := chatAnswerer(d)(t.Context(), "", "сроки?", mailrelay.Options{Model: "qwen3", Only: []string{"f-1"}}, nil, nil)
+	if err != nil || used.Model != "qwen3" {
+		t.Fatalf("listed model: %v, used %q", err, used.Model)
+	}
+	if rec, _ := d.Get(a.Chat); strings.Join(rec.Sources, ",") != "f-1" {
+		t.Errorf("chat sources %v", rec.Sources)
+	}
+	if _, err := chatAnswerer(d)(t.Context(), "", "сроки?", mailrelay.Options{Model: "llama-evil"}, nil, nil); err == nil || !strings.Contains(err.Error(), "нет в списке") {
+		t.Fatalf("unlisted model: %v", err)
 	}
 }
