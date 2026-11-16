@@ -4,7 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Ящик чата с телефона (#622): телефон и компьютер дописывают сообщения в один
@@ -28,7 +31,63 @@ var (
 	ErrPushGone = errors.New("push subscription is gone")
 	// ErrPushOff — push на этом сервере не настроен (нет контакта VAPID).
 	ErrPushOff = errors.New("push is not configured")
+	// ErrBadPhoneName — имя телефона пустое, длиннее 40 или с непечатными знаками.
+	ErrBadPhoneName = errors.New("mail: phone name must be 1-40 printable characters")
 )
+
+// Имена телефона по браузеру, когда модель неизвестна: Safari модель не
+// сообщает, iPad в Safari притворяется Mac (iPadOS 13+), урезанный Chrome пишет «K».
+const (
+	PhoneIPhone    = "iPhone"
+	PhoneIPad      = "iPad"
+	PhoneIPadOrMac = "iPad или Mac"
+	PhoneAndroid   = "Android"
+	PhoneWindows   = "Windows"
+)
+
+// NewPhoneName checks the name a person gives a phone in the window: «iPhone 17
+// Pro», «Samsung Анастасии». Пробелы по краям отрезаются.
+func NewPhoneName(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	// Печатные — без переносов и невидимых знаков направления (U+202E): имя
+	// показывается в окне и не должно переворачивать соседний текст.
+	if n := utf8.RuneCountInString(s); n == 0 || n > maxPhoneName || strings.ContainsFunc(s, func(r rune) bool { return !unicode.IsPrint(r) }) {
+		return "", fmt.Errorf("%w: %q", ErrBadPhoneName, s)
+	}
+	return s, nil
+}
+
+// maxPhoneName bounds the phone name in runes: строка списка в окне.
+const maxPhoneName = 40
+
+// IsPhoneModel accepts a model name from the browser: латиница, цифры, пробел,
+// - _ . и не длиннее maxPhoneName — значение пришло от клиента.
+func IsPhoneModel(m string) bool {
+	return m != "" && len(m) <= maxPhoneName && !strings.ContainsFunc(m, func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && !strings.ContainsRune(" -_.", r)
+	})
+}
+
+// SharperPhoneName tells whether next names the phone more precisely than prev:
+// первое имя или модель вместо имени без модели. Смена одной модели на другую
+// уточнением не считается — ее телефон может подставлять сам (ревью безопасности #652).
+func SharperPhoneName(prev, next string) bool {
+	return prev == "" && next != "" || genericPhoneNames[prev] && !genericPhoneNames[next]
+}
+
+// genericPhoneNames are the names without a model; пустое — имени еще нет.
+var genericPhoneNames = map[string]bool{"": true, PhoneIPhone: true, PhoneIPad: true, PhoneIPadOrMac: true, PhoneAndroid: true, PhoneWindows: true}
+
+// BetterPhoneName is the name to keep when a phone named prev comes in as next:
+// имя без модели не заменяет имя с моделью — Chrome шлет модель не в каждом
+// запросе, и «Samsung SM-S918B» не должен прыгать в «Android» (ревью #652).
+// Браузер, не назвавший себя вовсе, имени не стирает (ревью #652).
+func BetterPhoneName(prev, next string) string {
+	if next == "" || genericPhoneNames[next] && !genericPhoneNames[prev] {
+		return prev
+	}
+	return next
+}
 
 // mailReserved — имена, занятые маршрутами ящика (/api/mail/devices, /push, /notify).
 var mailReserved = map[string]bool{"devices": true, "push": true, "notify": true}

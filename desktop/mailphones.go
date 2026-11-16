@@ -33,6 +33,10 @@ type phonePairing struct {
 type phoneRow struct {
 	Device string `json:"device"`
 	At     string `json:"at"` // «15.11.2026 12:40», местное время
+	Seen   string `json:"seen"`
+	Name   string `json:"name"`
+	// SeenUnknown — сервер не прочитал входы: «ждет первого входа» было бы неправдой.
+	SeenUnknown bool `json:"seenUnknown"`
 }
 
 // mailKeyAccount is the keychain account of the chat key of server id.
@@ -144,9 +148,27 @@ func (f *folderSettings) MailPhones(id string) ([]phoneRow, error) {
 	}
 	rows := make([]phoneRow, 0, len(list))
 	for _, p := range list {
-		rows = append(rows, phoneRow{Device: p.Device, At: p.At.Local().Format("02.01.2006 15:04")})
+		row := phoneRow{Device: p.Device, At: p.At.Local().Format("02.01.2006 15:04"), Name: p.Name, SeenUnknown: !p.SeenKnown}
+		if !p.Seen.IsZero() {
+			row.Seen = p.Seen.Local().Format("02.01.2006 15:04")
+		}
+		rows = append(rows, row)
 	}
 	return rows, nil
+}
+
+// MailRenamePhone gives the phone the name the person typed.
+func (f *folderSettings) MailRenamePhone(id, device, name string) error {
+	c, err := f.mailClient(id)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), mailTimeout)
+	defer cancel()
+	if err := c.RenamePhone(ctx, device, name); err != nil {
+		return mailErr(err)
+	}
+	return nil
 }
 
 // MailRevokePhone unpairs the phone. Отвязан последний — ключ чата стирается:

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strconv"
 	"strings"
@@ -302,5 +303,41 @@ func TestTenantsServeAssetLinks(t *testing.T) {
 	t.Setenv("KB_ANDROID_APP", "")
 	if rec := do(newTenants(t).h, http.MethodGet, "/.well-known/assetlinks.json", "", ""); rec.Code != http.StatusNotFound {
 		t.Fatalf("без KB_ANDROID_APP: %d", rec.Code)
+	}
+}
+
+// Окно видит, вошел ли привязанный телефон и как он зовется (#622): QR
+// скрывается сам, а в списке не «p-9a7ffa8f», а «iPhone».
+func TestMailPhoneVisitAndName(t *testing.T) {
+	f := newTenants(t)
+	dev, phone := addPhone(t, f, f.tokA)
+	quiet, _ := addPhone(t, f, f.tokA)
+	req := httptest.NewRequest(http.MethodGet, "/api/mail?after=0", nil)
+	req.Header.Set("Authorization", "Bearer "+phone)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) Safari/604.1")
+	if rec := httptest.NewRecorder(); func() int { f.h.ServeHTTP(rec, req); return rec.Code }() != http.StatusOK {
+		t.Fatal("phone poll failed")
+	}
+	rec := do(f.h, http.MethodGet, "/api/mail/devices", "", f.tokA)
+	var out struct {
+		Devices []struct {
+			Device, Name string
+			Seen         *time.Time
+		}
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range out.Devices {
+		switch d.Device {
+		case dev:
+			if d.Name != "iPhone" || d.Seen == nil {
+				t.Errorf("visited phone: %+v", d)
+			}
+		case quiet:
+			if d.Name != "" || d.Seen != nil {
+				t.Errorf("phone that never came in: %+v", d)
+			}
+		}
 	}
 }

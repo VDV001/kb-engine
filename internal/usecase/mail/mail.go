@@ -22,6 +22,41 @@ type Page struct {
 type Phone struct {
 	Device string
 	At     time.Time
+	Seen   time.Time // последний вход телефона; ноль — еще не входил
+	Name   string    // имя по браузеру телефона: «iPhone», «Samsung SM-S918B»
+	// SeenUnknown — входы не прочитались: ноль в Seen не значит «не входил».
+	SeenUnknown bool
+}
+
+// Visit is a phone's last visit.
+type Visit struct {
+	Name string
+	At   time.Time
+}
+
+// Visits remembers when a phone last came in and what it calls itself.
+type Visits interface {
+	Visit(ctx context.Context, id domain.UserID, device, name string, at time.Time) error
+	// Seen returns the last visits of id's phones by device.
+	Seen(ctx context.Context, id domain.UserID) (map[string]Visit, error)
+	// Rename sets the name the person gave the phone; чужой телефон — ErrNoSuchUser.
+	Rename(ctx context.Context, id domain.UserID, device, name string) error
+}
+
+// RenamePhone names a phone as the person wants; только компьютер.
+// Без Visits — errors.ErrUnsupported: имени негде жить.
+func (s Service) RenamePhone(ctx context.Context, id domain.UserID, side domain.MailSide, device, name string) error {
+	if side != domain.MailDesk {
+		return domain.ErrMailDeskOnly
+	}
+	if s.Visits == nil {
+		return errors.ErrUnsupported
+	}
+	name, err := domain.NewPhoneName(name)
+	if err != nil {
+		return err
+	}
+	return s.Visits.Rename(ctx, id, device, name)
 }
 
 // Box is the log of sealed messages.
@@ -72,6 +107,7 @@ type Service struct {
 	Phones Phones
 	Subs   Subscriptions
 	Push   Pusher
+	Visits Visits
 	Now    func() time.Time
 	Logf   func(string, ...any)
 }
@@ -98,12 +134,28 @@ func (s Service) AddPhone(ctx context.Context, id domain.UserID, side domain.Mai
 	return s.Phones.Add(ctx, id)
 }
 
-// ListPhones lists the phones; только компьютер.
+// ListPhones lists the phones with their visits; только компьютер. Входы не
+// прочитались — список все равно отдается (иначе не отвязать), а телефоны
+// помечены SeenUnknown: окно не ждет молча входа, которого не увидит.
 func (s Service) ListPhones(ctx context.Context, id domain.UserID, side domain.MailSide) ([]Phone, error) {
 	if side != domain.MailDesk {
 		return nil, domain.ErrMailDeskOnly
 	}
-	return s.Phones.List(ctx, id)
+	list, err := s.Phones.List(ctx, id)
+	if err != nil || s.Visits == nil {
+		return list, err
+	}
+	seen, err := s.Visits.Seen(ctx, id)
+	if err != nil {
+		s.logf("mail: visits: %v", err)
+	}
+	for i := range list {
+		if v, ok := seen[list[i].Device]; ok {
+			list[i].Name, list[i].Seen = v.Name, v.At
+		}
+		list[i].SeenUnknown = err != nil
+	}
+	return list, nil
 }
 
 // RevokePhone unpairs device; только компьютер.
@@ -198,4 +250,13 @@ func (s Service) PushKey(ctx context.Context) (string, error) {
 		return "", domain.ErrPushOff
 	}
 	return s.Push.PublicKey(ctx)
+}
+
+// Visit notes that the calling phone came in; компьютер не отмечается, без
+// Visits — ничего. Сбой — ошибка: вызывающий только пишет ее в журнал.
+func (s Service) Visit(ctx context.Context, id domain.UserID, side domain.MailSide, device, name string) error {
+	if side != domain.MailPhone || s.Visits == nil {
+		return nil
+	}
+	return s.Visits.Visit(ctx, id, device, name, s.Now())
 }

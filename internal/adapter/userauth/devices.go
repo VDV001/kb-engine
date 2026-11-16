@@ -2,6 +2,7 @@ package userauth
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -10,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
@@ -87,8 +89,10 @@ func RevokeDevice(ctx context.Context, s blob.Store, id domain.UserID, device st
 	if err != nil {
 		return err
 	}
-	// Подписку стираем следом; не вышло — не беда: Pushes сверяет с DevicesKey.
+	// Подписку и вход стираем следом; не вышло — не беда: Pushes и List
+	// сверяют с DevicesKey.
 	_ = clearPush(ctx, s, id, device)
+	_ = clearSeen(ctx, s, id, func(d string) bool { return d == device })
 	return nil
 }
 
@@ -117,14 +121,17 @@ func (p Phones) Add(ctx context.Context, id domain.UserID) (string, string, erro
 	return AddDevice(ctx, p.Store, id)
 }
 
-// List lists the phones of id.
+// List lists the phones of id; входы к ним добавляет mail.Service из Visits.
 func (p Phones) List(ctx context.Context, id domain.UserID) ([]mail.Phone, error) {
 	ds, err := Devices(ctx, p.Store, id)
+	if err != nil {
+		return []mail.Phone{}, err
+	}
 	out := make([]mail.Phone, 0, len(ds))
 	for _, d := range ds {
 		out = append(out, mail.Phone{Device: d.Device, At: d.At})
 	}
-	return out, err
+	return out, nil
 }
 
 // Revoke unpairs phone device of id.
@@ -256,4 +263,203 @@ func DropPush(ctx context.Context, s blob.Store, endpoint string) error {
 // DropPush is DropPush as the mailbox port.
 func (p Phones) DropPush(ctx context.Context, endpoint string) error {
 	return DropPush(ctx, p.Store, endpoint)
+}
+
+// SeenKey is where the visits of id's phones live (#622): файл на человека —
+// телефоны разных людей не спорят за один объект (ревью #652); отдельно от
+// DevicesKey по той же причине, что PushKey, — реестр токенов читается строго.
+func SeenKey(id domain.UserID) string { return "auth/seen/" + id.String() + ".json" }
+
+// Visits writes phones' visits, не чаще VisitEvery на телефон в этом процессе:
+// телефон опрашивает ящик раз в 10 с, а запись — три обращения к бакету.
+//
+// ponytail: кэш — в памяти процесса: у каждого экземпляра сервера свой, и при
+// N экземплярах телефон пишется до N раз за VisitEvery; отвязанные телефоны из
+// карты не убираются — она сбрасывается целиком на maxVisitCache ключах (кэш,
+// не данные: худшее — по лишней записи на телефон). Путь — срок записи в карте.
+type Visits struct {
+	Store blob.Store
+
+	mu    sync.Mutex
+	last  map[string]seenDTO   // id|device → записанное или пишущееся сейчас
+	pause map[string]time.Time // id → после сбоя записи до этого момента не пишем
+}
+
+// maxVisitCache bounds Visits.last: сервер на десятки людей до него не дорастет,
+// а привязка-отвязка по кругу не раздует память (ревью безопасности #652).
+const maxVisitCache = 10_000
+
+type seenFileDTO struct {
+	Phones []seenDTO `json:"phones"`
+}
+
+type seenDTO struct {
+	Device string    `json:"device"`
+	Name   string    `json:"name,omitempty"`  // по браузеру
+	Given  string    `json:"given,omitempty"` // дал человек в окне: сильнее Name
+	At     time.Time `json:"at"`              // ноль — переименован, но еще не входил
+}
+
+// VisitEvery — как часто вход телефона переписывается; первый вход процесса и
+// новое, более точное имя пишутся сразу.
+const VisitEvery = 5 * time.Minute
+
+// VisitRetry is the pause after a failed write: сломанный бакет не получает
+// запрос и строку журнала на каждый опрос каждого телефона (ревью #652).
+const VisitRetry = 30 * time.Second
+
+// Visit notes that phone device of id came in at at, named name.
+func (v *Visits) Visit(ctx context.Context, id domain.UserID, device, name string, at time.Time) error {
+	k := id.String() + "|" + device
+	v.mu.Lock()
+	prev, ok := v.last[k]
+	if ok {
+		name = domain.BetterPhoneName(prev.Name, name)
+	}
+	// Сразу — только уточнение имени: смену одной модели на другую телефон
+	// может подставлять сам, и предел VisitEvery она не обходит (ревью безопасности #652).
+	if at.Before(v.pause[id.String()]) || ok && at.Sub(prev.At) < VisitEvery && !domain.SharperPhoneName(prev.Name, name) {
+		v.mu.Unlock()
+		return nil
+	}
+	if v.last == nil || len(v.last) >= maxVisitCache {
+		v.last = map[string]seenDTO{}
+	}
+	// Занято до записи: опрос того же телефона, пришедший, пока пишется этот,
+	// не пишет второй раз (ревью #652).
+	mine := seenDTO{Device: device, Name: name, At: at}
+	v.last[k] = mine
+	v.mu.Unlock()
+
+	wrote, err := v.write(ctx, id, seenDTO{Device: device, Name: name, At: at.UTC()})
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if err != nil {
+		v.undo(k, mine, prev, ok)
+		v.pauseAfter(id, at, err)
+		return err
+	}
+	v.last[k] = wrote
+	return nil
+}
+
+// undo drops this write's mark from the cache; v.mu held. Откатываем только
+// свою отметку: соседний опрос с другим именем мог записаться, пока этот ждал,
+// и его итог новее (ревью #652).
+func (v *Visits) undo(k string, mine, prev seenDTO, had bool) {
+	switch {
+	case v.last[k] != mine:
+	case had:
+		v.last[k] = prev
+	default:
+		delete(v.last, k)
+	}
+}
+
+// pauseAfter pauses writes of id after err; v.mu held. Отмена или срок запроса
+// телефона — не сбой бакета; пауза — этому человеку: сбой его файла не глушит
+// входы остальных (ревью безопасности #652).
+func (v *Visits) pauseAfter(id domain.UserID, at time.Time, err error) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return
+	}
+	if v.pause == nil {
+		v.pause = map[string]time.Time{}
+	}
+	v.pause[id.String()] = at.Add(VisitRetry)
+}
+
+// write records entry unless its phone is gone. Имя ранжируется по записанному
+// (у нового процесса кэша нет), входы отвязанных телефонов выбрасываются.
+func (v *Visits) write(ctx context.Context, id domain.UserID, entry seenDTO) (seenDTO, error) {
+	ds, err := Devices(ctx, v.Store, id)
+	if err != nil {
+		return seenDTO{}, err
+	}
+	live := func(device string) bool {
+		return slices.ContainsFunc(ds, func(d Device) bool { return d.Device == device })
+	}
+	if !live(entry.Device) {
+		return entry, nil // отвязан, пока шел опрос: не дописываем обратно
+	}
+	name := entry.Name
+	err = updateSeen(ctx, v.Store, id, func(f *seenFileDTO) error {
+		entry.Name, entry.Given = name, ""
+		for _, e := range f.Phones {
+			if e.Device == entry.Device {
+				entry.Name, entry.Given = domain.BetterPhoneName(e.Name, name), e.Given
+			}
+		}
+		f.Phones = slices.DeleteFunc(f.Phones, func(e seenDTO) bool { return e.Device == entry.Device || !live(e.Device) })
+		f.Phones = append(f.Phones, entry)
+		return nil
+	})
+	return entry, err
+}
+
+// Rename sets the name the person gave phone device of id.
+// Имя живет рядом с именем браузера, а не вместо него: входы пишут свое поле
+// и кэш Visits сравнивает имена браузера, а не человека.
+func (v *Visits) Rename(ctx context.Context, id domain.UserID, device, name string) error {
+	if err := ownPhone(ctx, v.Store, id, device); err != nil {
+		return err
+	}
+	return updateSeen(ctx, v.Store, id, func(f *seenFileDTO) error {
+		for i := range f.Phones {
+			if f.Phones[i].Device == device {
+				f.Phones[i].Given = name
+				return nil
+			}
+		}
+		f.Phones = append(f.Phones, seenDTO{Device: device, Given: name})
+		return nil
+	})
+}
+
+// Seen returns the last visits of id's phones by device.
+func (v *Visits) Seen(ctx context.Context, id domain.UserID) (map[string]mail.Visit, error) {
+	f, _, err := readSeen(ctx, v.Store, id)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]mail.Visit, len(f.Phones))
+	for _, e := range f.Phones {
+		out[e.Device] = mail.Visit{Name: cmp.Or(e.Given, e.Name), At: e.At}
+	}
+	return out, nil
+}
+
+// readSeen reads the visits file of id. Испорченный файл читается пустым:
+// входы — подсказка окну, и следующий вход перепишет его, а не будет падать
+// на каждом опросе (ревью #652).
+func readSeen(ctx context.Context, s blob.Store, id domain.UserID) (seenFileDTO, string, error) {
+	var f seenFileDTO
+	o, err := s.Get(ctx, SeenKey(id))
+	switch {
+	case errors.Is(err, blob.ErrNotFound):
+	case err != nil:
+		return f, "", fmt.Errorf("userauth: read %s: %w", SeenKey(id), err)
+	default:
+		if json.Unmarshal(o.Data, &f) != nil {
+			f = seenFileDTO{}
+		}
+	}
+	return f, o.ETag, nil
+}
+
+// updateSeen is update for the visits file of id, but a corrupt file reads as
+// empty (see readSeen); errUnchanged из change — писать нечего, файл не заводится зря.
+func updateSeen(ctx context.Context, s blob.Store, id domain.UserID, change func(*seenFileDTO) error) error {
+	return updateKey(ctx, s, SeenKey(id), true, change)
+}
+
+// clearSeen forgets the visits of id's phones that match.
+func clearSeen(ctx context.Context, s blob.Store, id domain.UserID, match func(device string) bool) error {
+	return updateSeen(ctx, s, id, func(f *seenFileDTO) error {
+		n := len(f.Phones)
+		if f.Phones = slices.DeleteFunc(f.Phones, func(e seenDTO) bool { return match(e.Device) }); len(f.Phones) == n {
+			return errUnchanged
+		}
+		return nil
+	})
 }

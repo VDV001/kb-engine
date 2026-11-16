@@ -31,7 +31,7 @@ func mailKB(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: s}, Phones: userauth.Phones{Store: s}, Now: time.Now},
+	h := httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: s}, Phones: userauth.Phones{Store: s}, Visits: &userauth.Visits{Store: s}, Now: time.Now},
 		func(string, ...any) {})
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get(kbserver.TokenHeader) != token {
@@ -56,7 +56,7 @@ func TestClient_Phones(t *testing.T) {
 		t.Fatalf("add: %q %q %v", dev, tok, err)
 	}
 	list, err := c.Phones(ctx)
-	if err != nil || len(list) != 1 || list[0].Device != dev || list[0].At.IsZero() {
+	if err != nil || len(list) != 1 || list[0].Device != dev || list[0].At.IsZero() || !list[0].Seen.IsZero() || list[0].Name != "" || !list[0].SeenKnown {
 		t.Fatalf("after add: %+v, %v", list, err)
 	}
 	if err := c.RevokePhone(ctx, dev); err != nil {
@@ -143,5 +143,55 @@ func TestClient_MailPostAndSince(t *testing.T) {
 	}
 	if _, err := c.MailPost(ctx, "Bad Chat", []byte("x")); !errors.Is(err, kbserver.ErrRejected) {
 		t.Errorf("bad chat: %v, want ErrRejected", err)
+	}
+}
+
+// Окно дает телефону имя: сервер хранит его и отдает в списке; плохое имя и
+// чужой телефон — отказы со своими словами (#622).
+func TestClient_RenamePhone(t *testing.T) {
+	srv := mailKB(t)
+	c := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}
+	ctx := context.Background()
+	dev, _, err := c.AddPhone(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.RenamePhone(ctx, dev, "iPhone 17 Pro"); err != nil {
+		t.Fatal(err)
+	}
+	if list, err := c.Phones(ctx); err != nil || len(list) != 1 || list[0].Name != "iPhone 17 Pro" {
+		t.Fatalf("after rename: %+v, %v", list, err)
+	}
+	if err := c.RenamePhone(ctx, dev, " "); !errors.Is(err, kbserver.ErrBadPhoneName) {
+		t.Fatalf("empty name: %v", err)
+	}
+	if err := c.RenamePhone(ctx, "p-00000000", "Мой"); !errors.Is(err, kbserver.ErrNoSuchPhone) {
+		t.Fatalf("unknown phone: %v", err)
+	}
+}
+
+// Сервер до #652 не знает входов: окно не должно принимать это за «телефон не
+// входил» (ревью #652, 1-е). Новый сервер говорит seen_known.
+func TestClient_PhonesFromOldServer(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"devices":[{"device":"p-1","at":"2026-11-16T09:04:00Z"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	c := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}
+	list, err := c.Phones(context.Background())
+	if err != nil || len(list) != 1 || list[0].SeenKnown {
+		t.Fatalf("old server: %+v, %v", list, err)
+	}
+}
+
+// 400 по другой причине (тело испорчено, прокси) — не «плохое имя» (ревью #652, 10-е).
+func TestClient_RenamePhoneOtherBadRequest(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "proxy says no", http.StatusBadRequest)
+	}))
+	t.Cleanup(srv.Close)
+	c := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}
+	if err := c.RenamePhone(context.Background(), "p-1", "Мой"); errors.Is(err, kbserver.ErrBadPhoneName) || err == nil {
+		t.Fatalf("400 from a proxy: %v", err)
 	}
 }
