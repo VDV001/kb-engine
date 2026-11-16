@@ -636,7 +636,7 @@ func TestChat_PhoneTurnReportsContext(t *testing.T) {
 		t.Fatalf("context %+v, %v", a.Context, err)
 	}
 	m.usage = chat.Usage{}
-	if a, _ = chatAnswerer(d)(t.Context(), a.Chat, "еще", nil, nil); a.Context != nil {
-		t.Errorf("no provider count — no ring: %+v", a.Context)
+	if a, err = chatAnswerer(d)(t.Context(), a.Chat, "еще", nil, nil); err != nil || a.Context != nil || a.Text == "" {
+		t.Errorf("no provider count — no ring: %+v, %v", a, err)
 	}
 }

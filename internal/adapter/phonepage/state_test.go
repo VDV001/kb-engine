@@ -185,6 +185,14 @@ want(s.ctxView({ used: 13000, window: 12000 }).fill === 1 && s.ctxView({ used: 1
 want(s.ctxView({ used: 6000, window: 0 })?.text === "?" && s.ctxView(null) === null, "no window — «?», no count — no ring");
 s.take(st15, { seq: 2, chat: "c", from: "desk" }, dk14(2, { kind: "answer", text: "без счета" }));
 want(st15.chats.c.context === undefined, "an answer without a count drops the old fill, like the window");
+// Ревью #654: сбой хода кольца не снимает — в окне оно остается; переполнение
+// называется переполнением; разговор без счета — «—», как в окне.
+s.take(st15, { seq: 3, chat: "c", from: "desk" }, dk14(3, { kind: "answer", text: "ок", context: { used: 11000, window: 12000 } }));
+s.take(st15, { seq: 4, chat: "c", from: "desk" }, dk14(4, { kind: "error", text: "провайдер отказал" }));
+want(st15.chats.c.context?.used === 11000, "an error keeps the ring");
+want(s.ctxView({ used: 13000, window: 12000 }).over === true && !s.ctxView({ used: 11000, window: 12000 }).over, "overflow is marked as overflow");
+const talk = s.ctxView(undefined, true);
+want(talk?.text === "—" && talk.unknown === true && s.ctxView(undefined, false) === null, "a chat with answers but no count shows «—»: " + JSON.stringify(talk));
 
 // 16. Ревью #653: новый вопрос не наследует «принял» и шаг прежнего; вопрос,
 // принятый сервером, — «отправлено» сразу, а не после опроса; окно замолчало

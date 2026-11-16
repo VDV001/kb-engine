@@ -358,6 +358,22 @@ func TestRelaySendsTheContextFill(t *testing.T) {
 	if len(got) != 1 || got[0].Context == nil || *got[0].Context != (mailrelay.ContextFill{Used: 6000, Window: 12000}) {
 		t.Fatalf("answer %+v", got)
 	}
+	// Без счета и при ошибке — без поля: телефон не получит нулевое заполнение (ревью #654).
+	b2 := &box{}
+	b2.phone("c-1", "A", 1, q("сроки?"))
+	b2.phone("c-2", "A", 1, q("и еще?"))
+	r2 := newRelay(b2, &asker{}, &store{})
+	if err := r2.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	r3 := newRelay(b2, &asker{fail: errors.New("провайдер отказал")}, &store{})
+	b2.phone("c-3", "A", 1, q("а это?"))
+	_ = r3.Tick(t.Context())
+	for _, m := range b2.msgs {
+		if m.From == domain.MailDesk && strings.Contains(string(m.Sealed), "context") {
+			t.Errorf("a reply without a count carries context: %s", m.Sealed)
+		}
+	}
 }
 
 // quick steps once at once and answers before StepEvery runs out.
