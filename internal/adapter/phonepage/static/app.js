@@ -8,7 +8,7 @@
 // Service worker (sw.js) — только push: «компьютер ответил», когда страница
 // закрыта. Работы без сети нет — страница всегда свежая с сервера.
 import { importKey, seal, open } from "./crypto.js";
-import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted, deciding, hideFact } from "./state.js";
+import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted, deciding, hideFact, questionPayload } from "./state.js";
 
 const POLL_MS = 10_000; // решение 15.11: короткий опрос раз в 10 с
 const UNAUTH_MS = 60_000; // 401: реже, но не сдаемся — сервер мог ошибиться ненадолго
@@ -43,7 +43,7 @@ const save = (k, v) => kv("readwrite", (s) => s.put(v, k));
 const locked = (fn) => (navigator.locks ? navigator.locks.request("dvk-phone-state", fn) : fn());
 
 let st = null; // { pair, sender, counter, after, seen, chats, outbox, lastDesk, search, doc }
-const ui = { tab: "list", view: "", chat: "", kind: "", memEdit: "", memDraft: null }; // view: chat | doc | desk | ""
+const ui = { tab: "list", view: "", chat: "", kind: "", memEdit: "", memDraft: null, pick: "" }; // view: chat | doc | desk | ""
 let timer = 0;
 
 // persist writes the state; счетчик — наибольший из своего и записанного
@@ -356,6 +356,37 @@ function memCard(f) {
   return li;
 }
 
+// paintChoice draws the model and sources buttons of chat c and their panel
+// (#647): как в окне — модель списком, источники и подключения галочками.
+function paintChoice(c) {
+  const d = st.desk, m = $("model"), s = $("srcs");
+  m.hidden = s.hidden = !d || !c;
+  if (!d || !c) { $("pick").hidden = true; return; }
+  m.textContent = (c.model || d.model || "модель") + " ▾";
+  m.setAttribute("aria-label", "Модель: " + (c.model || d.model) + (c.model ? "" : " — как в окне"));
+  const all = d.sources || [], on = Array.isArray(c.only) ? all.filter((x) => c.only.includes(x.id)).length : all.length;
+  s.textContent = "Источники · " + on + (on === all.length ? "" : " из " + all.length);
+  s.hidden = !all.length;
+  const p = $("pick");
+  p.hidden = !ui.pick;
+  if (!ui.pick) return;
+  const head = (t) => { const h = document.createElement("b"); h.textContent = t; return h; };
+  const row = (type, name, value, label, checked) => {
+    const l = document.createElement("label"), i = document.createElement("input");
+    Object.assign(i, { type, name, value, checked });
+    l.append(i, document.createTextNode(" " + label));
+    return l;
+  };
+  if (ui.pick === "model") {
+    p.replaceChildren(head("Модель для этого чата"), row("radio", "model", "", "Как в окне · " + d.model, !c.model),
+      ...(d.models || []).filter((x) => x !== d.model || c.model).map((x) => row("radio", "model", x, x, c.model === x)));
+  } else {
+    const part = (conn) => all.filter((x) => !!x.conn === conn).map((x) => row("checkbox", "src", x.id, x.name, !Array.isArray(c.only) || c.only.includes(x.id)));
+    const local = part(false), conns = part(true);
+    p.replaceChildren(...(local.length ? [head("Источники"), ...local] : []), ...(conns.length ? [head("Подключения"), ...conns] : []));
+  }
+}
+
 // paintCtx draws the context ring of the open chat (#647); числа — только из ctxView.
 function paintCtx(c) {
   const v = ctxView(c?.context, !!c?.msgs.some((m) => m.who === "desk")), b = $("ctx");
@@ -378,6 +409,7 @@ function ctxNote(v) {
 
 function paintChat(c, follow) {
   paintCtx(c);
+  paintChoice(c);
   // Человек правит факт: опрос раз в 10 с не перестраивает чат под пальцами —
   // поле, фокус и клавиатура остаются (ревью #655).
   if (document.activeElement?.dataset?.memText) return;
@@ -482,7 +514,7 @@ async function send(chat, payload, mark) {
 
 async function ask(text) {
   const c = st.chats[ui.chat];
-  await send(ui.chat, { kind: "question", text }, (counter) => asked(c, text, counter, Date.now()));
+  await send(ui.chat, questionPayload(c, text), (counter) => asked(c, text, counter, Date.now()));
 }
 
 // flush posts the outbox in order; неотправленное остается до следующего опроса.
@@ -554,7 +586,21 @@ const poll = single(async () => {
 function openChat(id) {
   ui.chat = id;
   ui.view = "chat";
+  ui.pick = "";
   show(true);
+  askDesk();
+}
+
+// askDesk asks the window for its models and sources (#647) — не чаще раза в
+// 5 минут: список меняется редко, а каждый запрос — круг ящика.
+const DESK_EVERY = 5 * 60_000;
+// deskAsked — когда спросили: старое окно desk не знает и молчит, поэтому
+// вопрос повторяется через тот же срок, а не ждет ответа вечно.
+async function askDesk() {
+  const now = Date.now();
+  if (now - (st.deskAsked || 0) < DESK_EVERY || (st.desk && now - (st.deskAt || 0) < DESK_EVERY)) return;
+  st.deskAsked = now;
+  try { await send(searchChat(st), { kind: "desk", text: "state" }); } catch { /* в исходящих: уйдет со следующим опросом */ }
 }
 
 $("new-chat").addEventListener("click", () => {
@@ -607,6 +653,22 @@ $("msgs").addEventListener("click", async (e) => { // «Запомнить о В
   } catch (err) { // решение в исходящих: уйдет со следующим опросом, как вопрос
     note(err.unauth ? "kb-сервер не пускает телефон: решение сохранено и уйдет, когда пустит." : "Пока не отправлено: " + err.message + ". Уйдет со следующим опросом.");
   }
+});
+for (const id of ["model", "srcs"]) {
+  $(id).addEventListener("click", () => { ui.pick = ui.pick === id.replace("srcs", "src") ? "" : id.replace("srcs", "src"); show(); });
+}
+$("pick").addEventListener("change", async (e) => { // выбор — этого чата, уходит с вопросом (#647)
+  const c = st.chats[ui.chat];
+  if (!c) return;
+  if (e.target.name === "model") {
+    c.model = e.target.value || undefined;
+    ui.pick = "";
+  } else {
+    const on = [...$("pick").querySelectorAll('input[name="src"]:checked')].map((x) => x.value);
+    c.only = on.length === (st.desk?.sources || []).length ? undefined : on; // все — как в окне
+  }
+  await persist();
+  show();
 });
 $("ctx").addEventListener("click", () => { // нажатие на круг — что значит заполнение
   const c = st.chats[ui.chat], v = ctxView(c?.context, !!c?.msgs.some((m) => m.who === "desk"));

@@ -153,8 +153,12 @@ export function deciding(c, id) {
 }
 
 // questionPayload is the question of chat c with its choice (#647).
+// Не выбрано — как настроено в окне: поля не уходят вовсе.
 export function questionPayload(c, text) {
-  return { kind: "question", text };
+  const p = { kind: "question", text };
+  if (c.model) p.model = c.model;
+  if (Array.isArray(c.only)) p.only = c.only;
+  return p;
 }
 
 // searchChat is the mailbox chat of this phone's searches: выдача и документы
@@ -169,6 +173,18 @@ export function searchChat(st) {
 function found(st, m, p) {
   if (m.from !== "desk") return false; // свой запрос: на экране он уже есть
   const s = (st.search ||= { q: "", hits: [] });
+  if (p.kind === "desk") { // модель и источники окна для поля ввода (#647)
+    st.desk = p.desk || null;
+    st.deskAt = Date.now();
+    st.deskAsked = 0;
+    delete st.deskErr;
+    return true;
+  }
+  if (p.kind === "error" && st.deskAsked && !s.pending && !s.opening) { // отказ на desk, а не на поиск
+    st.deskAsked = 0;
+    st.deskErr = p.text;
+    return true;
+  }
   if (p.kind === "results") {
     if (p.text !== s.q) return false;
     Object.assign(s, { hits: p.hits || [], pending: false, error: "" });
