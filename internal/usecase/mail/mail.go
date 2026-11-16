@@ -44,8 +44,19 @@ type Visits interface {
 }
 
 // RenamePhone names a phone as the person wants; только компьютер.
+// Без Visits — errors.ErrUnsupported: имени негде жить.
 func (s Service) RenamePhone(ctx context.Context, id domain.UserID, side domain.MailSide, device, name string) error {
-	return nil
+	if side != domain.MailDesk {
+		return domain.ErrMailDeskOnly
+	}
+	if s.Visits == nil {
+		return errors.ErrUnsupported
+	}
+	name, err := domain.NewPhoneName(name)
+	if err != nil {
+		return err
+	}
+	return s.Visits.Rename(ctx, id, device, name)
 }
 
 // Box is the log of sealed messages.

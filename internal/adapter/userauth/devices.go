@@ -2,6 +2,7 @@ package userauth
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -290,8 +291,9 @@ type seenFileDTO struct {
 
 type seenDTO struct {
 	Device string    `json:"device"`
-	Name   string    `json:"name,omitempty"`
-	At     time.Time `json:"at"`
+	Name   string    `json:"name,omitempty"`  // по браузеру
+	Given  string    `json:"given,omitempty"` // дал человек в окне: сильнее Name
+	At     time.Time `json:"at"`              // ноль — переименован, но еще не входил
 }
 
 // VisitEvery — как часто вход телефона переписывается; первый вход процесса и
@@ -353,10 +355,10 @@ func (v *Visits) write(ctx context.Context, id domain.UserID, entry seenDTO) (se
 	}
 	name := entry.Name
 	err = updateSeen(ctx, v.Store, id, func(f *seenFileDTO) bool {
-		entry.Name = name
+		entry.Name, entry.Given = name, ""
 		for _, e := range f.Phones {
 			if e.Device == entry.Device {
-				entry.Name = domain.BetterPhoneName(e.Name, name)
+				entry.Name, entry.Given = domain.BetterPhoneName(e.Name, name), e.Given
 			}
 		}
 		f.Phones = slices.DeleteFunc(f.Phones, func(e seenDTO) bool { return e.Device == entry.Device || !live(e.Device) })
@@ -367,8 +369,22 @@ func (v *Visits) write(ctx context.Context, id domain.UserID, entry seenDTO) (se
 }
 
 // Rename sets the name the person gave phone device of id.
+// Имя живет рядом с именем браузера, а не вместо него: входы пишут свое поле
+// и кэш Visits сравнивает имена браузера, а не человека.
 func (v *Visits) Rename(ctx context.Context, id domain.UserID, device, name string) error {
-	return errors.ErrUnsupported
+	if err := ownPhone(ctx, v.Store, id, device); err != nil {
+		return err
+	}
+	return updateSeen(ctx, v.Store, id, func(f *seenFileDTO) bool {
+		for i := range f.Phones {
+			if f.Phones[i].Device == device {
+				f.Phones[i].Given = name
+				return true
+			}
+		}
+		f.Phones = append(f.Phones, seenDTO{Device: device, Given: name})
+		return true
+	})
 }
 
 // Seen returns the last visits of id's phones by device.
@@ -379,7 +395,7 @@ func (v *Visits) Seen(ctx context.Context, id domain.UserID) (map[string]mail.Vi
 	}
 	out := make(map[string]mail.Visit, len(f.Phones))
 	for _, e := range f.Phones {
-		out[e.Device] = mail.Visit{Name: e.Name, At: e.At}
+		out[e.Device] = mail.Visit{Name: cmp.Or(e.Given, e.Name), At: e.At}
 	}
 	return out, nil
 }

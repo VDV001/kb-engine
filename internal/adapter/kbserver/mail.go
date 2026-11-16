@@ -69,7 +69,12 @@ func (c Client) RevokePhone(ctx context.Context, device string) error {
 
 // RenamePhone gives the phone the name the person chose.
 func (c Client) RenamePhone(ctx context.Context, device, name string) error {
-	return errors.ErrUnsupported
+	body, err := json.Marshal(map[string]string{"name": name})
+	if err != nil {
+		return err
+	}
+	return c.mail(ctx, mailReq{method: http.MethodPut, path: "/api/mail/devices/" + url.PathEscape(device) + "/name", body: body,
+		want: http.StatusNoContent, notFound: ErrNoSuchPhone, badRequest: ErrBadPhoneName}, nil)
 }
 
 // MailMessage is one sealed message of the mailbox; сторону назвал токен отправителя.
@@ -120,7 +125,28 @@ type mailReq struct {
 	body         []byte
 	want         int
 	notFound     error
+	badRequest   error // 400 этого запроса; нет — ErrMailRefused со словами сервера
 	limit        int64
+}
+
+// refusal names the error of answer code; ожидаемый код — nil.
+func (r mailReq) refusal(code int, body []byte) error {
+	switch code {
+	case r.want:
+		return nil
+	case http.StatusNotFound:
+		return cmp.Or(r.notFound, ErrNoMailbox)
+	case http.StatusBadRequest, http.StatusConflict, http.StatusRequestEntityTooLarge:
+		if code == http.StatusBadRequest && r.badRequest != nil {
+			return fmt.Errorf("%w: %s", r.badRequest, strings.TrimSpace(string(body)))
+		}
+		// Слова сервера: «too many phones» — человеку есть что сделать.
+		return fmt.Errorf("%w: %s", ErrMailRefused, strings.TrimSpace(string(body)))
+	}
+	if err := StatusErr(r.path, code); err != nil {
+		return err
+	}
+	return fmt.Errorf("%w: %s answered %d", ErrNotKB, r.path, code)
 }
 
 // mail makes one mailbox request.
@@ -145,18 +171,8 @@ func (c Client) mail(ctx context.Context, r mailReq, into any) error {
 	if err != nil {
 		return err
 	}
-	switch code := resp.StatusCode; code {
-	case r.want:
-	case http.StatusNotFound:
-		return cmp.Or(r.notFound, ErrNoMailbox)
-	case http.StatusBadRequest, http.StatusConflict, http.StatusRequestEntityTooLarge:
-		// Слова сервера: «too many phones» — человеку есть что сделать.
-		return fmt.Errorf("%w: %s", ErrMailRefused, strings.TrimSpace(string(body)))
-	default:
-		if err := StatusErr(r.path, code); err != nil {
-			return err
-		}
-		return fmt.Errorf("%w: %s answered %d", ErrNotKB, r.path, code)
+	if err := r.refusal(resp.StatusCode, body); err != nil {
+		return err
 	}
 	if into == nil {
 		return nil

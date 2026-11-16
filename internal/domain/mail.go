@@ -4,7 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Ящик чата с телефона (#622): телефон и компьютер дописывают сообщения в один
@@ -44,7 +47,18 @@ const (
 
 // NewPhoneName checks the name a person gives a phone in the window: «iPhone 17
 // Pro», «Samsung Анастасии». Пробелы по краям отрезаются.
-func NewPhoneName(s string) (string, error) { return s, nil }
+func NewPhoneName(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	// Печатные — без переносов и невидимых знаков направления (U+202E): имя
+	// показывается в окне и не должно переворачивать соседний текст.
+	if n := utf8.RuneCountInString(s); n == 0 || n > maxPhoneName || strings.ContainsFunc(s, func(r rune) bool { return !unicode.IsPrint(r) }) {
+		return "", fmt.Errorf("%w: %q", ErrBadPhoneName, s)
+	}
+	return s, nil
+}
+
+// maxPhoneName bounds the phone name in runes: строка списка в окне.
+const maxPhoneName = 40
 
 // genericPhoneNames are the names without a model; пустое — имени еще нет.
 var genericPhoneNames = map[string]bool{"": true, PhoneIPhone: true, PhoneIPad: true, PhoneIPadOrMac: true, PhoneAndroid: true, PhoneWindows: true}

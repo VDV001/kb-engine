@@ -269,6 +269,8 @@ func Describe(err error) string {
 		return "сервер перенаправил запрос, а kb не идет по редиректам с токеном — укажите конечный адрес (https://…)"
 	case errors.Is(err, ErrTooLarge):
 		return "выдача сервера больше 32 МБ — уточните запрос"
+	case errors.Is(err, ErrBadPhoneName):
+		return "имя телефона — от 1 до 40 знаков, без переносов строк и невидимых символов"
 	case errors.Is(err, ErrNoMailbox), errors.Is(err, ErrMailRefused), errors.Is(err, ErrNoSuchPhone):
 		return describeMail(err)
 	case errors.Is(err, ErrRejected):

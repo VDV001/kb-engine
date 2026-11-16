@@ -61,6 +61,7 @@ func MailHandler(svc mail.Service, logf func(string, ...any)) http.Handler {
 	mux.HandleFunc("POST /api/mail/devices", h.with(h.addPhone))
 	mux.HandleFunc("GET /api/mail/devices", h.with(h.listPhones))
 	mux.HandleFunc("DELETE /api/mail/devices/{device}", h.with(h.revokePhone))
+	mux.HandleFunc("PUT /api/mail/devices/{device}/name", h.with(h.renamePhone))
 	mux.HandleFunc("GET /api/mail/push/key", h.with(h.pushKey))
 	mux.HandleFunc("PUT /api/mail/push", h.with(h.subscribe))
 	mux.HandleFunc("DELETE /api/mail/push", h.with(h.unsubscribe))
@@ -105,7 +106,7 @@ func (h mailRoutes) fail(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
 	case errors.Is(err, domain.ErrPushOff):
 		http.Error(w, err.Error(), http.StatusNotFound)
-	case errors.Is(err, domain.ErrBadPushSubscription):
+	case errors.Is(err, domain.ErrBadPushSubscription), errors.Is(err, domain.ErrBadPhoneName):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, domain.ErrMailDeskOnly), errors.Is(err, domain.ErrMailPhoneOnly):
 		http.Error(w, err.Error(), http.StatusForbidden)
@@ -157,6 +158,24 @@ func (h mailRoutes) listPhones(w http.ResponseWriter, r *http.Request, c mailCal
 
 func (h mailRoutes) revokePhone(w http.ResponseWriter, r *http.Request, c mailCaller) {
 	if err := h.svc.RevokePhone(r.Context(), c.id, c.side, r.PathValue("device")); err != nil {
+		h.fail(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// maxNameBody bounds the rename request: имя до 40 знаков и поле JSON.
+const maxNameBody = 1 << 10
+
+func (h mailRoutes) renamePhone(w http.ResponseWriter, r *http.Request, c mailCaller) {
+	var in struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxNameBody)).Decode(&in); err != nil {
+		http.Error(w, "body must be {\"name\": \"...\"}", http.StatusBadRequest)
+		return
+	}
+	if err := h.svc.RenamePhone(r.Context(), c.id, c.side, r.PathValue("device"), in.Name); err != nil {
 		h.fail(w, err)
 		return
 	}
