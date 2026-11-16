@@ -190,7 +190,7 @@ func (w *mailWorker) useChat(d *chatDesk) {
 	w.answer = chatAnswerer(d)
 	w.find = newPhoneFinder(d.find, d.openFound) // ставит useSources в main до старта окна
 	w.quiet = func() bool { return d.config().MemoryQuiet }
-	w.desk = phoneDesk{settings: d.settings, models: d.recentModels}
+	w.desk = phoneDesk{settings: d.settings, models: d.phoneModels}
 }
 
 // phoneFindTimeout bounds one search or open for the phone: работник один на
@@ -260,8 +260,8 @@ type phoneDesk struct {
 	models   func() (modelsView, error)
 }
 
-// Модели — нынешняя и недавние (весь список шлюза — сотни, он телефону не
-// нужен); источники — включенные папки и серверы и подключения, которые
+// Модели — нынешняя и взятые раньше, до phoneShownModels (весь список шлюза —
+// сотни, он телефону не нужен); источники — включенные папки и серверы и подключения, которые
 // человек разрешил чату («Чату: разрешить»): закрытое телефон не увидит.
 func (d phoneDesk) State(context.Context) (mailrelay.DeskState, error) {
 	m, err := d.models()
@@ -270,7 +270,7 @@ func (d phoneDesk) State(context.Context) (mailrelay.DeskState, error) {
 	}
 	st := mailrelay.DeskState{Model: m.Current, Models: []string{}, Sources: []mailrelay.DeskSource{}}
 	for _, id := range append([]string{m.Current}, modelIDs(m.Recent)...) {
-		if id != "" && !slices.Contains(st.Models, id) {
+		if id != "" && !slices.Contains(st.Models, id) && len(st.Models) < phoneShownModels {
 			st.Models = append(st.Models, id)
 		}
 	}
@@ -299,7 +299,8 @@ func phoneSources(s *folderSettings) []mailrelay.DeskSource {
 
 // phoneOnly keeps the phone's choice of sources that the window still offers:
 // устаревший или закрытый чату id не сужает поиск до нуля; ничего не
-// осталось — nil, как у чата окна (ревью #656).
+// осталось — nil, как у чата окна; все — пустой список, «все» окна
+// (ревью #656): иначе сузивший телефон не вернул бы все.
 func phoneOnly(s *folderSettings, only []string) []string {
 	if only == nil {
 		return nil
@@ -308,11 +309,18 @@ func phoneOnly(s *folderSettings, only []string) []string {
 	out := slices.DeleteFunc(slices.Clone(only), func(id string) bool {
 		return !slices.ContainsFunc(known, func(x mailrelay.DeskSource) bool { return x.ID == id })
 	})
-	if len(out) == 0 {
+	switch {
+	case len(out) == 0:
 		return nil
+	case !slices.ContainsFunc(known, func(x mailrelay.DeskSource) bool { return !slices.Contains(out, x.ID) }):
+		return []string{}
 	}
 	return out
 }
+
+// phoneShownModels — сколько моделей видит телефон: выбрать он может любую
+// взятую (phoneModels), показ — короткий список у поля ввода.
+const phoneShownModels = 10
 
 // chatConnKinds are the connections a chat can ask (CHAT_CONN в frontend/app.js).
 var chatConnKinds = map[desktopconfig.ConnKind]string{desktopconfig.ConnOzon: "Ozon", desktopconfig.ConnMPStats: "MPStats"}

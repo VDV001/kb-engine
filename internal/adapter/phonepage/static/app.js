@@ -372,7 +372,8 @@ function paintChoice(c) {
   m.textContent = (ch.model || d.model || "модель") + " ▾";
   m.setAttribute("aria-label", "Модель: " + (ch.model || d.model) + (ch.model ? "" : " — как в окне"));
   const all = d.sources || [], on = ch.only ? ch.only.length : all.length;
-  s.textContent = "Источники · " + on + (on === all.length ? "" : " из " + all.length);
+  // Не выбирал — ищет, где чат окна: сколько там, телефон не знает (ревью #656).
+  s.textContent = "Источники · " + (ch.only ? on + (on === all.length ? "" : " из " + all.length) : "как в окне");
   s.hidden = !all.length;
   const p = $("pick");
   p.hidden = !ui.pick;
@@ -679,7 +680,7 @@ $("pick").addEventListener("change", async (e) => { // выбор — этого
       note("Хотя бы один источник: иначе чату негде искать.", false);
       return;
     }
-    c.only = r.only; // все — как в окне
+    c.only = r.only; // все — явным списком: окно читает его как «все»
   }
   await persist();
   show();

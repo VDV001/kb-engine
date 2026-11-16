@@ -98,16 +98,27 @@ func usedModels(calls []domain.ModelCall) []string {
 	return out
 }
 
-// recentModels is Models without the gateway's prices: нынешняя и недавние
-// из журнала — то, что видит и может выбрать телефон (#647). Без сети: модель
-// хода телефона проверяется им.
-func (d *chatDesk) recentModels() (modelsView, error) {
+// phoneModels are the models the phone may pick (#647): нынешняя и все, что
+// человек уже брал (журнал), без цен шлюза — без сети, ходом. Все взятые, а
+// не последние recentModels: выбор телефона не выпадает, когда окно
+// поработает с другими (ревью #656).
+//
+// ponytail: журнал читается целиком на каждый вопрос телефона со своей
+// моделью — на фоне хода модели это мелочь. Потолок: журнал в сотни тысяч
+// вызовов. Путь: держать список моделей по mtime журнала.
+func (d *chatDesk) phoneModels() (modelsView, error) {
 	c := d.config()
 	calls, err := d.usedCalls()
 	if err != nil {
 		return modelsView{}, err
 	}
-	return modelChoices(c.Model, c.URL, calls, nil, nil), nil
+	v := modelsView{Current: c.Model, Recent: []modelChoice{}}
+	for _, id := range append([]string{c.Model}, usedModels(calls)...) {
+		if id != "" && !slices.ContainsFunc(v.Recent, func(x modelChoice) bool { return x.ID == id }) {
+			v.Recent = append(v.Recent, modelChoice{ID: id})
+		}
+	}
+	return v, nil
 }
 
 // usedCalls reads the model journal; без журнала — пусто.

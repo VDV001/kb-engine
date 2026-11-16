@@ -248,10 +248,11 @@ want(JSON.stringify(s.questionPayload(st18.chats.c, "сроки?")) === JSON.str
 const st19 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: {}, deskAsked: 100 };
 const dc = s.deskChat(st19);
 want(dc !== s.searchChat(st19) && dc === s.deskChat({ ...st19 }), "the desk has its own stable chat");
-want(s.take(st19, { seq: 1, chat: dc, from: "desk" }, dk14(1, { kind: "error", text: "окно старое" })) === true && st19.deskErr === "окно старое" && st19.deskAsked === 100 && !st19.search?.error, "a desk refusal stays the desk's and keeps «asked»");
+s.take(st19, { seq: 1, chat: dc, from: "desk" }, dk14(1, { kind: "error", text: "окно старое" }));
+want(st19.deskAsked === 100 && !st19.search?.error && !st19.desk, "a desk refusal is not a search error and keeps «asked»");
 s.take(st19, { seq: 2, chat: s.searchChat(st19), from: "desk" }, dk14(2, { kind: "error", text: "источник недоступен" }));
-want(st19.search?.error === "источник недоступен" && st19.deskErr === "окно старое", "a search refusal is the search's even while the desk was asked");
-want(s.take(st19, { seq: 3, chat: dc, from: "desk" }, dk14(3, { kind: "desk", desk: desk18 })) === true && st19.desk?.model === "qwen3" && !st19.deskErr, "the desk state lands from its chat");
+want(st19.search?.error === "источник недоступен", "a search refusal is the search's even while the desk was asked");
+want(s.take(st19, { seq: 3, chat: dc, from: "desk" }, dk14(3, { kind: "desk", desk: desk18 })) === true && st19.desk?.model === "qwen3", "the desk state lands from its chat");
 want(s.take(st19, { seq: 4, chat: "desk-ffff", from: "desk" }, dk14(4, { kind: "desk", desk: { model: "x" } })) === false && st19.desk.model === "qwen3", "another phone's desk chat is not ours");
 // Устаревший выбор не уходит: модели и источники, которых окно больше не
 // показывает, отсекаются; ничего не осталось — как в окне.

@@ -192,28 +192,22 @@ export function deskChat(st) {
   return "desk-" + hex(st.sender || []);
 }
 
-// pickSources turns the checked sources of a chat into its choice, как в окне:
-// все — «как в окне» (undefined), ни одного — нельзя, чату негде искать.
+// pickSources turns the checked sources of a chat into its choice: ни одного —
+// нельзя, чату негде искать (как в окне); все — явным списком, окно читает его
+// как «все». Не выбирал вовсе (undefined) — источники чата окна (ревью #656).
 export function pickSources(all, on) {
   if (!on.length) return { ok: false };
-  return { ok: true, only: all.every((x) => on.includes(x)) ? undefined : on };
+  return { ok: true, only: on };
 }
 
-// desked applies the window's state or its refusal (#647). Отказ «спросили»
-// не снимает: повтор — через срок askDesk, а не на каждое открытие чата.
+// desked applies the window's state (#647). Отказ (окно без desk) — мимо:
+// кнопки модели и источников остаются скрытыми, «спросили» не снимается —
+// повтор через срок askDesk, а не на каждое открытие чата.
 function desked(st, m, p) {
-  if (m.from !== "desk") return false;
-  if (p.kind === "desk") {
-    st.desk = p.desk || null;
-    st.deskAt = Date.now();
-    delete st.deskErr;
-    return true;
-  }
-  if (p.kind === "error") {
-    st.deskErr = p.text;
-    return true;
-  }
-  return false;
+  if (m.from !== "desk" || p.kind !== "desk") return false;
+  st.desk = p.desk || null;
+  st.deskAt = Date.now();
+  return true;
 }
 
 // found applies the desk's answer to a search: выдача, документ или отказ.
