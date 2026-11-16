@@ -68,6 +68,15 @@ type Payload struct {
 	Title   string   `json:"title,omitempty"`
 	Hits    []Hit    `json:"hits,omitempty"`
 	Sources []Source `json:"sources,omitempty"`
+	// Context — заполнение контекста чата после ответа (#647); нет счета — nil.
+	Context *ContextFill `json:"context,omitempty"`
+}
+
+// ContextFill is how full the chat's context is: токены по счету провайдера и
+// размер окна модели (0 — не указан).
+type ContextFill struct {
+	Used   int `json:"used"`
+	Window int `json:"window"`
 }
 
 // Kinds of payload: телефон спрашивает question, ищет search, открывает
@@ -107,6 +116,7 @@ type Source struct {
 type Answer struct {
 	Chat, Text string
 	Sources    []Source
+	Context    *ContextFill
 }
 
 // SourcedAsker is an Asker that also tells where the answer came from.

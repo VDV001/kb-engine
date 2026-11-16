@@ -174,6 +174,18 @@ s.take(st14, { seq: 4, chat: "c", from: "desk" }, dk14(3, { kind: "answer", text
 want(!st14.chats.c.pending && !st14.chats.c.accepted, "the answer clears the wait");
 want(s.take(st14, { seq: 5, chat: "c", from: "desk" }, dk14(4, { kind: "accepted", text: "" })) === false && !st14.chats.c.accepted, "a late accepted after the answer does not show");
 
+// 15. Круг контекста (#647): заполнение приходит с ответом, пороги — как в окне.
+const st15 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { c: { title: "Чат", msgs: [], pending: true, updated: 1 } } };
+s.take(st15, { seq: 1, chat: "c", from: "desk" }, dk14(1, { kind: "answer", text: "ок", context: { used: 6000, window: 12000 } }));
+want(st15.chats.c.context?.used === 6000, "the answer keeps the context fill");
+const r15 = s.ctxView(st15.chats.c.context);
+want(r15?.text === "50%" && r15.tone === "warn" && Math.abs(r15.fill - 0.5) < 1e-9, "half full warns like the window: " + JSON.stringify(r15));
+want(s.ctxView({ used: 1000, window: 12000 }).tone === "ok" && s.ctxView({ used: 11000, window: 12000 }).tone === "bad", "thresholds 0.5 and 0.8");
+want(s.ctxView({ used: 13000, window: 12000 }).fill === 1 && s.ctxView({ used: 13000, window: 12000 }).text === "108%", "overflow shows over 100 and a full ring");
+want(s.ctxView({ used: 6000, window: 0 })?.text === "?" && s.ctxView(null) === null, "no window — «?», no count — no ring");
+s.take(st15, { seq: 2, chat: "c", from: "desk" }, dk14(2, { kind: "answer", text: "без счета" }));
+want(st15.chats.c.context === undefined, "an answer without a count drops the old fill, like the window");
+
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 

@@ -80,6 +80,11 @@ export function waitView(c) {
   return { text: q && q.sent === false ? "Ждет отправки" : "Отправлено · ждет компьютер", step: "" };
 }
 
+// ctxView is the context ring of a chat (#647); null — счета нет, круга нет.
+export function ctxView(x) {
+  return null;
+}
+
 // searchChat is the mailbox chat of this phone's searches: выдача и документы
 // идут им и в список чатов не попадают. От отправителя — повторная привязка
 // тем же ключом сохраняет его.

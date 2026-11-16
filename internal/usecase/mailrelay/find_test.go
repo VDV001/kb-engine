@@ -335,3 +335,27 @@ func TestRelayTellsThePhoneItAccepted(t *testing.T) {
 		t.Fatalf("accepted before the answer: %t, mailbox %+v", a.saw, got)
 	}
 }
+
+// filled answers with the chat's context fill.
+type filled struct{ asker }
+
+func (f *filled) AskSourced(ctx context.Context, chat, question string) (mailrelay.Answer, error) {
+	c, text, err := f.Ask(ctx, chat, question)
+	return mailrelay.Answer{Chat: c, Text: text, Context: &mailrelay.ContextFill{Used: 6000, Window: 12000}}, err
+}
+
+// Круг контекста на телефоне — тот же, что в окне (#647): заполнение чата
+// приходит с ответом; без счета провайдера — без круга.
+func TestRelaySendsTheContextFill(t *testing.T) {
+	b, s := &box{}, &store{}
+	b.phone("c-1", "A", 1, q("сроки?"))
+	r := newRelay(b, &asker{}, s)
+	r.Asker = &filled{}
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	got := payloads(t, b)
+	if len(got) != 1 || got[0].Context == nil || *got[0].Context != (mailrelay.ContextFill{Used: 6000, Window: 12000}) {
+		t.Fatalf("answer %+v", got)
+	}
+}
