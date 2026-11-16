@@ -81,7 +81,7 @@ var who = func() domain.UserID {
 
 func TestSubscribePush(t *testing.T) {
 	subs := &fakeSubs{subs: map[string]domain.PushSubscription{}}
-	svc := mail.Service{Subs: subs}
+	svc := mail.Service{Subs: subs, Push: &fakePusher{}}
 	ctx := context.Background()
 	if err := svc.SubscribePush(ctx, who, domain.MailDesk, "p-1", "https://fcm.googleapis.com/fcm/send/a", pushKey, pushAuth); !errors.Is(err, domain.ErrMailPhoneOnly) {
 		t.Fatalf("компьютер подписал телефон: %v", err)

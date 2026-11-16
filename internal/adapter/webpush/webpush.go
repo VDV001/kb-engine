@@ -225,9 +225,57 @@ const VAPIDKey = "auth/vapid.json"
 
 // LoadVAPID reads the server's key from s, creating it on the first start.
 func LoadVAPID(ctx context.Context, s blob.Store, subject string) (*VAPID, error) {
-	return nil, errors.ErrUnsupported
+	for range 3 {
+		o, err := s.Get(ctx, VAPIDKey)
+		if errors.Is(err, blob.ErrNotFound) {
+			err = createVAPID(ctx, s)
+			if errors.Is(err, blob.ErrConflict) {
+				continue // другой экземпляр создал ключ первым — читаем его
+			}
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("webpush: read %s: %w", VAPIDKey, err)
+		}
+		var dto vapidDTO
+		if err := json.Unmarshal(o.Data, &dto); err != nil {
+			return nil, fmt.Errorf("webpush: %s: %w", VAPIDKey, err)
+		}
+		// Испорченный ключ не заменяется новым: это молча отменило бы все
+		// подписки телефонов; пусть человек увидит ошибку и решит сам.
+		key, err := ecdsa.ParseRawPrivateKey(elliptic.P256(), dto.D)
+		if err != nil {
+			return nil, fmt.Errorf("webpush: %s: %w", VAPIDKey, err)
+		}
+		return NewVAPID(key, subject)
+	}
+	return nil, fmt.Errorf("webpush: %s kept changing: %w", VAPIDKey, blob.ErrConflict)
+}
+
+type vapidDTO struct {
+	D []byte `json:"d"` // закрытый ключ P-256, 32 байта
+}
+
+func createVAPID(ctx context.Context, s blob.Store) error {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return err
+	}
+	d, err := key.Bytes()
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(vapidDTO{D: d})
+	if err != nil {
+		return err
+	}
+	_, err = s.Put(ctx, VAPIDKey, data, "") // пустой ifMatch: только если ключа еще нет
+	return err
 }
 
 // PublicKey is the server's key as the phone passes it to subscribe
 // (applicationServerKey): несжатая точка, base64url.
-func (v *VAPID) PublicKey() string { return "" }
+func (v *VAPID) PublicKey() string { return v.public }

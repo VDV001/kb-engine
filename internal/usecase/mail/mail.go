@@ -117,6 +117,9 @@ func (s Service) SubscribePush(ctx context.Context, id domain.UserID, side domai
 	if side != domain.MailPhone {
 		return domain.ErrMailPhoneOnly
 	}
+	if s.Push == nil {
+		return domain.ErrPushOff
+	}
 	sub, err := domain.NewPushSubscription(endpoint, p256dh, auth)
 	if err != nil {
 		return err
@@ -139,6 +142,11 @@ func (s Service) Notify(ctx context.Context, id domain.UserID, side domain.MailS
 	if side != domain.MailDesk {
 		return 0, domain.ErrMailDeskOnly
 	}
+	if s.Push == nil {
+		return 0, domain.ErrPushOff
+	}
+	ctx, cancel := context.WithTimeout(ctx, NotifyTimeout)
+	defer cancel()
 	pushes, err := s.Subs.Pushes(ctx, id)
 	if err != nil {
 		return 0, err
@@ -173,5 +181,8 @@ func (s Service) logf(format string, args ...any) {
 
 // PushKey is the server's public VAPID key; push не настроен — ErrPushOff.
 func (s Service) PushKey(ctx context.Context) (string, error) {
-	return "", errors.ErrUnsupported
+	if s.Push == nil {
+		return "", domain.ErrPushOff
+	}
+	return s.Push.PublicKey(ctx)
 }
