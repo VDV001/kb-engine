@@ -316,6 +316,15 @@ want(st23.chats.c.pending === true && st23.chats.c.heard === "диктовка",
 s.take(st23, { seq: 4, chat: "c", from: "desk" }, dk14(4, { kind: "error", text: "silent" }));
 want(/не расслышал/.test(st23.chats.c.msgs.at(-1).text), "silence of a voice question is told in words");
 
+// 24. Один чат в двух местах (#649): переименование и удаление из окна — в
+// чат телефона; подтверждение окна чат не меняет; отказ — словами.
+const st24 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { c: { title: "Старое", msgs: [], updated: 1 }, d: { title: "Другой", msgs: [], updated: 1 } } };
+want(s.take(st24, { seq: 1, chat: "c", from: "desk" }, dk14(1, { kind: "rename", text: "Поставки" })) === true && st24.chats.c.title === "Поставки", "the window's rename reaches the phone");
+want(s.take(st24, { seq: 2, chat: "d", from: "desk" }, dk14(2, { kind: "delete", text: "chat" })) === true && !st24.chats.d, "the window's delete reaches the phone");
+want(s.take(st24, { seq: 3, chat: "c", from: "desk" }, dk14(3, { kind: "edited", text: "rename" })) === false && st24.chats.c.msgs.length === 0, "the window's acknowledgement changes nothing");
+s.take(st24, { seq: 4, chat: "c", from: "desk" }, dk14(4, { kind: "error", text: "chaterr" }));
+want(/не смогло/.test(st24.chats.c.msgs.at(-1)?.text || ""), "a refused edit is told in words");
+
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 
