@@ -4,7 +4,10 @@ package mail
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -123,19 +126,50 @@ type Service struct {
 	Logf   func(string, ...any)
 }
 
-// PutFile keeps a sealed file piece of either side and returns its id.
+// PutFile keeps a sealed file piece of either side and returns its id: id
+// выдает сервер — случайный, клиент его не выбирает и чужой не перезапишет.
 func (s Service) PutFile(ctx context.Context, id domain.UserID, side domain.MailSide, sealed []byte) (string, error) {
-	return "", errors.ErrUnsupported
+	if _, err := domain.ParseMailSide(string(side)); err != nil {
+		return "", err
+	}
+	switch {
+	case len(sealed) == 0:
+		return "", domain.ErrMailEmpty
+	case len(sealed) > domain.MaxMailFile:
+		return "", fmt.Errorf("%w: %d bytes, limit %d", domain.ErrMailTooLarge, len(sealed), domain.MaxMailFile)
+	case s.Files == nil:
+		return "", errors.ErrUnsupported
+	}
+	var raw [16]byte
+	_, _ = rand.Read(raw[:]) // с Go 1.24 Read не возвращает ошибку
+	file := hex.EncodeToString(raw[:])
+	return file, s.Files.Put(ctx, id, file, sealed)
 }
 
 // GetFile returns a piece of the person's mailbox.
 func (s Service) GetFile(ctx context.Context, id domain.UserID, file string) ([]byte, error) {
-	return nil, errors.ErrUnsupported
+	if err := s.fileCall(file); err != nil {
+		return nil, err
+	}
+	return s.Files.Get(ctx, id, file)
 }
 
 // DeleteFile removes a piece: получатель забрал его.
 func (s Service) DeleteFile(ctx context.Context, id domain.UserID, file string) error {
-	return errors.ErrUnsupported
+	if err := s.fileCall(file); err != nil {
+		return err
+	}
+	return s.Files.Delete(ctx, id, file)
+}
+
+func (s Service) fileCall(file string) error {
+	if err := domain.ValidateMailFileID(file); err != nil {
+		return err
+	}
+	if s.Files == nil {
+		return errors.ErrUnsupported
+	}
+	return nil
 }
 
 // Post writes a message of side into chat.

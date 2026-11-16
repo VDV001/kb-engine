@@ -246,14 +246,49 @@ type Files struct {
 	Del  blob.Deleter
 }
 
+func fileKey(id domain.UserID, file string) (string, error) {
+	if err := domain.ValidateMailFileID(file); err != nil {
+		return "", err
+	}
+	return "mailfiles/users/" + id.String() + "/" + file, nil
+}
+
+// Put creates the piece; тот же id второй раз — отказ, кусок не переписывается.
 func (f Files) Put(ctx context.Context, id domain.UserID, file string, sealed []byte) error {
+	key, err := fileKey(id, file)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Blob.Put(ctx, key, sealed, ""); err != nil {
+		return fmt.Errorf("mailbox: file: %w", err)
+	}
 	return nil
 }
 
+// Get returns the piece; нет его или он чужой — domain.ErrNoSuchMailFile.
 func (f Files) Get(ctx context.Context, id domain.UserID, file string) ([]byte, error) {
-	return nil, domain.ErrNoSuchMailFile
+	key, err := fileKey(id, file)
+	if err != nil {
+		return nil, err
+	}
+	o, err := f.Blob.Get(ctx, key)
+	if errors.Is(err, blob.ErrNotFound) {
+		return nil, domain.ErrNoSuchMailFile
+	}
+	if err != nil {
+		return nil, fmt.Errorf("mailbox: file: %w", err)
+	}
+	return o.Data, nil
 }
 
+// Delete removes the piece; нет его — не ошибка.
 func (f Files) Delete(ctx context.Context, id domain.UserID, file string) error {
+	key, err := fileKey(id, file)
+	if err != nil {
+		return err
+	}
+	if err := f.Del.Delete(ctx, key); err != nil {
+		return fmt.Errorf("mailbox: file: %w", err)
+	}
 	return nil
 }
