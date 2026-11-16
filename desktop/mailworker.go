@@ -294,6 +294,9 @@ func chatAnswerer(d *chatDesk) answerFn {
 			return mailrelay.Answer{}, err
 		}
 		a := mailrelay.Answer{Chat: rec.ID, Sources: answerSources(rec)}
+		if n := rec.Context; n != nil { // круг контекста на телефоне (#647)
+			a.Context = &mailrelay.ContextFill{Used: n.Used, Window: n.Window}
+		}
 		if n := len(rec.Messages); n > 0 {
 			a.Text = rec.Messages[n-1].Text
 		}

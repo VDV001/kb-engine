@@ -364,7 +364,7 @@ func (r Relay) ask(ctx context.Context, st *State, chat, question string) Payloa
 		return Payload{Kind: KindError, Text: err.Error()}
 	}
 	st.Chats[chat] = a.Chat
-	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources}
+	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources, Context: a.Context}
 }
 
 // maxStepText — столько байт подписи шага уходит телефону.

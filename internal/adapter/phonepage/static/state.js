@@ -57,6 +57,8 @@ export function take(st, m, o) {
     c.pending = false;
     delete c.step;
     delete c.accepted;
+    if (p.context?.used > 0) c.context = { used: p.context.used, window: p.context.window || 0 };
+    else delete c.context; // без счета провайдера — без круга, как в окне
   } else {
     const mine = who === hex(st.sender);
     const sent = mine && c.msgs.find((x) => x.who === "me" && x.counter === o.counter.toString());
@@ -81,8 +83,12 @@ export function waitView(c) {
 }
 
 // ctxView is the context ring of a chat (#647); null — счета нет, круга нет.
+// Пороги — как в окне: с половины подсказка, с 80% — тревога.
 export function ctxView(x) {
-  return null;
+  if (!(x?.used > 0)) return null;
+  if (!x.window) return { text: "?", tone: "ok", fill: 0 };
+  const f = x.used / x.window;
+  return { text: Math.round(f * 100) + "%", tone: f >= 0.8 ? "bad" : f >= 0.5 ? "warn" : "ok", fill: Math.min(1, f) };
 }
 
 // searchChat is the mailbox chat of this phone's searches: выдача и документы
