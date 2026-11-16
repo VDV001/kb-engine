@@ -3,6 +3,7 @@ package mail_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -30,7 +31,7 @@ type fakePhones struct{ list []mail.Phone }
 
 func (f fakePhones) Add(context.Context, domain.UserID) (string, string, error) { return "", "", nil }
 func (f fakePhones) List(context.Context, domain.UserID) ([]mail.Phone, error) {
-	return f.list, nil
+	return slices.Clone(f.list), nil
 }
 func (f fakePhones) Revoke(context.Context, domain.UserID, string) error { return nil }
 

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	mrand "math/rand/v2"
 	"slices"
 	"sync"
 	"time"
@@ -91,10 +92,7 @@ func RevokeDevice(ctx context.Context, s blob.Store, id domain.UserID, device st
 	// Подписку и вход стираем следом; не вышло — не беда: Pushes и List
 	// сверяют с DevicesKey.
 	_ = clearPush(ctx, s, id, device)
-	_ = update(ctx, s, SeenKey(id), func(r *seenRegistryDTO) error {
-		r.Seen = slices.DeleteFunc(r.Seen, func(e seenDTO) bool { return e.ID == id.String() && e.Device == device })
-		return nil
-	})
+	_ = clearSeen(ctx, s, id, func(d string) bool { return d == device })
 	return nil
 }
 
@@ -123,18 +121,15 @@ func (p Phones) Add(ctx context.Context, id domain.UserID) (string, string, erro
 	return AddDevice(ctx, p.Store, id)
 }
 
-// List lists the phones of id.
+// List lists the phones of id; входы к ним добавляет mail.Service из Visits.
 func (p Phones) List(ctx context.Context, id domain.UserID) ([]mail.Phone, error) {
 	ds, err := Devices(ctx, p.Store, id)
 	if err != nil {
 		return []mail.Phone{}, err
 	}
-	// Входы — подсказка окну, а не доступ: не прочитались — список без них.
-	vs, _ := seen(ctx, p.Store, id)
 	out := make([]mail.Phone, 0, len(ds))
 	for _, d := range ds {
-		v := vs[d.Device]
-		out = append(out, mail.Phone{Device: d.Device, At: d.At, Seen: v.At, Name: v.Name})
+		out = append(out, mail.Phone{Device: d.Device, At: d.At})
 	}
 	return out, nil
 }
@@ -270,87 +265,174 @@ func (p Phones) DropPush(ctx context.Context, endpoint string) error {
 	return DropPush(ctx, p.Store, endpoint)
 }
 
-// SeenKey is where phones' last visits live (#622): отдельно от DevicesKey по
-// той же причине, что PushKey, — реестр токенов читается строго.
-func SeenKey(id domain.UserID) string { return "auth/seen.json" }
-
-// VisitRetry is the pause after a failed visit write.
-const VisitRetry = 30 * time.Second
-
-// Seen returns the last visits of id's phones by device.
-func (v *Visits) Seen(ctx context.Context, id domain.UserID) (map[string]mail.Visit, error) {
-	return nil, errors.ErrUnsupported
-}
+// SeenKey is where the visits of id's phones live (#622): файл на человека —
+// телефоны разных людей не спорят за один объект (ревью #652); отдельно от
+// DevicesKey по той же причине, что PushKey, — реестр токенов читается строго.
+func SeenKey(id domain.UserID) string { return "auth/seen/" + id.String() + ".json" }
 
 // Visits writes phones' visits, не чаще VisitEvery на телефон в этом процессе:
-// телефон опрашивает ящик раз в 10 с, а запись — чтение и запись бакета.
+// телефон опрашивает ящик раз в 10 с, а запись — три обращения к бакету.
+//
+// ponytail: кэш — в памяти процесса: у каждого экземпляра сервера свой, и при
+// N экземплярах телефон пишется до N раз за VisitEvery; карта не чистится —
+// потолок MaxDevices на человека, путь — срок записи в карте или кэш в бакете.
 type Visits struct {
 	Store blob.Store
 
-	mu   sync.Mutex
-	last map[string]seenDTO // id|device → последнее записанное
+	mu    sync.Mutex
+	last  map[string]seenDTO // id|device → записанное или пишущееся сейчас
+	pause time.Time          // после сбоя записи до этого момента не пишем
 }
 
-type seenRegistryDTO struct {
-	Seen []seenDTO `json:"seen"`
+type seenFileDTO struct {
+	Phones []seenDTO `json:"phones"`
 }
 
 type seenDTO struct {
-	ID     string    `json:"id"`
 	Device string    `json:"device"`
 	Name   string    `json:"name,omitempty"`
 	At     time.Time `json:"at"`
 }
 
-// VisitEvery — как часто вход телефона переписывается в SeenKey; первый вход
-// процесса и смена имени пишутся сразу.
+// VisitEvery — как часто вход телефона переписывается; первый вход процесса и
+// новое, более точное имя пишутся сразу.
 const VisitEvery = 5 * time.Minute
+
+// VisitRetry is the pause after a failed write: сломанный бакет не получает
+// запрос и строку журнала на каждый опрос каждого телефона (ревью #652).
+const VisitRetry = 30 * time.Second
 
 // Visit notes that phone device of id came in at at, named name.
 func (v *Visits) Visit(ctx context.Context, id domain.UserID, device, name string, at time.Time) error {
 	k := id.String() + "|" + device
 	v.mu.Lock()
 	prev, ok := v.last[k]
-	v.mu.Unlock()
-	if ok && prev.Name == name && at.Sub(prev.At) < VisitEvery {
+	if ok {
+		name = domain.BetterPhoneName(prev.Name, name)
+	}
+	if at.Before(v.pause) || ok && prev.Name == name && at.Sub(prev.At) < VisitEvery {
+		v.mu.Unlock()
 		return nil
 	}
-	entry := seenDTO{ID: id.String(), Device: device, Name: name, At: at.UTC()}
-	err := update(ctx, v.Store, SeenKey(id), func(r *seenRegistryDTO) error {
-		r.Seen = slices.DeleteFunc(r.Seen, func(s seenDTO) bool { return s.ID == entry.ID && s.Device == device })
-		r.Seen = append(r.Seen, entry)
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	v.mu.Lock()
 	if v.last == nil {
 		v.last = map[string]seenDTO{}
 	}
-	v.last[k] = entry
+	// Занято до записи: опрос того же телефона, пришедший, пока пишется этот,
+	// не пишет второй раз (ревью #652).
+	v.last[k] = seenDTO{Device: device, Name: name, At: at}
 	v.mu.Unlock()
+
+	wrote, err := v.write(ctx, id, seenDTO{Device: device, Name: name, At: at.UTC()})
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if err != nil {
+		if ok {
+			v.last[k] = prev
+		} else {
+			delete(v.last, k)
+		}
+		v.pause = at.Add(VisitRetry)
+		return err
+	}
+	v.last[k] = wrote
 	return nil
 }
 
-// seen reads the visits of id's phones: device → последний вход.
-func seen(ctx context.Context, s blob.Store, id domain.UserID) (map[string]seenDTO, error) {
-	var r seenRegistryDTO
+// write records entry unless its phone is gone. Имя ранжируется по записанному
+// (у нового процесса кэша нет), входы отвязанных телефонов выбрасываются.
+func (v *Visits) write(ctx context.Context, id domain.UserID, entry seenDTO) (seenDTO, error) {
+	ds, err := Devices(ctx, v.Store, id)
+	if err != nil {
+		return seenDTO{}, err
+	}
+	live := func(device string) bool {
+		return slices.ContainsFunc(ds, func(d Device) bool { return d.Device == device })
+	}
+	if !live(entry.Device) {
+		return entry, nil // отвязан, пока шел опрос: не дописываем обратно
+	}
+	name := entry.Name
+	err = updateSeen(ctx, v.Store, id, func(f *seenFileDTO) bool {
+		entry.Name = name
+		for _, e := range f.Phones {
+			if e.Device == entry.Device {
+				entry.Name = domain.BetterPhoneName(e.Name, name)
+			}
+		}
+		f.Phones = slices.DeleteFunc(f.Phones, func(e seenDTO) bool { return e.Device == entry.Device || !live(e.Device) })
+		f.Phones = append(f.Phones, entry)
+		return true
+	})
+	return entry, err
+}
+
+// Seen returns the last visits of id's phones by device.
+func (v *Visits) Seen(ctx context.Context, id domain.UserID) (map[string]mail.Visit, error) {
+	f, _, err := readSeen(ctx, v.Store, id)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]mail.Visit, len(f.Phones))
+	for _, e := range f.Phones {
+		out[e.Device] = mail.Visit{Name: e.Name, At: e.At}
+	}
+	return out, nil
+}
+
+// readSeen reads the visits file of id. Испорченный файл читается пустым:
+// входы — подсказка окну, и следующий вход перепишет его, а не будет падать
+// на каждом опросе (ревью #652).
+func readSeen(ctx context.Context, s blob.Store, id domain.UserID) (seenFileDTO, string, error) {
+	var f seenFileDTO
 	o, err := s.Get(ctx, SeenKey(id))
 	switch {
 	case errors.Is(err, blob.ErrNotFound):
 	case err != nil:
-		return nil, fmt.Errorf("userauth: read %s: %w", SeenKey(id), err)
+		return f, "", fmt.Errorf("userauth: read %s: %w", SeenKey(id), err)
 	default:
-		if err := json.Unmarshal(o.Data, &r); err != nil {
-			return nil, fmt.Errorf("userauth: registry %s: %w", SeenKey(id), err)
+		if json.Unmarshal(o.Data, &f) != nil {
+			f = seenFileDTO{}
 		}
 	}
-	out := map[string]seenDTO{}
-	for _, e := range r.Seen {
-		if e.ID == id.String() {
-			out[e.Device] = e
+	return f, o.ETag, nil
+}
+
+// updateSeen is update for the visits file of id: change говорит, менял ли он
+// что-то, — нечего стирать, значит и писать нечего (файл не заводится зря).
+func updateSeen(ctx context.Context, s blob.Store, id domain.UserID, change func(*seenFileDTO) bool) error {
+	for range writeAttempts {
+		f, etag, err := readSeen(ctx, s, id)
+		if err != nil {
+			return err
 		}
+		if !change(&f) {
+			return nil
+		}
+		if f.Phones == nil {
+			f.Phones = []seenDTO{}
+		}
+		data, err := json.MarshalIndent(f, "", "  ")
+		if err != nil {
+			return err
+		}
+		_, err = s.Put(ctx, SeenKey(id), append(data, '\n'), etag)
+		if errors.Is(err, blob.ErrConflict) {
+			time.Sleep(mrand.N(10 * time.Millisecond))
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("userauth: write %s: %w", SeenKey(id), err)
+		}
+		return nil
 	}
-	return out, nil
+	return fmt.Errorf("userauth: %s kept changing under %d attempts: %w", SeenKey(id), writeAttempts, blob.ErrConflict)
+}
+
+// clearSeen forgets the visits of id's phones that match.
+func clearSeen(ctx context.Context, s blob.Store, id domain.UserID, match func(device string) bool) error {
+	return updateSeen(ctx, s, id, func(f *seenFileDTO) bool {
+		n := len(f.Phones)
+		f.Phones = slices.DeleteFunc(f.Phones, func(e seenDTO) bool { return match(e.Device) })
+		return len(f.Phones) != n
+	})
 }

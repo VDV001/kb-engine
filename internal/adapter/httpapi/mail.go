@@ -84,6 +84,12 @@ func (h mailRoutes) with(next func(http.ResponseWriter, *http.Request, mailCalle
 			return
 		}
 		// Вход телефона — для окна: «заходил в 12:06», имя по браузеру.
+		//
+		// ponytail: синхронно, до обработчика — раз в VisitEvery опрос телефона
+		// ждет три обращения к бакету (остальные опросы Visits отсекает в
+		// памяти). Потолок — медленный бакет; путь — запись в горутине со своим
+		// сроком, когда сервер уйдет из Serverless Container (там горутина после
+		// ответа замерзает, как у Notify).
 		if err := h.svc.Visit(r.Context(), c.id, c.side, c.device, phoneName(r.UserAgent(), r.Header.Get("Sec-CH-UA-Model"))); err != nil {
 			h.logf("mail: visit: %v", err)
 		}
@@ -135,10 +141,12 @@ func (h mailRoutes) listPhones(w http.ResponseWriter, r *http.Request, c mailCal
 		At     time.Time  `json:"at"`
 		Seen   *time.Time `json:"seen,omitempty"` // нет — телефон еще не входил
 		Name   string     `json:"name,omitempty"`
+		// SeenUnknown — входы не прочитались: нет seen не значит «не входил».
+		SeenUnknown bool `json:"seen_unknown,omitempty"`
 	}
 	out := make([]phoneDTO, 0, len(list))
 	for _, p := range list {
-		d := phoneDTO{Device: p.Device, At: p.At, Name: p.Name}
+		d := phoneDTO{Device: p.Device, At: p.At, Name: p.Name, SeenUnknown: p.SeenUnknown}
 		if !p.Seen.IsZero() {
 			d.Seen = &p.Seen
 		}
@@ -277,15 +285,17 @@ func phoneName(userAgent, model string) string {
 	}
 	switch {
 	case strings.Contains(userAgent, "iPhone"):
-		return "iPhone"
+		return domain.PhoneIPhone
 	case strings.Contains(userAgent, "iPad"):
-		return "iPad"
+		return domain.PhoneIPad
 	case strings.Contains(userAgent, "Android"):
 		return androidName(userAgent)
 	case strings.Contains(userAgent, "Macintosh"):
-		return "Mac"
+		// iPad в Safari (iPadOS 13+) шлет UA Mac; отличить его можно только
+		// касаниями в самой странице (ревью #652).
+		return domain.PhoneIPadOrMac
 	case strings.Contains(userAgent, "Windows"):
-		return "Windows"
+		return domain.PhoneWindows
 	}
 	return ""
 }
@@ -299,7 +309,7 @@ func androidName(userAgent string) string {
 	if m = strings.TrimSpace(m); closed && m != "K" && plainModel(m) {
 		return withBrand(m)
 	}
-	return "Android"
+	return domain.PhoneAndroid
 }
 
 // plainModel accepts a model name a person can read: буквы, цифры, пробел, - _ .

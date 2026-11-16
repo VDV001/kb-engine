@@ -137,10 +137,17 @@ func Revoke(ctx context.Context, s blob.Store, id domain.UserID) error {
 	if err != nil {
 		return err
 	}
-	return update(ctx, s, DevicesKey, func(r *registryDTO) error {
+	err = update(ctx, s, DevicesKey, func(r *registryDTO) error {
 		r.Users = slices.DeleteFunc(r.Users, func(u userDTO) bool { return u.ID == id.String() })
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	// Входы телефонов — следом; не вышло — не беда: окно их уже не спросит, а
+	// новый вход без живого телефона не пишется (ревью #652).
+	_ = clearSeen(ctx, s, id, func(string) bool { return true })
+	return nil
 }
 
 // update reads the registry, applies change and writes it back under the

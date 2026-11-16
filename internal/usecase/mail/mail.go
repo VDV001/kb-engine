@@ -116,12 +116,28 @@ func (s Service) AddPhone(ctx context.Context, id domain.UserID, side domain.Mai
 	return s.Phones.Add(ctx, id)
 }
 
-// ListPhones lists the phones; только компьютер.
+// ListPhones lists the phones with their visits; только компьютер. Входы не
+// прочитались — список все равно отдается (иначе не отвязать), а телефоны
+// помечены SeenUnknown: окно не ждет молча входа, которого не увидит.
 func (s Service) ListPhones(ctx context.Context, id domain.UserID, side domain.MailSide) ([]Phone, error) {
 	if side != domain.MailDesk {
 		return nil, domain.ErrMailDeskOnly
 	}
-	return s.Phones.List(ctx, id)
+	list, err := s.Phones.List(ctx, id)
+	if err != nil || s.Visits == nil {
+		return list, err
+	}
+	seen, err := s.Visits.Seen(ctx, id)
+	if err != nil {
+		s.logf("mail: visits: %v", err)
+	}
+	for i := range list {
+		if v, ok := seen[list[i].Device]; ok {
+			list[i].Name, list[i].Seen = v.Name, v.At
+		}
+		list[i].SeenUnknown = err != nil
+	}
+	return list, nil
 }
 
 // RevokePhone unpairs device; только компьютер.

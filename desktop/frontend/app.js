@@ -1377,7 +1377,7 @@ function phonesPanel(id) {
   const p = connPhones[id];
   if (!p) return "";
   const off = p.busy ? " disabled" : ""; // пока идет запрос, панель не трогают: второй щелчок — второй запрос (ревью #633)
-  const rows = (p.list || []).map((x) => `<li><div><span>${esc(x.name || "Телефон")}</span><small>${esc(x.device)} · привязан ${esc(x.at)} · ${x.seen ? "заходил " + esc(x.seen) : "ждет первого входа"}</small></div><button class="btn conn-phone-off" type="button"${off} data-phone-revoke="${esc(id)}" data-device="${esc(x.device)}"${mkTip("Отвязать", "токен телефона перестанет открывать ящик сразу; отвязан последний — ключ чата сотрется, следующий телефон получит новый")}>Отвязать</button></li>`).join("");
+  const rows = (p.list || []).map((x) => `<li><div><span>${esc(x.name || "Телефон")}</span><small>${esc(x.device)} · привязан ${esc(x.at)} · ${x.seen ? "заходил " + esc(x.seen) : x.seenUnknown ? "вход неизвестен: сервер не прочитал входы" : "ждет первого входа"}</small></div><button class="btn conn-phone-off" type="button"${off} data-phone-revoke="${esc(id)}" data-device="${esc(x.device)}"${mkTip("Отвязать", "токен телефона перестанет открывать ящик сразу; отвязан последний — ключ чата сотрется, следующий телефон получит новый")}>Отвязать</button></li>`).join("");
   return `<div class="conn-phones">
     <p class="d">Чат с телефона: телефон пишет, задачу делает этот компьютер, переписка шифруется — ключ знают только окно и телефоны. Привязка — QR-кодом: камера телефона открывает страницу DVK, и она привязывается сама; окно увидит вход и скроет код.</p>
     ${p.err ? `<p class="conn-check bad" role="status">✕ ${esc(p.err)}</p>` : ""}${p.done ? `<p class="conn-check ok" role="status">${esc(p.done)}</p>` : ""}${p.busy ? `<p class="conn-check" role="status">${esc(p.busy)}</p>` : ""}
@@ -1388,18 +1388,28 @@ function phonesPanel(id) {
 }
 // watchPairing: пока виден QR, раз в 3 с спрашивает список телефонов; новый
 // телефон вошел — QR убирается (в нем ключ чата) и окно говорит, какой телефон
-// привязан. Перерисовка — только на этом: опрос не дергает панель под курсором.
+// привязан. Перерисовка — только на исходе: опрос не дергает панель под курсором.
+// Молча окно не бросает: за 10 минут входа нет — код скрывается; сервер не
+// прочитал входы — окно говорит, что скрыть код надо самому (ревью #652).
 const PAIR_WATCH_MS = 3000, PAIR_WATCH_MAX_MS = 10 * 60_000;
 function watchPairing(id, device, started) {
   setTimeout(async () => {
     const still = () => connPhones[id]?.qr && connPhones[id].waitFor === device;
-    if (!still() || Date.now() - started > PAIR_WATCH_MAX_MS) return;
+    if (!still()) return;
+    if (Date.now() - started > PAIR_WATCH_MAX_MS) {
+      Object.assign(connPhones[id], { qr: "", waitFor: "", done: "Код скрыт: за 10 минут телефон не вошел. Привязка ждет в списке — отвяжите ее, если код не пригодился" });
+      return renderConnections();
+    }
     let list = null;
     try { list = (await native().MailPhones(id)) || []; } catch { /* сеть мигнула — следующий круг */ }
     if (!still()) return;
-    const hit = list?.find((x) => x.device === device && x.seen);
-    if (!hit) return watchPairing(id, device, started);
-    Object.assign(connPhones[id], { list, qr: "", waitFor: "", done: "✓ Телефон привязан: " + (hit.name || hit.device) });
+    const row = list?.find((x) => x.device === device);
+    if (row?.seenUnknown) {
+      Object.assign(connPhones[id], { list, waitFor: "", done: "Окно не видит входа телефона: сервер не прочитал входы. Скройте код сами, когда телефон откроет чат" });
+      return renderConnections();
+    }
+    if (!row?.seen) return watchPairing(id, device, started);
+    Object.assign(connPhones[id], { list, qr: "", waitFor: "", done: "✓ Телефон привязан: " + (row.name || row.device) });
     renderConnections();
   }, PAIR_WATCH_MS);
 }
@@ -1486,9 +1496,11 @@ $("#conn-list").addEventListener("click", async (e) => {
   if (rv) {
     const id = rv.dataset.phoneRevoke;
     hideTip();
-    connPhones[id] = { ...connPhones[id], busy: "отвязываю…", err: "" };
+    // «✓ Телефон привязан» над пустым списком после отвязки — неправда (ревью #652).
+    const was = connPhones[id]?.list?.find((x) => x.device === rv.dataset.device);
+    connPhones[id] = { ...connPhones[id], busy: "отвязываю…", err: "", done: "" };
     renderConnections();
-    try { await native().MailRevokePhone(id, rv.dataset.device); toast("Телефон отвязан", ` · «${name}»`, null, "info"); } catch (err) { if (connPhones[id]) connPhones[id].err = errText(err); }
+    try { await native().MailRevokePhone(id, rv.dataset.device); toast("Телефон отвязан", ` · «${was?.name || rv.dataset.device}»`, null, "info"); } catch (err) { if (connPhones[id]) connPhones[id].err = errText(err); }
     return loadPhones(id);
   }
   const ck = e.target.closest("[data-conn-check]");

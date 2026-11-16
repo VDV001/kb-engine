@@ -40,8 +40,18 @@ const (
 	PhoneWindows   = "Windows"
 )
 
-// BetterPhoneName is the name to keep when a phone named prev comes in as next.
-func BetterPhoneName(prev, next string) string { return next }
+// genericPhoneNames are the names without a model; пустое — имени еще нет.
+var genericPhoneNames = map[string]bool{"": true, PhoneIPhone: true, PhoneIPad: true, PhoneIPadOrMac: true, PhoneAndroid: true, PhoneWindows: true}
+
+// BetterPhoneName is the name to keep when a phone named prev comes in as next:
+// имя без модели не заменяет имя с моделью — Chrome шлет модель не в каждом
+// запросе, и «Samsung SM-S918B» не должен прыгать в «Android» (ревью #652).
+func BetterPhoneName(prev, next string) string {
+	if genericPhoneNames[next] && !genericPhoneNames[prev] {
+		return prev
+	}
+	return next
+}
 
 // mailReserved — имена, занятые маршрутами ящика (/api/mail/devices, /push, /notify).
 var mailReserved = map[string]bool{"devices": true, "push": true, "notify": true}
