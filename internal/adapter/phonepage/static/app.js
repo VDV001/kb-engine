@@ -528,20 +528,32 @@ function paintTheme() {
   document.querySelectorAll("[data-theme-btn]").forEach((b) => b.setAttribute("aria-label", "Тема: " + THEMES[t]));
   // Полоса состояния и строка адреса — цветом выбранной темы, а не системы.
   document.querySelectorAll('meta[name="theme-color"]').forEach((m) => {
-    m.content = themeColor(t, t === "system" ? m.media.includes("dark") : systemDark.matches);
+    m.content = themeColor(t, m.media.includes("dark")); // явная тема media не смотрит
   });
 }
-document.querySelectorAll("[data-theme-btn]").forEach((b) => b.addEventListener("click", () => {
-  const t = nextTheme(currentTheme());
-  if (t === "system") delete document.documentElement.dataset.theme;
-  else document.documentElement.dataset.theme = t;
+// Ключ kbengine-theme — витрины kb-сервера на том же адресе, как rememberTheme
+// окна: в одном браузере не живут две темы (ревью #644).
+const FRAME_THEME_KEY = "kbengine-theme";
+function setTheme(t) {
+  if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+  else delete document.documentElement.dataset.theme;
   try {
-    if (t === "system") localStorage.removeItem("theme");
-    else localStorage.setItem("theme", t);
+    for (const k of ["theme", FRAME_THEME_KEY]) {
+      if (t === "light" || t === "dark") localStorage.setItem(k, t);
+      else localStorage.removeItem(k);
+    }
   } catch { /* только на сеанс */ }
   paintTheme();
-  note("Тема: " + THEMES[t], false);
-}));
+}
+// Без всплывающей подписи, как в окне: она затерла бы ошибку отправки.
+document.querySelectorAll("[data-theme-btn]").forEach((b) => b.addEventListener("click", () => setTheme(nextTheme(currentTheme()))));
+// Тему сменили в другой вкладке /m/ — эта берет ее же.
+addEventListener("storage", (e) => {
+  if (e.key !== "theme") return;
+  if (e.newValue === "light" || e.newValue === "dark") document.documentElement.dataset.theme = e.newValue;
+  else delete document.documentElement.dataset.theme;
+  paintTheme();
+});
 systemDark.addEventListener("change", paintTheme);
 paintTheme();
 // ponytail: «пишет только вкладка на экране» — две вкладки рядом (планшет,

@@ -140,6 +140,8 @@ want(s.themeColor("system", true) === "#0b0b0c" && s.themeColor("system", false)
 // 11. Цвет полосы состояния — тот же --z-bg, что у страницы (ревью #644).
 const css = (await import("node:fs")).readFileSync(new URL("style.css", process.argv[1]), "utf8");
 const bgs = [...css.matchAll(/--z-bg:\s*(#[0-9a-fA-F]+)/g)].map((m) => m[1].toLowerCase().replace(/^#(.)(.)(.)$/, "#$1$1$2$2$3$3"));
+const themeJs = (await import("node:fs")).readFileSync(new URL("theme.js", process.argv[1]), "utf8");
+want(themeJs.includes('"' + s.themeColor("dark", true) + '"') && themeJs.includes('"' + s.themeColor("light", false) + '"'), "theme.js paints the same status bar colors");
 want(bgs.length >= 2 && bgs[0] === s.themeColor("dark", true) && bgs.slice(1).every((c) => c === s.themeColor("light", false)), "status bar color equals --z-bg of style.css: " + bgs.join(","));
 
 console.log(fails.length ? fails.join("\n") : "ok");

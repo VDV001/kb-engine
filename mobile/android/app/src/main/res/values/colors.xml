@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="dvk_bg">#0B0B0C</color>
+    <!-- Фон светлой темы (--z-bg): полосы в светлой системе (ревью #644). -->
+    <color name="dvk_bg_light">#FFFFFF</color>
 </resources>

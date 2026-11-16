@@ -101,8 +101,9 @@ button { font: inherit; color: inherit; }
 .back { display: inline-flex; align-items: center; gap: 2px; min-height: 44px; margin-left: -10px; padding: 0 6px; border: 0; background: none; color: var(--z-accent-hi); cursor: pointer; }
 .back svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
-/* кнопка темы: значок как в шапке окна на Маке */
+/* кнопка темы: значок как в шапке окна на Маке; на планшете — одна, в левой шапке */
 .theme { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; margin-right: -4px; border: 0; background: none; color: var(--z-ink-2); cursor: pointer; }
+@media (min-width: 900px) { .main .theme { display: none; } }
 .theme svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
 
 /* значок компьютера: зеленый — на связи, янтарь — спит */
