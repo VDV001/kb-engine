@@ -55,12 +55,7 @@ export function take(st, m, o) {
   if (m.from === "desk" && p.kind === "heard") { // диктовка (#648): текст — в поле ввода чата
     const c = st.chats[m.chat];
     if (!c) return false;
-    delete c.listening;
-    const q = c.msgs.findLastIndex((x) => x.who === "me" && x.voice);
-    if (q >= 0) { // тихий вопрос голосом: заглушка уходит, ждать нечего (ревью #660)
-      c.msgs.splice(q, 1);
-      c.pending = false;
-    }
+    delete c.listening; // «heard» — ответ только диктовке: «ждет» вопроса не трогает (повторное ревью #660)
     c.heard = p.text || "";
     return true;
   }
@@ -76,11 +71,13 @@ export function take(st, m, o) {
     // Без счета провайдера — без круга, как в окне; сбой хода круг не трогает:
     // в окне он ничего не сохраняет и прежний счет остается (ревью #654).
     delete c.listening;
-    if (p.heard) { // голосовой вопрос (#648): заглушка получает слова, ответ — читать вслух
-      const q = [...c.msgs].reverse().find((x) => x.who === "me" && x.voice);
-      if (q) { q.text = p.heard; delete q.voice; }
-      if (p.kind === "answer") c.say = { text: p.text, at: Date.now() }; // читать вслух — пока свежий
+    const q = [...c.msgs].reverse().find((x) => x.who === "me" && x.voice);
+    if (q) { // голосовой вопрос (#648): заглушка получает слова; отказ — просто снимает признак
+      if (p.heard) q.text = p.heard;
+      delete q.voice;
     }
+    // Читать вслух — пока свежий: по времени сообщения, а не приема (повторное ревью #660).
+    if (p.heard && p.kind === "answer") c.say = { text: p.text, at };
     if (p.context?.used > 0) c.context = { used: p.context.used, window: p.context.window || 0 };
     else if (p.kind === "answer") delete c.context;
     if (p.kind === "answer") c.only = p.only?.length ? p.only : undefined; // источники чата — от окна (#647); нет — все
@@ -361,4 +358,5 @@ const VOICE_WORDS = {
   mismatch: "Запись подменили по дороге, компьютер ее не взял — скажите еще раз.",
   gone: "Запись не дошла до компьютера — скажите еще раз.",
   unheard: "Компьютер не смог распознать запись — проверьте «Слушает» в настройках окна.",
+  silent: "Компьютер не расслышал вопрос — скажите еще раз.",
 };

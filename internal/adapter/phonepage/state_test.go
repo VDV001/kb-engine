@@ -280,8 +280,8 @@ want(q20.text === "какой срок?" && !q20.voice && st20.chats.c.say?.text
 // голоса — словами; ответ читается вслух, только пока свежий; Apple через сеть
 // берет до минуты — запись короче; телефон говорит, кто слышит его голос.
 const st21 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { c: { title: "Чат", msgs: [{ who: "me", text: "🎤", voice: true }], pending: true, updated: 1 } } };
-s.take(st21, { seq: 1, chat: "c", from: "desk" }, dk14(1, { kind: "heard", text: "" }));
-want(!st21.chats.c.pending && !st21.chats.c.msgs.some((x) => x.voice), "a silent voice question stops waiting and loses its placeholder");
+s.take(st21, { seq: 1, chat: "c", from: "desk" }, dk14(1, { kind: "error", text: "silent" }));
+want(!st21.chats.c.pending && !st21.chats.c.msgs.some((x) => x.voice), "a silent voice question stops waiting and loses its placeholder flag");
 s.take(st21, { seq: 2, chat: "c", from: "desk" }, dk14(2, { kind: "error", text: "unheard" }));
 const e21 = st21.chats.c.msgs.at(-1);
 want(e21.who === "error" && e21.text !== "unheard" && /распозна/.test(e21.text), "a voice refusal code is told in words");

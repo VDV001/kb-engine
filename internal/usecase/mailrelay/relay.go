@@ -491,8 +491,9 @@ func (r Relay) handle(ctx context.Context, st *State, m Message) (bool, error) {
 	}
 	reply.Text = trim(reply.Text, r.MaxText)
 	st.DeskCounter++
-	// Push — итогу хода модели: тишина и отказ голоса — не ответ (ревью #660).
-	asked := req.Kind == KindQuestion || req.Kind == KindVoice && reply.Kind == KindAnswer
+	// Push — итогу хода модели, и отказу модели тоже; тишина и отказ голоса —
+	// не ход (ревью #660): расслышанное есть только у хода.
+	asked := req.Kind == KindQuestion || req.Kind == KindVoice && reply.Heard != ""
 	out := Outgoing{Chat: m.Chat, Counter: st.DeskCounter, Payload: reply, Notify: asked}
 	var err error
 	if out.Sealed, err = r.sealFitting(&out); err != nil {
@@ -787,8 +788,11 @@ func (r Relay) voice(ctx context.Context, st *State, chat string, req Payload) P
 		return Payload{Kind: KindError, Text: VoiceUnheard}
 	}
 	text = strings.TrimSpace(text)
-	if req.Text != VoiceAsk || text == "" {
+	switch {
+	case req.Text != VoiceAsk:
 		return Payload{Kind: KindHeard, Text: text}
+	case text == "": // тишина вопроса — свой код: «heard» — ответ диктовке (повторное ревью #660)
+		return Payload{Kind: KindError, Text: VoiceSilent}
 	}
 	reply := r.ask(ctx, st, chat, text)
 	reply.Heard = text
