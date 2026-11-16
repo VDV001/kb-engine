@@ -25,6 +25,8 @@ package mailrelay
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -436,6 +438,8 @@ func (r Relay) request(st *State, m Message) (Payload, bool) {
 	switch p.Kind {
 	case KindQuestion, KindSearch, KindOpen, KindMemory, KindDesk:
 		return p, true
+	case KindVoice: // режим — только известный, запись — названа
+		return p, (p.Text == VoiceDictate || p.Text == VoiceAsk) && p.File != nil
 	}
 	return Payload{}, false
 }
@@ -459,12 +463,15 @@ func (r Relay) handle(ctx context.Context, st *State, m Message) (bool, error) {
 		reply = r.decide(ctx, st, m.Chat, req)
 	case KindDesk:
 		reply = r.desk(ctx)
+	case KindVoice:
+		reply = r.voice(ctx, st, m.Chat, req)
 	default:
 		reply = r.find(ctx, req)
 	}
 	reply.Text = trim(reply.Text, r.MaxText)
 	st.DeskCounter++
-	out := Outgoing{Chat: m.Chat, Counter: st.DeskCounter, Payload: reply, Notify: req.Kind == KindQuestion}
+	asked := req.Kind == KindQuestion || req.Kind == KindVoice && req.Text == VoiceAsk
+	out := Outgoing{Chat: m.Chat, Counter: st.DeskCounter, Payload: reply, Notify: asked}
 	var err error
 	if out.Sealed, err = r.sealFitting(&out); err != nil {
 		return false, err
@@ -716,6 +723,40 @@ func clip(text string, limit int) string {
 		cut--
 	}
 	return text[:max(cut, 0)] + "…"
+}
+
+// voice hears the phone's recording (#648): кусок — из файлов ящика, сверка
+// с хешем из аутентичного сообщения до расшифровки, затем удаление — окно
+// забрало запись, держать ее в бакете незачем. Диктовка — текст телефону;
+// вопрос голосом — ход модели с расслышанным.
+func (r Relay) voice(ctx context.Context, st *State, chat string, req Payload) Payload {
+	if r.Files == nil || r.Hear == nil {
+		return Payload{Kind: KindError, Text: DeskUnsupported}
+	}
+	sealed, err := r.Files.Get(ctx, req.File.ID)
+	if err != nil {
+		return Payload{Kind: KindError, Text: err.Error()}
+	}
+	defer func() {
+		if err := r.Files.Delete(ctx, req.File.ID); err != nil {
+			r.logf("mailrelay: voice: delete %s: %v", req.File.ID, err)
+		}
+	}()
+	sum := sha256.Sum256(sealed)
+	if hex.EncodeToString(sum[:]) != req.File.SHA256 {
+		return Payload{Kind: KindError, Text: VoiceMismatch}
+	}
+	text, err := r.Hear.Hear(ctx, sealed)
+	if err != nil {
+		return Payload{Kind: KindError, Text: err.Error()}
+	}
+	text = strings.TrimSpace(text)
+	if req.Text != VoiceAsk || text == "" {
+		return Payload{Kind: KindHeard, Text: text}
+	}
+	reply := r.ask(ctx, st, chat, text)
+	reply.Heard = text
+	return reply
 }
 
 // desk tells the phone the window's state (#647): модель и названия источников.
