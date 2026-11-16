@@ -257,3 +257,22 @@ func DropPush(ctx context.Context, s blob.Store, endpoint string) error {
 func (p Phones) DropPush(ctx context.Context, endpoint string) error {
 	return DropPush(ctx, p.Store, endpoint)
 }
+
+// SeenKey is where phones' last visits live (#622): отдельно от DevicesKey по
+// той же причине, что PushKey, — реестр токенов читается строго.
+const SeenKey = "auth/seen.json"
+
+// Visits writes phones' visits, не чаще VisitEvery на телефон в этом процессе:
+// телефон опрашивает ящик раз в 10 с, а запись — чтение и запись бакета.
+type Visits struct {
+	Store blob.Store
+}
+
+// VisitEvery — как часто вход телефона переписывается в SeenKey; первый вход
+// процесса и смена имени пишутся сразу.
+const VisitEvery = 5 * time.Minute
+
+// Visit notes that phone device of id came in at at, named name.
+func (v *Visits) Visit(ctx context.Context, id domain.UserID, device, name string, at time.Time) error {
+	return errors.ErrUnsupported
+}

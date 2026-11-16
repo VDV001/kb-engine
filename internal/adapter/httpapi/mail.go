@@ -258,3 +258,7 @@ func writeJSONStatus(w http.ResponseWriter, code int, v any) {
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
 }
+
+// phoneName names a phone by its browser: модель из Client Hints (Chrome на
+// Android после Accept-CH страницы /m/), иначе устройство из User-Agent.
+func phoneName(userAgent, model string) string { return "" }

@@ -22,6 +22,13 @@ type Page struct {
 type Phone struct {
 	Device string
 	At     time.Time
+	Seen   time.Time // последний вход телефона; ноль — еще не входил
+	Name   string    // имя по браузеру телефона: «iPhone», «Samsung SM-S918B»
+}
+
+// Visits remembers when a phone last came in and what it calls itself.
+type Visits interface {
+	Visit(ctx context.Context, id domain.UserID, device, name string, at time.Time) error
 }
 
 // Box is the log of sealed messages.
@@ -72,6 +79,7 @@ type Service struct {
 	Phones Phones
 	Subs   Subscriptions
 	Push   Pusher
+	Visits Visits
 	Now    func() time.Time
 	Logf   func(string, ...any)
 }
@@ -198,4 +206,10 @@ func (s Service) PushKey(ctx context.Context) (string, error) {
 		return "", domain.ErrPushOff
 	}
 	return s.Push.PublicKey(ctx)
+}
+
+// Visit notes that the calling phone came in; компьютер не отмечается, без
+// Visits — ничего. Сбой — ошибка: вызывающий только пишет ее в журнал.
+func (s Service) Visit(ctx context.Context, id domain.UserID, side domain.MailSide, device, name string) error {
+	return errors.ErrUnsupported
 }

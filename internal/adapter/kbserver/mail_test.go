@@ -56,7 +56,7 @@ func TestClient_Phones(t *testing.T) {
 		t.Fatalf("add: %q %q %v", dev, tok, err)
 	}
 	list, err := c.Phones(ctx)
-	if err != nil || len(list) != 1 || list[0].Device != dev || list[0].At.IsZero() {
+	if err != nil || len(list) != 1 || list[0].Device != dev || list[0].At.IsZero() || !list[0].Seen.IsZero() || list[0].Name != "" {
 		t.Fatalf("after add: %+v, %v", list, err)
 	}
 	if err := c.RevokePhone(ctx, dev); err != nil {
