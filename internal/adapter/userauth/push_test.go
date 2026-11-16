@@ -170,3 +170,31 @@ func TestDropPush_byEndpoint(t *testing.T) {
 		t.Fatalf("gone endpoint kept: %+v", p)
 	}
 }
+
+// Чужой человек, узнавший адрес подписки, не перехватывает ее своими ключами:
+// запись другого человека уходит, только если и ключи те же — это тот же
+// браузер, перепривязанный заново (ревью безопасности #643).
+func TestSetPush_foreignKeysDoNotEvict(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	owner, attacker := id(t, "owner"), id(t, "attacker")
+	for _, u := range []domain.UserID{owner, attacker} {
+		if _, err := userauth.Add(ctx, s, u); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dev, _, _ := userauth.AddDevice(ctx, s, owner)
+	evil, _, _ := userauth.AddDevice(ctx, s, attacker)
+	const ep = "https://fcm.googleapis.com/fcm/send/victim"
+	mine, _ := domain.NewPushSubscription(ep, append([]byte{4}, bytes.Repeat([]byte{7}, 64)...), bytes.Repeat([]byte{9}, 16))
+	theirs, _ := domain.NewPushSubscription(ep, append([]byte{4}, bytes.Repeat([]byte{8}, 64)...), bytes.Repeat([]byte{9}, 16))
+	if err := userauth.SetPush(ctx, s, owner, dev, mine); err != nil {
+		t.Fatal(err)
+	}
+	if err := userauth.SetPush(ctx, s, attacker, evil, theirs); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := userauth.Pushes(ctx, s, owner); len(p) != 1 {
+		t.Fatalf("the owner's subscription was evicted by foreign keys: %+v", p)
+	}
+}

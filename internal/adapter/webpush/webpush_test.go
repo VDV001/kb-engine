@@ -286,3 +286,26 @@ func TestCheckSubject(t *testing.T) {
 		}
 	}
 }
+
+// Сетевой сбой не несет адрес подписки в журнал: адрес — ключ к чужому
+// телефону (ревью безопасности #643).
+func TestSender_ErrorHidesEndpoint(t *testing.T) {
+	v, _ := newVAPID(t)
+	s := NewSender(v, roundTrip(func(*http.Request) (*http.Response, error) { return nil, errors.New("connection reset") }), time.Now)
+	err := s.Send(context.Background(), rfcSub(t), []byte("x"))
+	if err == nil || strings.Contains(err.Error(), "fcm/send") {
+		t.Fatalf("err %v", err)
+	}
+}
+
+// Ключ телефона вне кривой — подписка непригодна навсегда: ErrGone, чтобы ее
+// стерли, а не повторяли каждым ответом (ревью безопасности #643).
+func TestEncrypt_KeyOffCurveIsGone(t *testing.T) {
+	sub, err := domain.NewPushSubscription("https://fcm.googleapis.com/fcm/send/x", append([]byte{4}, bytes.Repeat([]byte{1}, 64)...), bytes.Repeat([]byte{2}, 16))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Encrypt(sub, []byte("x")); !errors.Is(err, ErrGone) {
+		t.Fatalf("err %v", err)
+	}
+}

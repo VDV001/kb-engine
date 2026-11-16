@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	gosync "sync"
 	"testing"
@@ -200,4 +201,28 @@ func TestMailPush_brokenKeyIsNotReReadByEveryCall(t *testing.T) {
 	if cs.vapid != 1 {
 		t.Fatalf("VAPID key read %d times, want 1", cs.vapid)
 	}
+}
+
+// Оборванный первый запрос не выключает push на 30 с для всех (ревью безопасности #643).
+func TestMailPush_canceledFirstCallIsNotRemembered(t *testing.T) {
+	f := newTenants(t)
+	f.h = tenantsHandler(t.Context(), ctxStore{f.store}, &strings.Builder{}, withPush("mailto:push@example.com", &pushRecorder{}))
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/mail/push/key", nil)
+	req.Header.Set("Authorization", "Bearer "+f.tokA)
+	f.h.ServeHTTP(httptest.NewRecorder(), req)
+	if r := do(f.h, http.MethodGet, "/api/mail/push/key", "", f.tokA); r.Code != http.StatusOK {
+		t.Fatalf("after a canceled first call: %d %s", r.Code, r.Body.String())
+	}
+}
+
+// ctxStore fails reads of a done context, as the S3 store does.
+type ctxStore struct{ blob.Store }
+
+func (c ctxStore) Get(ctx context.Context, key string) (blob.Object, error) {
+	if err := ctx.Err(); err != nil {
+		return blob.Object{}, err
+	}
+	return c.Store.Get(ctx, key)
 }
