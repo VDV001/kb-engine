@@ -7215,8 +7215,36 @@ function shMoneyCard(p) {
   const cost = m.hasCost ? String(m.unitCost).replace(".", ",") : "";
   return `<h4 class="sh-money-h">Деньги товара</h4><dl>${rows}</dl>` + (p.article
     ? `<label class="sh-cost"${mkTip("Себестоимость штуки", "по артикулу продавца; хранится на этом Mac, у каждого кабинета своя; пусто — убрать")}>Себестоимость штуки <input data-sh-cost="${esc(p.article)}" inputmode="decimal" value="${esc(cost)}" placeholder="—"> ₽</label>`
-    : `<div class="note">у товара нет артикула — себестоимость не задать</div>`);
+    : `<div class="note">у товара нет артикула — себестоимость не задать</div>`) + shPriceCalc(p);
 }
+// Калькулятор цены (отзыв владельца 16.11): «если цена такая — сколько со
+// штуки». Только расчет: в Ozon ничего не уходит, ключ остается для чтения.
+// Комиссия — та же доля от продаж, доставка и услуги — те же рубли за штуку,
+// что в начислениях периода; спрос при другой цене не считается.
+const shPrices = new Map(); // sku → набранная цена: живет, пока открыто окно
+function shUnitMoney(m, price) {
+  if (!(m && m.units > 0 && m.sales > 0 && price > 0)) return null;
+  const share = m.commission / m.sales; // отрицательная: Ozon удерживает
+  const fixed = (m.delivery + m.partners + m.other) / m.units;
+  const toAccount = price * (1 + share) + fixed;
+  return { toAccount, profit: m.hasCost ? toAccount - m.unitCost : null };
+}
+function shPriceCalc(p) {
+  const m = p.money;
+  if (!(m && m.units > 0 && m.sales > 0)) return "";
+  const now = { toAccount: m.total / m.units, profit: m.hasCost ? m.total / m.units - m.unitCost : null };
+  const raw = shPrices.get(p.sku) || "", calc = shUnitMoney(m, parseFloat(raw.replace(",", ".").replace(/\s/g, "")));
+  const pair = (u) => `на счет ${shRub(u.toAccount)}${u.profit === null ? "" : ` · прибыль ${shRub(u.profit)}`}`;
+  return `<label class="sh-cost"${mkTip("Если цена", "только расчет, в Ozon ничего не меняется: комиссия — та же доля от продаж, доставка и услуги — те же рубли за штуку, что за период; спрос при другой цене не учитывается")}>Если цена <input data-sh-price="${esc(p.sku)}" inputmode="decimal" value="${esc(raw)}" placeholder="${esc(String(Math.round(m.sales / m.units)))}"> ₽</label>` +
+    `<div class="note" id="sh-price-out">со штуки сейчас: ${pair(now)}${calc ? `<br>при этой цене: ${pair(calc)}` : ""}${m.hasCost ? "" : " · задайте себестоимость — посчитаю прибыль"}</div>`;
+}
+$("#mk-shop").addEventListener("input", (e) => {
+  const inp = e.target.closest("[data-sh-price]");
+  if (!inp || !sh.v) return;
+  shPrices.set(inp.dataset.shPrice, inp.value);
+  const p = sh.v.products.find((x) => x.sku === inp.dataset.shPrice), out = $("#sh-price-out");
+  if (p && out) out.outerHTML = shPriceCalc(p).replace(/^[\s\S]*?(<div class="note" id="sh-price-out">)/, "$1"); // поле не перерисовываем: курсор остается
+});
 // Себестоимость из карточки: сохраняется по Enter или уходу из поля, прибыль пересчитывается на месте.
 $("#mk-shop").addEventListener("change", async (e) => {
   const inp = e.target.closest("[data-sh-cost]");
