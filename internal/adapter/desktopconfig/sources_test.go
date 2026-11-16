@@ -1,6 +1,7 @@
 package desktopconfig_test
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -357,5 +358,28 @@ func TestShareVolume_NoEscape(t *testing.T) {
 	}
 	if got := desktopconfig.ShareVolume("https://dav.example.com/my%20files"); got != "/Volumes/my files" {
 		t.Errorf("WebDAV %%20: %q", got)
+	}
+}
+
+// Один kb-сервер двумя строками искался бы дважды (отзыв тестера 16.11):
+// сохранение отказывает, а файл прежней сборки с дублем читается.
+func TestConfig_CheckServers(t *testing.T) {
+	two := []desktopconfig.Source{
+		{ID: "server-1", Kind: desktopconfig.KindServer, URL: "https://kb.example", Enabled: true},
+		{ID: "server-2", Kind: desktopconfig.KindServer, URL: "https://KB.example/", Enabled: true},
+	}
+	if err := (desktopconfig.Config{Sources: two}).CheckServers(); !errors.Is(err, desktopconfig.ErrSourceDup) {
+		t.Fatalf("err = %v", err)
+	}
+	if err := (desktopconfig.Config{Sources: two[:1]}).CheckServers(); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "config.json")
+	raw, _ := json.Marshal(desktopconfig.Config{Sources: two})
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := desktopconfig.Read(path); err != nil {
+		t.Fatalf("файл с дублем не читается: %v", err)
 	}
 }

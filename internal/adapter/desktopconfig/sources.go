@@ -34,6 +34,7 @@ const (
 var (
 	ErrSourceID     = errors.New("у источника нет id или он повторяется")
 	ErrSourceTarget = errors.New("у источника не задан или не подходит путь либо адрес")
+	ErrSourceDup    = errors.New("этот источник уже есть в списке")
 )
 
 // Source — один источник. Порядок в Config.Sources — приоритет: при равной
@@ -163,6 +164,24 @@ func (c Config) Validate() error {
 		if err := s.check(); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// CheckServers refuses a kb-server listed twice: двумя строками он искался бы
+// дважды. Только при сохранении, не в Validate: прежние сборки дубль
+// пропускали, и файл с ним должен читаться, а не ронять окно.
+func (c Config) CheckServers() error {
+	servers := map[string]bool{}
+	for _, s := range c.Sources {
+		if s.Kind != KindServer {
+			continue
+		}
+		key := strings.ToLower(strings.TrimRight(s.URL, "/"))
+		if servers[key] {
+			return fmt.Errorf("%w: %s", ErrSourceDup, s.URL)
+		}
+		servers[key] = true
 	}
 	return nil
 }
