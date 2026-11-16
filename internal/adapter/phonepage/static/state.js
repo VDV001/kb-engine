@@ -146,3 +146,13 @@ export function b64(bytes) {
 export function unb64(text) {
   return Uint8Array.from(atob(text), (ch) => ch.charCodeAt(0));
 }
+
+// nextTheme is the theme after t on a tap: как кнопка окна на Маке.
+export function nextTheme(t) {
+  return t;
+}
+
+// themeColor is the status bar color for theme t (system — по prefers-color-scheme).
+export function themeColor(t, systemDark) {
+  return "";
+}

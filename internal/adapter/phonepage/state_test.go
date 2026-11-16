@@ -130,6 +130,13 @@ want(!st9.chats.c.step && st9.chats.c.msgs.length === 2, "the answer clears the 
 s.take(st9, { seq: 3, chat: "c", from: "desk" }, dk(3, { kind: "step", text: "поздно" }));
 want(!st9.chats.c.step, "a late step after the answer does not show");
 
+// 10. Тема как в окне на Маке: как в системе → светлая → темная по кругу.
+want(s.nextTheme("system") === "light" && s.nextTheme("light") === "dark" && s.nextTheme("dark") === "system", "theme cycles like the Mac window");
+want(s.nextTheme("purple") === "light", "unknown theme counts as system");
+// Полоса состояния — цвет фона выбранной темы, а «как в системе» — по системе.
+want(s.themeColor("light", true) === "#ffffff" && s.themeColor("dark", false) === "#0b0b0c", "explicit theme wins over the system");
+want(s.themeColor("system", true) === "#0b0b0c" && s.themeColor("system", false) === "#ffffff", "system theme follows the system");
+
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 
