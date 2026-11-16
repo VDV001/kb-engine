@@ -237,6 +237,12 @@ func (r *Registry) Invalidate() {
 	r.mu.Unlock()
 }
 
+// LookupDevice is Lookup that also names the phone of the token (DevicesKey).
+func (r *Registry) LookupDevice(token string) (domain.UserID, string, bool) {
+	id, ok := r.Lookup(token)
+	return id, "", ok
+}
+
 // Lookup returns the person whose token this is. Хэш токена сравнивается со
 // всеми записями за постоянное время и без раннего выхода: время ответа не
 // выдает, на какой записи остановились.

@@ -124,3 +124,34 @@ func (p Phones) List(ctx context.Context, id domain.UserID) ([]mail.Phone, error
 func (p Phones) Revoke(ctx context.Context, id domain.UserID, device string) error {
 	return RevokeDevice(ctx, p.Store, id, device)
 }
+
+// SetPush stores the push subscription of phone device of id; чужой или
+// отвязанный телефон — ErrNoSuchUser.
+func SetPush(ctx context.Context, s blob.Store, id domain.UserID, device string, sub domain.PushSubscription) error {
+	return errors.ErrUnsupported
+}
+
+// ClearPush removes the subscription of phone device of id.
+func ClearPush(ctx context.Context, s blob.Store, id domain.UserID, device string) error {
+	return errors.ErrUnsupported
+}
+
+// Pushes lists the push subscriptions of id's phones.
+func Pushes(ctx context.Context, s blob.Store, id domain.UserID) ([]mail.PhonePush, error) {
+	return nil, errors.ErrUnsupported
+}
+
+// SetPush is SetPush as the mailbox port.
+func (p Phones) SetPush(ctx context.Context, id domain.UserID, device string, sub domain.PushSubscription) error {
+	return SetPush(ctx, p.Store, id, device, sub)
+}
+
+// ClearPush is ClearPush as the mailbox port.
+func (p Phones) ClearPush(ctx context.Context, id domain.UserID, device string) error {
+	return ClearPush(ctx, p.Store, id, device)
+}
+
+// Pushes is Pushes as the mailbox port.
+func (p Phones) Pushes(ctx context.Context, id domain.UserID) ([]mail.PhonePush, error) {
+	return Pushes(ctx, p.Store, id)
+}
