@@ -24,11 +24,21 @@ type Phone struct {
 	At     time.Time
 	Seen   time.Time // последний вход телефона; ноль — еще не входил
 	Name   string    // имя по браузеру телефона: «iPhone», «Samsung SM-S918B»
+	// SeenUnknown — входы не прочитались: ноль в Seen не значит «не входил».
+	SeenUnknown bool
+}
+
+// Visit is a phone's last visit.
+type Visit struct {
+	Name string
+	At   time.Time
 }
 
 // Visits remembers when a phone last came in and what it calls itself.
 type Visits interface {
 	Visit(ctx context.Context, id domain.UserID, device, name string, at time.Time) error
+	// Seen returns the last visits of id's phones by device.
+	Seen(ctx context.Context, id domain.UserID) (map[string]Visit, error)
 }
 
 // Box is the log of sealed messages.

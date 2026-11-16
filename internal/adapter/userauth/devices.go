@@ -91,7 +91,7 @@ func RevokeDevice(ctx context.Context, s blob.Store, id domain.UserID, device st
 	// Подписку и вход стираем следом; не вышло — не беда: Pushes и List
 	// сверяют с DevicesKey.
 	_ = clearPush(ctx, s, id, device)
-	_ = update(ctx, s, SeenKey, func(r *seenRegistryDTO) error {
+	_ = update(ctx, s, SeenKey(id), func(r *seenRegistryDTO) error {
 		r.Seen = slices.DeleteFunc(r.Seen, func(e seenDTO) bool { return e.ID == id.String() && e.Device == device })
 		return nil
 	})
@@ -272,7 +272,15 @@ func (p Phones) DropPush(ctx context.Context, endpoint string) error {
 
 // SeenKey is where phones' last visits live (#622): отдельно от DevicesKey по
 // той же причине, что PushKey, — реестр токенов читается строго.
-const SeenKey = "auth/seen.json"
+func SeenKey(id domain.UserID) string { return "auth/seen.json" }
+
+// VisitRetry is the pause after a failed visit write.
+const VisitRetry = 30 * time.Second
+
+// Seen returns the last visits of id's phones by device.
+func (v *Visits) Seen(ctx context.Context, id domain.UserID) (map[string]mail.Visit, error) {
+	return nil, errors.ErrUnsupported
+}
 
 // Visits writes phones' visits, не чаще VisitEvery на телефон в этом процессе:
 // телефон опрашивает ящик раз в 10 с, а запись — чтение и запись бакета.
@@ -308,7 +316,7 @@ func (v *Visits) Visit(ctx context.Context, id domain.UserID, device, name strin
 		return nil
 	}
 	entry := seenDTO{ID: id.String(), Device: device, Name: name, At: at.UTC()}
-	err := update(ctx, v.Store, SeenKey, func(r *seenRegistryDTO) error {
+	err := update(ctx, v.Store, SeenKey(id), func(r *seenRegistryDTO) error {
 		r.Seen = slices.DeleteFunc(r.Seen, func(s seenDTO) bool { return s.ID == entry.ID && s.Device == device })
 		r.Seen = append(r.Seen, entry)
 		return nil
@@ -328,14 +336,14 @@ func (v *Visits) Visit(ctx context.Context, id domain.UserID, device, name strin
 // seen reads the visits of id's phones: device → последний вход.
 func seen(ctx context.Context, s blob.Store, id domain.UserID) (map[string]seenDTO, error) {
 	var r seenRegistryDTO
-	o, err := s.Get(ctx, SeenKey)
+	o, err := s.Get(ctx, SeenKey(id))
 	switch {
 	case errors.Is(err, blob.ErrNotFound):
 	case err != nil:
-		return nil, fmt.Errorf("userauth: read %s: %w", SeenKey, err)
+		return nil, fmt.Errorf("userauth: read %s: %w", SeenKey(id), err)
 	default:
 		if err := json.Unmarshal(o.Data, &r); err != nil {
-			return nil, fmt.Errorf("userauth: registry %s: %w", SeenKey, err)
+			return nil, fmt.Errorf("userauth: registry %s: %w", SeenKey(id), err)
 		}
 	}
 	out := map[string]seenDTO{}

@@ -2,84 +2,255 @@ package userauth_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/adapter/userauth"
+	"github.com/daniil/kb-engine/internal/domain"
 )
 
-// putCounter counts writes of SeenKey.
-type putCounter struct {
+// seenStore counts and can break writes of the visits files.
+type seenStore struct {
 	blob.Store
-	mu   sync.Mutex
-	seen int
+	key string // файл входов, за которым следим
+
+	mu      sync.Mutex
+	puts    int
+	failPut error         // не nil — Put файла входов отказывает
+	failGet error         // не nil — Get файла входов отказывает
+	hold    chan struct{} // не nil — Put файла входов ждет, пока закроют
 }
 
-func (p *putCounter) Put(ctx context.Context, key string, data []byte, ifMatch string) (string, error) {
-	if key == userauth.SeenKey {
-		p.mu.Lock()
-		p.seen++
-		p.mu.Unlock()
+func (s *seenStore) Put(ctx context.Context, key string, data []byte, ifMatch string) (string, error) {
+	if key == s.key {
+		s.mu.Lock()
+		s.puts++
+		fail, hold := s.failPut, s.hold
+		s.mu.Unlock()
+		if hold != nil {
+			<-hold
+		}
+		if fail != nil {
+			return "", fail
+		}
 	}
-	return p.Store.Put(ctx, key, data, ifMatch)
+	return s.Store.Put(ctx, key, data, ifMatch)
 }
 
-// Окно видит, что телефон вошел и как он себя зовет; запись — не на каждый
-// опрос, а раз в VisitEvery и при смене имени (#622).
-func TestVisits(t *testing.T) {
+func (s *seenStore) Get(ctx context.Context, key string) (blob.Object, error) {
+	s.mu.Lock()
+	fail := s.failGet
+	s.mu.Unlock()
+	if key == s.key && fail != nil {
+		return blob.Object{}, fail
+	}
+	return s.Store.Get(ctx, key)
+}
+
+func (s *seenStore) writes() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.puts
+}
+
+// visitsFixture is a person with two phones.
+func visitsFixture(t *testing.T) (*seenStore, domain.UserID, string, string) {
+	t.Helper()
 	ctx := context.Background()
-	s := &putCounter{Store: newStore(t)}
 	owner := id(t, "owner")
+	s := &seenStore{Store: newStore(t), key: userauth.SeenKey(owner)}
 	if _, err := userauth.Add(ctx, s, owner); err != nil {
 		t.Fatal(err)
 	}
-	dev, _, _ := userauth.AddDevice(ctx, s, owner)
-	quiet, _, _ := userauth.AddDevice(ctx, s, owner)
-	phones := userauth.Phones{Store: s}
-	v := &userauth.Visits{Store: s}
-	t0 := time.Date(2026, 11, 16, 12, 6, 0, 0, time.UTC)
+	dev, _, err := userauth.AddDevice(ctx, s, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	quiet, _, err := userauth.AddDevice(ctx, s, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s, owner, dev, quiet
+}
 
-	if err := v.Visit(ctx, owner, dev, "iPhone", t0); err != nil {
+var t0 = time.Date(2026, 11, 16, 12, 6, 0, 0, time.UTC)
+
+// Окно видит, что телефон вошел и как он себя зовет; запись — не на каждый
+// опрос, а раз в VisitEvery и при смене имени (#622). Файл входов у каждого
+// человека свой: телефоны разных людей не спорят за один объект (ревью #652).
+func TestVisits(t *testing.T) {
+	ctx := context.Background()
+	s, owner, dev, quiet := visitsFixture(t)
+	v := &userauth.Visits{Store: s}
+
+	if err := v.Visit(ctx, owner, dev, domain.PhoneIPhone, t0); err != nil {
 		t.Fatal(err)
 	}
 	for _, at := range []time.Duration{10 * time.Second, time.Minute} {
-		if err := v.Visit(ctx, owner, dev, "iPhone", t0.Add(at)); err != nil {
+		if err := v.Visit(ctx, owner, dev, domain.PhoneIPhone, t0.Add(at)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if s.seen != 1 {
-		t.Fatalf("SeenKey written %d times within VisitEvery, want 1", s.seen)
+	if n := s.writes(); n != 1 {
+		t.Fatalf("visits written %d times within VisitEvery, want 1", n)
 	}
-	_ = v.Visit(ctx, owner, dev, "iPad", t0.Add(2*time.Minute)) // имя сменилось — сразу
-	_ = v.Visit(ctx, owner, dev, "iPad", t0.Add(userauth.VisitEvery+3*time.Minute))
-	if s.seen != 3 {
-		t.Fatalf("SeenKey written %d times, want 3 (first, new name, after VisitEvery)", s.seen)
+	_ = v.Visit(ctx, owner, dev, domain.PhoneIPadOrMac, t0.Add(2*time.Minute)) // имя сменилось — сразу
+	_ = v.Visit(ctx, owner, dev, domain.PhoneIPadOrMac, t0.Add(userauth.VisitEvery+3*time.Minute))
+	if n := s.writes(); n != 3 {
+		t.Fatalf("visits written %d times, want 3 (first, new name, after VisitEvery)", n)
 	}
-	list, err := phones.List(ctx, owner)
-	if err != nil || len(list) != 2 {
-		t.Fatalf("List = %+v, %v", list, err)
+	seen, err := v.Seen(ctx, owner)
+	if err != nil || len(seen) != 1 {
+		t.Fatalf("Seen = %+v, %v", seen, err)
 	}
-	for _, p := range list {
-		switch p.Device {
-		case dev:
-			if p.Name != "iPad" || !p.Seen.Equal(t0.Add(userauth.VisitEvery+3*time.Minute)) {
-				t.Errorf("visited phone %+v", p)
-			}
-		case quiet:
-			if p.Name != "" || !p.Seen.IsZero() {
-				t.Errorf("phone that never came in %+v", p)
-			}
+	if got := seen[dev]; got.Name != domain.PhoneIPadOrMac || !got.At.Equal(t0.Add(userauth.VisitEvery+3*time.Minute)) {
+		t.Errorf("visited phone %+v", got)
+	}
+	if _, ok := seen[quiet]; ok {
+		t.Errorf("phone that never came in is seen")
+	}
+}
+
+// «Android» без модели не затирает «Samsung SM-S918B» и не пишется сразу —
+// иначе имя прыгает и предел VisitEvery обходится (ревью #652).
+func TestVisitsKeepTheBetterName(t *testing.T) {
+	ctx := context.Background()
+	s, owner, dev, _ := visitsFixture(t)
+	v := &userauth.Visits{Store: s}
+	_ = v.Visit(ctx, owner, dev, "Samsung SM-S918B", t0)
+	_ = v.Visit(ctx, owner, dev, domain.PhoneAndroid, t0.Add(10*time.Second))
+	if n := s.writes(); n != 1 {
+		t.Fatalf("visits written %d times, want 1", n)
+	}
+	// Новый процесс сервера: кэша нет, ранжирует по записанному.
+	fresh := &userauth.Visits{Store: s}
+	_ = fresh.Visit(ctx, owner, dev, domain.PhoneAndroid, t0.Add(time.Minute))
+	seen, _ := fresh.Seen(ctx, owner)
+	if got := seen[dev]; got.Name != "Samsung SM-S918B" || !got.At.Equal(t0.Add(time.Minute)) {
+		t.Fatalf("after a visit without the model: %+v", got)
+	}
+}
+
+// Сбой записи — пауза VisitRetry для всех телефонов процесса: сломанный бакет
+// не получает запрос и строку журнала на каждый опрос (ревью #652).
+func TestVisitsPauseAfterFailure(t *testing.T) {
+	ctx := context.Background()
+	s, owner, dev, quiet := visitsFixture(t)
+	v := &userauth.Visits{Store: s}
+	s.failPut = errors.New("bucket down")
+	if err := v.Visit(ctx, owner, dev, domain.PhoneIPhone, t0); err == nil {
+		t.Fatal("failed write reported no error")
+	}
+	for _, d := range []string{dev, quiet} {
+		if err := v.Visit(ctx, owner, d, domain.PhoneIPhone, t0.Add(10*time.Second)); err != nil {
+			t.Fatalf("visit during the pause: %v", err)
 		}
 	}
+	if n := s.writes(); n != 1 {
+		t.Fatalf("visits written %d times during the pause, want 1", n)
+	}
+	s.mu.Lock()
+	s.failPut = nil
+	s.mu.Unlock()
+	if err := v.Visit(ctx, owner, dev, domain.PhoneIPhone, t0.Add(userauth.VisitRetry+time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if seen, _ := v.Seen(ctx, owner); seen[dev].At.IsZero() {
+		t.Fatal("visit after the pause not written")
+	}
+}
+
+// Два одновременных опроса одного телефона пишут один раз (ревью #652).
+func TestVisitsConcurrentPollsWriteOnce(t *testing.T) {
+	ctx := context.Background()
+	s, owner, dev, _ := visitsFixture(t)
+	v := &userauth.Visits{Store: s}
+	s.hold = make(chan struct{})
+	first := make(chan error)
+	go func() { first <- v.Visit(ctx, owner, dev, domain.PhoneIPhone, t0) }()
+	for s.writes() == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	second := make(chan error, 1)
+	go func() { second <- v.Visit(ctx, owner, dev, domain.PhoneIPhone, t0.Add(time.Second)) }()
+	select {
+	case err := <-second:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second): // второй опрос пишет тоже и ждет ту же запись
+		close(s.hold)
+		<-first
+		<-second
+		t.Fatalf("second poll of the same phone writes too: %d writes", s.writes())
+	}
+	close(s.hold)
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	if n := s.writes(); n != 1 {
+		t.Fatalf("visits written %d times, want 1", n)
+	}
+}
+
+// Отвязанный телефон и удаленный человек не оставляют входов: опрос, что шел
+// во время отвязки, не дописывает телефон обратно (ревью #652).
+func TestVisitsForgetRevoked(t *testing.T) {
+	ctx := context.Background()
+	s, owner, dev, quiet := visitsFixture(t)
+	v := &userauth.Visits{Store: s}
+	_ = v.Visit(ctx, owner, dev, domain.PhoneIPhone, t0)
+	_ = v.Visit(ctx, owner, quiet, domain.PhoneAndroid, t0)
 	if err := userauth.RevokeDevice(ctx, s, owner, dev); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := userauth.AddDevice(ctx, s, owner); err != nil {
+	// Опрос с токеном, что был проверен до отвязки.
+	late := &userauth.Visits{Store: s}
+	if err := late.Visit(ctx, owner, dev, domain.PhoneIPhone, t0.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	if list, _ := phones.List(ctx, owner); len(list) != 2 || list[0].Device == dev || list[1].Device == dev {
-		t.Fatalf("after revoke: %+v", list)
+	seen, err := v.Seen(ctx, owner)
+	if _, ok := seen[dev]; ok || err != nil || len(seen) != 1 {
+		t.Fatalf("after revoke: %+v, %v", seen, err)
+	}
+	if err := userauth.Revoke(ctx, s, owner); err != nil {
+		t.Fatal(err)
+	}
+	if seen, err := v.Seen(ctx, owner); err != nil || len(seen) != 0 {
+		t.Fatalf("after the person is removed: %+v, %v", seen, err)
+	}
+	o, err := s.Store.Get(ctx, userauth.SeenKey(owner))
+	if err == nil && len(o.Data) > 20 {
+		t.Fatalf("visits file kept after the person is removed: %s", o.Data)
+	}
+}
+
+// Испорченный файл входов — подсказка окну, а не замок: следующий вход
+// пишет его заново, а не падает на каждом опросе (ревью #652).
+func TestVisitsHealCorruptFile(t *testing.T) {
+	ctx := context.Background()
+	s, owner, dev, _ := visitsFixture(t)
+	if _, err := s.Store.Put(ctx, userauth.SeenKey(owner), []byte("{not json"), ""); err != nil {
+		t.Fatal(err)
+	}
+	v := &userauth.Visits{Store: s}
+	if err := v.Visit(ctx, owner, dev, domain.PhoneIPhone, t0); err != nil {
+		t.Fatalf("visit over a corrupt file: %v", err)
+	}
+	if seen, err := v.Seen(ctx, owner); err != nil || seen[dev].Name != domain.PhoneIPhone {
+		t.Fatalf("after heal: %+v, %v", seen, err)
+	}
+}
+
+// Входы не прочитались — ошибка, а не «никто не входил»: окно должно знать,
+// что ждать входа бесполезно (ревью #652).
+func TestVisitsSeenReportsReadFailure(t *testing.T) {
+	s, owner, _, _ := visitsFixture(t)
+	s.failGet = errors.New("bucket down")
+	if _, err := (&userauth.Visits{Store: s}).Seen(context.Background(), owner); err == nil {
+		t.Fatal("unreadable visits reported as none")
 	}
 }

@@ -30,6 +30,8 @@ type Phone struct {
 	At     time.Time `json:"at"`
 	Seen   time.Time `json:"seen"` // ноль — телефон еще не входил
 	Name   string    `json:"name"` // по браузеру телефона; пусто до первого входа
+	// SeenUnknown — сервер не прочитал входы: ноль в Seen не значит «не входил».
+	SeenUnknown bool `json:"seen_unknown"`
 }
 
 // AddPhone pairs a new phone and returns its device id and token. Токен

@@ -11,7 +11,8 @@ func TestPhoneName(t *testing.T) {
 		{"Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/131.0.0.0 Mobile Safari/537.36", `"Pixel 8"`, "Pixel 8"},
 		{"Mozilla/5.0 (Linux; Android 14; SM-A546B) AppleWebKit/537.36 Chrome/131.0.0.0 Mobile Safari/537.36", "", "Samsung SM-A546B"},
 		{"Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/131.0.0.0 Mobile Safari/537.36", "", "Android"},
-		{"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15", "", "Mac"},
+		// iPad в Safari (iPadOS 13+) шлет UA Mac, а телефонный токен на Mac — редкость (ревью #652).
+		{"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15", "", "iPad или Mac"},
 		{"Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0.0.0 Safari/537.36", "", "Windows"},
 		{"", "", ""},
 		{"x", `"` + string(make([]byte, 200)) + `"`, ""},

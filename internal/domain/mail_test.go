@@ -9,6 +9,24 @@ import (
 	"github.com/daniil/kb-engine/internal/domain"
 )
 
+// Менее точное имя не заменяет точное: Chrome шлет модель не в каждом запросе,
+// и «Samsung SM-S918B» не должен прыгать в «Android» и обратно (ревью #652).
+func TestBetterPhoneName(t *testing.T) {
+	for _, c := range []struct{ prev, next, want string }{
+		{"", "iPhone", "iPhone"},
+		{"Samsung SM-S918B", domain.PhoneAndroid, "Samsung SM-S918B"},
+		{"Samsung SM-S918B", "", "Samsung SM-S918B"},
+		{domain.PhoneAndroid, "Samsung SM-S918B", "Samsung SM-S918B"},
+		{"Samsung SM-S918B", "Pixel 8", "Pixel 8"},
+		{domain.PhoneIPhone, domain.PhoneIPadOrMac, domain.PhoneIPadOrMac},
+		{"Pixel 8", domain.PhoneIPhone, "Pixel 8"},
+	} {
+		if got := domain.BetterPhoneName(c.prev, c.next); got != c.want {
+			t.Errorf("BetterPhoneName(%q, %q) = %q, want %q", c.prev, c.next, got, c.want)
+		}
+	}
+}
+
 // Сообщение ящика (#622): сервер хранит только шифротекст, а правила — чей он,
 // в каком чате и какого размера — живут здесь.
 func TestNewMailMessage(t *testing.T) {

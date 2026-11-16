@@ -35,6 +35,8 @@ type phoneRow struct {
 	At     string `json:"at"` // «15.11.2026 12:40», местное время
 	Seen   string `json:"seen"`
 	Name   string `json:"name"`
+	// SeenUnknown — сервер не прочитал входы: «ждет первого входа» было бы неправдой.
+	SeenUnknown bool `json:"seenUnknown"`
 }
 
 // mailKeyAccount is the keychain account of the chat key of server id.

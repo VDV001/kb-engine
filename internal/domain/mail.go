@@ -30,6 +30,19 @@ var (
 	ErrPushOff = errors.New("push is not configured")
 )
 
+// Имена телефона по браузеру, когда модель неизвестна: Safari модель не
+// сообщает, iPad в Safari притворяется Mac (iPadOS 13+), урезанный Chrome пишет «K».
+const (
+	PhoneIPhone    = "iPhone"
+	PhoneIPad      = "iPad"
+	PhoneIPadOrMac = "iPad или Mac"
+	PhoneAndroid   = "Android"
+	PhoneWindows   = "Windows"
+)
+
+// BetterPhoneName is the name to keep when a phone named prev comes in as next.
+func BetterPhoneName(prev, next string) string { return next }
+
 // mailReserved — имена, занятые маршрутами ящика (/api/mail/devices, /push, /notify).
 var mailReserved = map[string]bool{"devices": true, "push": true, "notify": true}
 
