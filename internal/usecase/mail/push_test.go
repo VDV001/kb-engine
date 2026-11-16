@@ -118,7 +118,9 @@ func TestNotify(t *testing.T) {
 		t.Fatalf("Notify = %d, %v; доставлено должно быть 1 из 3", n, err)
 	}
 	slices.Sort(push.sent)
-	if !slices.Equal(push.sent, []string{a, b, c}) {
+	want := []string{a, b, c}
+	slices.Sort(want)
+	if !slices.Equal(push.sent, want) {
 		t.Fatalf("разослано %v", push.sent)
 	}
 	for _, p := range push.payloads {

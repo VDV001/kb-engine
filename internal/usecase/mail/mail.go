@@ -5,6 +5,7 @@ package mail
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
@@ -108,15 +109,59 @@ func (s Service) RevokePhone(ctx context.Context, id domain.UserID, side domain.
 
 // SubscribePush stores the push subscription of the calling phone.
 func (s Service) SubscribePush(ctx context.Context, id domain.UserID, side domain.MailSide, device, endpoint string, p256dh, auth []byte) error {
-	return errors.ErrUnsupported
+	if side != domain.MailPhone {
+		return domain.ErrMailPhoneOnly
+	}
+	sub, err := domain.NewPushSubscription(endpoint, p256dh, auth)
+	if err != nil {
+		return err
+	}
+	return s.Subs.SetPush(ctx, id, device, sub)
 }
 
 // UnsubscribePush removes the calling phone's subscription.
 func (s Service) UnsubscribePush(ctx context.Context, id domain.UserID, side domain.MailSide, device string) error {
-	return errors.ErrUnsupported
+	if side != domain.MailPhone {
+		return domain.ErrMailPhoneOnly
+	}
+	return s.Subs.ClearPush(ctx, id, device)
 }
 
 // Notify tells the phones the desk answered and returns how many got it.
+// Рассылка идет в запросе окна, а не после ответа: в Serverless Container
+// горутина после ответа замерзает. Срок — ctx вызывающего.
 func (s Service) Notify(ctx context.Context, id domain.UserID, side domain.MailSide) (int, error) {
-	return 0, errors.ErrUnsupported
+	if side != domain.MailDesk {
+		return 0, domain.ErrMailDeskOnly
+	}
+	pushes, err := s.Subs.Pushes(ctx, id)
+	if err != nil {
+		return 0, err
+	}
+	errs := make([]error, len(pushes))
+	var wg sync.WaitGroup
+	for i, p := range pushes {
+		wg.Go(func() { errs[i] = s.Push.Send(ctx, p.Sub, []byte(NotifyAnswer)) })
+	}
+	wg.Wait()
+	sent := 0
+	for i, err := range errs {
+		switch {
+		case err == nil:
+			sent++
+		case errors.Is(err, domain.ErrPushGone):
+			if err := s.Subs.ClearPush(ctx, id, pushes[i].Device); err != nil {
+				s.logf("mail: push: clear %s: %v", pushes[i].Device, err)
+			}
+		default:
+			s.logf("mail: push %s: %v", pushes[i].Device, err)
+		}
+	}
+	return sent, nil
+}
+
+func (s Service) logf(format string, args ...any) {
+	if s.Logf != nil {
+		s.Logf(format, args...)
+	}
 }

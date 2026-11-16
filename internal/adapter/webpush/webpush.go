@@ -34,8 +34,9 @@ import (
 // ErrTooLong — текст не помещается в одну запись 4096 байт.
 var ErrTooLong = errors.New("webpush: message is too long")
 
-// ErrGone — сервис push забыл подписку (404, 410): ее пора удалить.
-var ErrGone = errors.New("webpush: subscription is gone")
+// ErrGone — сервис push забыл подписку (404, 410): ее пора удалить. Это
+// ошибка домена, чтобы рассылка узнала ее, не зная адаптера.
+var ErrGone = domain.ErrPushGone
 
 // ErrRejected — сервис push не принял сообщение.
 var ErrRejected = errors.New("webpush: push service rejected the message")

@@ -28,8 +28,8 @@ var (
 	ErrPushGone = errors.New("push subscription is gone")
 )
 
-// mailReserved — имена, занятые маршрутами ящика (/api/mail/devices).
-var mailReserved = map[string]bool{"devices": true}
+// mailReserved — имена, занятые маршрутами ящика (/api/mail/devices, /push, /notify).
+var mailReserved = map[string]bool{"devices": true, "push": true, "notify": true}
 
 // MaxMailSealed bounds one sealed message: ход задачи и итог — текст, вложения
 // в ящик не кладутся.
