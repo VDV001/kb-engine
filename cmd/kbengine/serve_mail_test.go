@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -339,5 +340,57 @@ func TestMailPhoneVisitAndName(t *testing.T) {
 				t.Errorf("phone that never came in: %+v", d)
 			}
 		}
+	}
+}
+
+// putFile posts a file piece as the phone or the desk would: байты, не JSON.
+func putFile(f tenantFixture, body []byte, token string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/api/mail/files", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	f.h.ServeHTTP(rec, req)
+	return rec
+}
+
+// Файлы ящика в настоящей сборке serve --tenants (#658): телефон кладет,
+// компьютер читает и удаляет, сосед не видит; у загрузки своя корзина —
+// строже отправки, и сообщения она не глушит.
+func TestMailFiles(t *testing.T) {
+	f := newTenants(t)
+	frozen(f)
+	_, phone := addPhone(t, f, f.tokA)
+	piece := []byte("sealed-file-piece")
+	rec := putFile(f, piece, phone)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("phone put: %d %s", rec.Code, rec.Body.String())
+	}
+	var out struct{ ID string }
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || domain.ValidateMailFileID(out.ID) != nil {
+		t.Fatalf("put answer %s, %v", rec.Body.String(), err)
+	}
+	if rec := do(f.h, http.MethodGet, "/api/mail/files/"+out.ID, "", f.tokA); rec.Code != http.StatusOK || !bytes.Equal(rec.Body.Bytes(), piece) {
+		t.Fatalf("desk get: %d %q", rec.Code, rec.Body.String())
+	}
+	if rec := do(f.h, http.MethodGet, "/api/mail/files/"+out.ID, "", f.tokB); rec.Code != http.StatusNotFound {
+		t.Errorf("B reads A's file: %d", rec.Code)
+	}
+	if rec := do(f.h, http.MethodDelete, "/api/mail/files/"+out.ID, "", f.tokA); rec.Code != http.StatusNoContent {
+		t.Errorf("desk delete: %d", rec.Code)
+	}
+	if rec := do(f.h, http.MethodGet, "/api/mail/files/"+out.ID, "", f.tokA); rec.Code != http.StatusNotFound {
+		t.Errorf("after delete: %d", rec.Code)
+	}
+	// Корзина загрузки: 8 подряд (два файла по 10 МБ), девятая — 429.
+	for i := range 7 {
+		if rec := putFile(f, piece, phone); rec.Code != http.StatusCreated {
+			t.Fatalf("put %d: %d", i+2, rec.Code)
+		}
+	}
+	if rec := putFile(f, piece, phone); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("put 9: %d, want 429", rec.Code)
+	}
+	if rec := do(f.h, http.MethodPost, "/api/mail/c-1", `{"sealed":"`+sealed+`"}`, phone); rec.Code != http.StatusCreated {
+		t.Errorf("message limited by files: %d", rec.Code)
 	}
 }
