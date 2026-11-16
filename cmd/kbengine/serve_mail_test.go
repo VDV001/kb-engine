@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/time/rate"
+
 	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/adapter/userauth"
 	"github.com/daniil/kb-engine/internal/domain"
@@ -392,5 +394,34 @@ func TestMailFiles(t *testing.T) {
 	}
 	if rec := do(f.h, http.MethodPost, "/api/mail/c-1", `{"sealed":"`+sealed+`"}`, phone); rec.Code != http.StatusCreated {
 		t.Errorf("message limited by files: %d", rec.Code)
+	}
+}
+
+// Бюджет байт файлов — на человека, а не на токен (ревью безопасности #659):
+// компьютер и телефоны тратят один бюджет, скачивание тоже тратит (выход
+// трафика платный); сосед со своим бюджетом.
+func TestMailFileBudgetIsPerPerson(t *testing.T) {
+	defer func(r rate.Limit, b int) { mailFileByteRate, mailFileByteBurst = r, b }(mailFileByteRate, mailFileByteBurst)
+	mailFileByteRate, mailFileByteBurst = rate.Limit(1), 2*domain.MaxMailFile+64
+	f := newTenants(t)
+	frozen(f)
+	_, phone1 := addPhone(t, f, f.tokA)
+	_, phone2 := addPhone(t, f, f.tokA)
+	rec := putFile(f, []byte("sealed"), phone1)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("put: %d", rec.Code)
+	}
+	var out struct{ ID string }
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	for i, tok := range []string{f.tokA, phone2} { // скачивание — по худшему куску, 3 МБ
+		if rec := do(f.h, http.MethodGet, "/api/mail/files/"+out.ID, "", tok); rec.Code != http.StatusOK {
+			t.Fatalf("get %d: %d", i+1, rec.Code)
+		}
+	}
+	if rec := do(f.h, http.MethodGet, "/api/mail/files/"+out.ID, "", phone1); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("third get of A by another token: %d, want 429 — the budget is the person's", rec.Code)
+	}
+	if rec := putFile(f, []byte("sealed"), f.tokB); rec.Code != http.StatusCreated {
+		t.Errorf("B limited by A: %d", rec.Code)
 	}
 }

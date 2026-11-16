@@ -221,6 +221,9 @@ var (
 	mailPollRate = rate.Every(5 * time.Second)
 	mailSendRate = rate.Limit(1)
 	mailFileRate = rate.Every(10 * time.Second)
+	// mailFileByteRate и mailFileByteBurst — бюджет байт файлов человека.
+	mailFileByteRate  = rate.Inf
+	mailFileByteBurst = 0
 )
 
 const (
