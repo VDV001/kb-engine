@@ -146,3 +146,8 @@ export function b64(bytes) {
 export function unb64(text) {
   return Uint8Array.from(atob(text), (ch) => ch.charCodeAt(0));
 }
+
+// pushView is the notifications card: текст и кнопка (on, off или null).
+export function pushView(o) {
+  return { text: "", action: undefined };
+}

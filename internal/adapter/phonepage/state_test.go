@@ -130,6 +130,15 @@ want(!st9.chats.c.step && st9.chats.c.msgs.length === 2, "the answer clears the 
 s.take(st9, { seq: 3, chat: "c", from: "desk" }, dk(3, { kind: "step", text: "поздно" }));
 want(!st9.chats.c.step, "a late step after the answer does not show");
 
+// 10. Карточка уведомлений (#622): что сказать и какую кнопку дать.
+const pv = (o) => s.pushView({ serverOn: true, supported: true, ios: false, standalone: false, permission: "default", subscribed: false, ...o });
+want(pv({}).action === "on", "push off by default offers to turn on");
+want(pv({ subscribed: true, permission: "granted" }).action === "off", "subscribed offers to turn off");
+want(pv({ permission: "denied" }).action === null && /запрещ/.test(pv({ permission: "denied" }).text), "denied: no button, says where to allow");
+want(pv({ supported: false, ios: true }).action === null && /Домой/.test(pv({ supported: false, ios: true }).text), "iPhone in Safari: home screen first");
+want(pv({ supported: false }).action === null && !/Домой/.test(pv({ supported: false }).text), "other browser without push");
+want(pv({ serverOn: false, subscribed: true }).action === null, "server without push: no button even if subscribed");
+
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 
