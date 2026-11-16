@@ -274,15 +274,20 @@ func SeenKey(id domain.UserID) string { return "auth/seen/" + id.String() + ".js
 // телефон опрашивает ящик раз в 10 с, а запись — три обращения к бакету.
 //
 // ponytail: кэш — в памяти процесса: у каждого экземпляра сервера свой, и при
-// N экземплярах телефон пишется до N раз за VisitEvery; карта не чистится —
-// потолок MaxDevices на человека, путь — срок записи в карте или кэш в бакете.
+// N экземплярах телефон пишется до N раз за VisitEvery; отвязанные телефоны из
+// карты не убираются — она сбрасывается целиком на maxVisitCache ключах (кэш,
+// не данные: худшее — по лишней записи на телефон). Путь — срок записи в карте.
 type Visits struct {
 	Store blob.Store
 
 	mu    sync.Mutex
-	last  map[string]seenDTO // id|device → записанное или пишущееся сейчас
-	pause time.Time          // после сбоя записи до этого момента не пишем
+	last  map[string]seenDTO   // id|device → записанное или пишущееся сейчас
+	pause map[string]time.Time // id → после сбоя записи до этого момента не пишем
 }
+
+// maxVisitCache bounds Visits.last: сервер на десятки людей до него не дорастет,
+// а привязка-отвязка по кругу не раздует память (ревью безопасности #652).
+const maxVisitCache = 10_000
 
 type seenFileDTO struct {
 	Phones []seenDTO `json:"phones"`
@@ -311,11 +316,13 @@ func (v *Visits) Visit(ctx context.Context, id domain.UserID, device, name strin
 	if ok {
 		name = domain.BetterPhoneName(prev.Name, name)
 	}
-	if at.Before(v.pause) || ok && prev.Name == name && at.Sub(prev.At) < VisitEvery {
+	// Сразу — только уточнение имени: смену одной модели на другую телефон
+	// может подставлять сам, и предел VisitEvery она не обходит (ревью безопасности #652).
+	if at.Before(v.pause[id.String()]) || ok && at.Sub(prev.At) < VisitEvery && !domain.SharperPhoneName(prev.Name, name) {
 		v.mu.Unlock()
 		return nil
 	}
-	if v.last == nil {
+	if v.last == nil || len(v.last) >= maxVisitCache {
 		v.last = map[string]seenDTO{}
 	}
 	// Занято до записи: опрос того же телефона, пришедший, пока пишется этот,
@@ -328,23 +335,38 @@ func (v *Visits) Visit(ctx context.Context, id domain.UserID, device, name strin
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if err != nil {
-		// Откатываем только свою отметку: соседний опрос с другим именем мог
-		// записаться, пока этот ждал, и его итог новее (ревью #652).
-		switch {
-		case v.last[k] != mine:
-		case ok:
-			v.last[k] = prev
-		default:
-			delete(v.last, k)
-		}
-		// Отмена или срок запроса телефона — не сбой бакета: пауза всем ни к чему.
-		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-			v.pause = at.Add(VisitRetry)
-		}
+		v.undo(k, mine, prev, ok)
+		v.pauseAfter(id, at, err)
 		return err
 	}
 	v.last[k] = wrote
 	return nil
+}
+
+// undo drops this write's mark from the cache; v.mu held. Откатываем только
+// свою отметку: соседний опрос с другим именем мог записаться, пока этот ждал,
+// и его итог новее (ревью #652).
+func (v *Visits) undo(k string, mine, prev seenDTO, had bool) {
+	switch {
+	case v.last[k] != mine:
+	case had:
+		v.last[k] = prev
+	default:
+		delete(v.last, k)
+	}
+}
+
+// pauseAfter pauses writes of id after err; v.mu held. Отмена или срок запроса
+// телефона — не сбой бакета; пауза — этому человеку: сбой его файла не глушит
+// входы остальных (ревью безопасности #652).
+func (v *Visits) pauseAfter(id domain.UserID, at time.Time, err error) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return
+	}
+	if v.pause == nil {
+		v.pause = map[string]time.Time{}
+	}
+	v.pause[id.String()] = at.Add(VisitRetry)
 }
 
 // write records entry unless its phone is gone. Имя ранжируется по записанному
