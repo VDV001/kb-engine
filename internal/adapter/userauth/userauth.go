@@ -145,9 +145,9 @@ func Revoke(ctx context.Context, s blob.Store, id domain.UserID) error {
 
 // update reads the registry, applies change and writes it back under the
 // version it read, retrying when someone else wrote in between.
-func update(ctx context.Context, s blob.Store, key string, change func(*registryDTO) error) error {
+func update[T any](ctx context.Context, s blob.Store, key string, change func(*T) error) error {
 	for range writeAttempts {
-		var r registryDTO
+		var r T
 		o, err := s.Get(ctx, key)
 		switch {
 		case errors.Is(err, blob.ErrNotFound):
@@ -198,8 +198,9 @@ type Registry struct {
 }
 
 type knownUser struct {
-	id  domain.UserID
-	sum []byte
+	id     domain.UserID
+	sum    []byte
+	device string // только в DevicesKey
 }
 
 // Option configures a Registry.
@@ -239,8 +240,18 @@ func (r *Registry) Invalidate() {
 
 // LookupDevice is Lookup that also names the phone of the token (DevicesKey).
 func (r *Registry) LookupDevice(token string) (domain.UserID, string, bool) {
-	id, ok := r.Lookup(token)
-	return id, "", ok
+	var found knownUser
+	if token == "" {
+		return found.id, "", false
+	}
+	sum := sha256.Sum256([]byte(token))
+	ok := false
+	for _, u := range r.current() { // тот же проход без раннего выхода, что в Lookup
+		if subtle.ConstantTimeCompare(sum[:], u.sum) == 1 {
+			found, ok = u, true
+		}
+	}
+	return found.id, found.device, ok
 }
 
 // Lookup returns the person whose token this is. Хэш токена сравнивается со
@@ -344,7 +355,7 @@ func decodeUsers(data []byte) ([]knownUser, error) {
 		if err != nil || len(sum) != sha256.Size {
 			return nil, fmt.Errorf("userauth: %s: bad token_sha256", u.ID)
 		}
-		users = append(users, knownUser{id: id, sum: sum})
+		users = append(users, knownUser{id: id, sum: sum, device: u.Device})
 	}
 	return users, nil
 }
