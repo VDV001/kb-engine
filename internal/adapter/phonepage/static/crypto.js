@@ -13,6 +13,8 @@ const HEADER = 33;
 const OVERHEAD = HEADER + 16;
 const MAX_SEALED = 64 << 10;
 const enc = new TextEncoder();
+// RESERVED — имена, занятые маршрутами ящика (domain.mailReserved).
+const RESERVED = new Set(["devices", "push", "notify", "files"]);
 const subtle = globalThis.crypto.subtle;
 
 export class CryptoError extends Error {
@@ -48,7 +50,7 @@ function aad(header, chat, from) {
 
 // seal encrypts plain (Uint8Array) for chat from the side; nonce — только для тестов.
 export async function seal(k, { chat, from, sender, counter }, plain, nonce) {
-  if (!/^[a-z0-9-]{1,64}$/.test(chat) || chat === "devices") throw new CryptoError("format", "чат: " + chat);
+  if (!/^[a-z0-9-]{1,64}$/.test(chat) || RESERVED.has(chat)) throw new CryptoError("format", "чат: " + chat);
   if (from !== "phone" && from !== "desk") throw new CryptoError("format", "сторона: " + from);
   if (!(sender instanceof Uint8Array) || sender.length !== 8) throw new CryptoError("format", "отправитель: 8 байт");
   if (!plain.length || plain.length > MAX_SEALED - OVERHEAD) throw new CryptoError("format", "текст: пустой или больше предела ящика");
@@ -77,12 +79,34 @@ export async function open(k, chat, from, sealed) {
   return { sender: header.slice(5, 13), counter: new DataView(header.buffer).getBigUint64(13), plain };
 }
 
-// sealFile encrypts one file piece (#658); формат — mailcrypt.SealFile.
+// Кусок файла (#658), формат mailcrypt.SealFile:
+//   версия (1) | id ключа (4) | нонс (12) | AES-256-GCM: файл и тег (16)
+//   AAD = "kbmail file\0" + заголовок (17): сообщение не откроется как файл.
+const FILE_HEADER = 17;
+const FILE_OVERHEAD = FILE_HEADER + 16;
+const MAX_FILE = 3 << 20; // domain.MaxMailFile: предел запроса Serverless Container
+
+// sealFile encrypts one file piece.
 export async function sealFile(k, plain) {
-  return plain.slice();
+  if (!plain.length || plain.length > MAX_FILE - FILE_OVERHEAD) throw new CryptoError("format", "файл: пустой или больше куска ящика");
+  const header = new Uint8Array(FILE_HEADER);
+  header[0] = VERSION;
+  header.set(k.keyId, 1);
+  globalThis.crypto.getRandomValues(header.subarray(5));
+  const ct = new Uint8Array(await subtle.encrypt({ name: "AES-GCM", iv: header.slice(5), additionalData: fileAAD(header) }, k.key, plain));
+  return concat(header, ct);
 }
 
 // openFile checks and decrypts one file piece.
 export async function openFile(k, sealed) {
-  return sealed;
+  if (sealed.length < FILE_OVERHEAD || sealed[0] !== VERSION) throw new CryptoError("format", "не запечатанный файл");
+  const header = sealed.slice(0, FILE_HEADER);
+  if (!header.slice(1, 5).every((b, i) => b === k.keyId[i])) throw new CryptoError("wrong-key", "закрыто другим ключом");
+  try {
+    return new Uint8Array(await subtle.decrypt({ name: "AES-GCM", iv: header.slice(5), additionalData: fileAAD(header) }, k.key, sealed.slice(FILE_HEADER)));
+  } catch {
+    throw new CryptoError("not-authentic", "файл правили или он чужой");
+  }
 }
+
+const fileAAD = (header) => concat(enc.encode("kbmail file\0"), header);
