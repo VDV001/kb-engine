@@ -575,6 +575,16 @@ func TestMailWorkerAttachesThePhoneFile(t *testing.T) {
 	if !seen {
 		t.Error("the model never saw the attached file")
 	}
+	// В чате окна вопрос назван с файлом (ревью #661): «Что в этом файле?» без имени — загадка.
+	list, _ := d.List()
+	if rec, err := d.load(list[0].ID); err != nil || !strings.Contains(rec.Messages[0].Text, "📎 договор.txt") {
+		t.Errorf("window question %q, %v", rec.Messages[0].Text, err)
+	}
+	// Работник без хода с файлами — отказ, а не вопрос без файла (ревью #661).
+	bare := newMailWorker(s, chatAsker(d), t.TempDir())
+	if _, err := (workerAsker{bare}).AskAttached(t.Context(), "", "что там?", []mailrelay.File{{Name: "a.txt", Data: []byte("x")}}, nil); err == nil {
+		t.Error("files dropped silently")
+	}
 }
 
 // Окно называет телефону слушателя, только когда распознавание сработает
