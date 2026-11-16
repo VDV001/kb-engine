@@ -1,6 +1,7 @@
 package userauth
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -158,8 +159,11 @@ func SetPush(ctx context.Context, s blob.Store, id domain.UserID, device string,
 	return update(ctx, s, PushKey, func(r *pushRegistryDTO) error {
 		// Один адрес — одна подписка: телефон, перепривязанный новым токеном
 		// (или к другому человеку), не получает уведомления дважды (ревью #643).
+		// Чужую запись с тем же адресом — только при тех же ключах: это тот же
+		// браузер; иначе узнавший адрес перехватил бы чужой телефон (ревью безопасности #643).
 		r.Subs = slices.DeleteFunc(r.Subs, func(p pushDTO) bool {
-			return (p.ID == id.String() && p.Device == device) || p.Endpoint == sub.Endpoint()
+			return (p.ID == id.String() && p.Device == device) ||
+				(p.Endpoint == sub.Endpoint() && bytes.Equal(p.P256dh, sub.P256dh()) && bytes.Equal(p.Auth, sub.Auth()))
 		})
 		r.Subs = append(r.Subs, pushDTO{ID: id.String(), Device: device, Endpoint: sub.Endpoint(), P256dh: sub.P256dh(), Auth: sub.Auth()})
 		return nil

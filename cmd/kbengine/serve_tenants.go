@@ -381,6 +381,9 @@ type lazyPusher struct {
 // бакет не перечитывается каждым вызовом подряд (ревью #643).
 const vapidRetry = 30 * time.Second
 
+// vapidLoadTimeout bounds reading the key from the bucket.
+const vapidLoadTimeout = 10 * time.Second
+
 func (l *lazyPusher) load(ctx context.Context) (*webpush.VAPID, *webpush.Sender, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -388,9 +391,14 @@ func (l *lazyPusher) load(ctx context.Context) (*webpush.VAPID, *webpush.Sender,
 		if l.failed != nil && time.Now().Before(l.retryAt) {
 			return nil, nil, l.failed
 		}
-		v, err := webpush.LoadVAPID(ctx, l.store, l.contact)
+		// Свой срок, а не запроса: оборванный запрос не должен стать сбоем для всех.
+		lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), vapidLoadTimeout)
+		v, err := webpush.LoadVAPID(lctx, l.store, l.contact)
+		cancel()
 		if err != nil {
-			l.failed, l.retryAt = err, time.Now().Add(vapidRetry)
+			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+				l.failed, l.retryAt = err, time.Now().Add(vapidRetry)
+			}
 			return nil, nil, err
 		}
 		l.vapid, l.sender = v, webpush.NewSender(v, l.transport, time.Now)

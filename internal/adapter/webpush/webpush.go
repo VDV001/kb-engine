@@ -73,8 +73,9 @@ func encrypt(sub domain.PushSubscription, plaintext []byte, as *ecdh.PrivateKey,
 	}
 	ua, err := ecdh.P256().NewPublicKey(sub.P256dh())
 	if err != nil {
-		// Домен проверил только форму: точка вне кривой видна лишь здесь.
-		return nil, fmt.Errorf("webpush: phone key: %w", err)
+		// Домен проверил только форму: точка вне кривой видна лишь здесь. Такая
+		// подписка непригодна навсегда — ErrGone, чтобы ее стерли.
+		return nil, fmt.Errorf("%w: phone key: %v", ErrGone, err)
 	}
 	secret, err := as.ECDH(ua)
 	if err != nil {
@@ -204,6 +205,10 @@ func (s *Sender) Send(ctx context.Context, sub domain.PushSubscription, payload 
 	req.Header.Set("Urgency", "high")
 	resp, err := s.client.Do(req)
 	if err != nil {
+		// *url.Error несет весь адрес подписки — в журнал только причину.
+		if ue, ok := errors.AsType[*url.Error](err); ok {
+			return fmt.Errorf("webpush: post: %w", ue.Err)
+		}
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
