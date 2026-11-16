@@ -300,18 +300,26 @@ func phoneSources(s *folderSettings) []mailrelay.DeskSource {
 // осталось — nil, как у чата окна; все — пустой список, «все» окна
 // (ревью #656): иначе сузивший телефон не вернул бы все.
 func phoneOnly(s *folderSettings, only []string) []string {
-	if only == nil {
+	out := knownOnly(s, only)
+	if out != nil && !slices.ContainsFunc(phoneSources(s), func(x mailrelay.DeskSource) bool { return !slices.Contains(out, x.ID) }) {
+		return []string{}
+	}
+	return out
+}
+
+// knownOnly drops the ids the window no longer offers; ничего не осталось —
+// nil, все. Выбор окна, совпавший со всеми, остается списком: новый источник
+// в суженный чат не попадает (ревью #656).
+func knownOnly(s *folderSettings, only []string) []string {
+	if len(only) == 0 {
 		return nil
 	}
 	known := phoneSources(s)
 	out := slices.DeleteFunc(slices.Clone(only), func(id string) bool {
 		return !slices.ContainsFunc(known, func(x mailrelay.DeskSource) bool { return x.ID == id })
 	})
-	switch {
-	case len(out) == 0:
+	if len(out) == 0 {
 		return nil
-	case !slices.ContainsFunc(known, func(x mailrelay.DeskSource) bool { return !slices.Contains(out, x.ID) }):
-		return []string{}
 	}
 	return out
 }
@@ -421,6 +429,9 @@ func chatAsker(d *chatDesk) askFn {
 func chatAnswerer(d *chatDesk) answerFn {
 	return func(ctx context.Context, chat, question string, opts mailrelay.Options, began func(string), step func(chat.Use)) (mailrelay.Answer, error) {
 		quiet := askOut{worker: true, step: step, began: began}
+		if err := d.phoneModel(opts.Model); err != nil {
+			return mailrelay.Answer{}, err
+		}
 		req := askReq{ID: chat, Question: question, Sources: phoneOnly(d.settings, opts.Only), Model: opts.Model}
 		rec, err := d.ask(ctx, req, quiet)
 		if chat != "" && errors.Is(err, fs.ErrNotExist) {
@@ -430,7 +441,8 @@ func chatAnswerer(d *chatDesk) answerFn {
 		if err != nil {
 			return mailrelay.Answer{}, err
 		}
-		a := mailrelay.Answer{Chat: rec.ID, Sources: answerSources(rec)}
+		// Only — где чат ищет теперь: галочки телефона — правда о чате (ревью #656).
+		a := mailrelay.Answer{Chat: rec.ID, Sources: answerSources(rec), Only: rec.Sources}
 		a.Context = (*mailrelay.ContextFill)(rec.Context) // круг контекста на телефоне (#647); та же форма
 		if n := len(rec.Messages); n > 0 {
 			a.Text = rec.Messages[n-1].Text

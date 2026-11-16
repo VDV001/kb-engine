@@ -95,9 +95,10 @@ type askReq struct {
 	Sources  []string `json:"sources"`
 	// Portrait — как портрет идет в чат, когда не помещается: "", full, relevant.
 	Portrait string `json:"portrait"`
-	// Model — модель этого вопроса (выбор телефона, #647): только из списка окна;
-	// пусто — модель настроек.
-	Model string `json:"model,omitempty"`
+	// Model — модель этого вопроса (выбор телефона, #647): ставит только
+	// chatAnswerer после phoneModel, со страницы окна не приходит; пусто —
+	// модель настроек.
+	Model string `json:"-"`
 }
 
 type chatMessage struct {
@@ -233,23 +234,32 @@ func (d *chatDesk) config() desktopconfig.Chat {
 }
 
 // turnModel is the chat settings and key of one turn: model — выбор телефона
-// (#647), только из тех, что человек уже брал (phoneModels), иначе телефон
-// взял бы любую модель шлюза, в том числе дорогую, за счет ключа человека;
-// пусто — модель настроек.
+// (#647), уже проверенный phoneModel; пусто — модель настроек.
 func (d *chatDesk) turnModel(model string) (desktopconfig.Chat, string, error) {
 	c := d.config()
-	if model != "" && model != c.Model {
-		m, err := d.phoneModels()
-		if err != nil {
-			return c, "", err
-		}
-		if !slices.Contains(m, model) {
-			return c, "", fmt.Errorf("модели «%s» нет в списке окна — выберите из списка", model)
-		}
+	if model != "" {
 		c.Model = model
 	}
 	key, err := d.modelKey(c)
 	return c, key, err
+}
+
+// phoneModel refuses a model the phone may not pick: только из тех, что
+// человек уже брал (phoneModels), иначе телефон взял бы любую модель шлюза, в
+// том числе дорогую, за счет ключа человека. Вне замка чата: журнал читается
+// с диска (ревью #656).
+func (d *chatDesk) phoneModel(model string) error {
+	if model == "" {
+		return nil
+	}
+	m, err := d.phoneModels()
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(m, model) {
+		return fmt.Errorf("модели «%s» нет в списке окна — выберите из списка", model)
+	}
+	return nil
 }
 
 // Settings returns the chat settings for the page.
@@ -353,7 +363,7 @@ type askOut struct {
 // выбор всегда.
 func (d *chatDesk) turnSources(r askReq, rec chatRecord, out askOut) []string {
 	if out.worker && r.Sources == nil {
-		return phoneOnly(d.settings, rec.Sources)
+		return knownOnly(d.settings, rec.Sources)
 	}
 	return r.Sources
 }

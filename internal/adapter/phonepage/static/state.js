@@ -64,6 +64,9 @@ export function take(st, m, o) {
     // в окне он ничего не сохраняет и прежний счет остается (ревью #654).
     if (p.context?.used > 0) c.context = { used: p.context.used, window: p.context.window || 0 };
     else if (p.kind === "answer") delete c.context;
+    // Где чат ищет теперь — от окна; пусто — все. Выбор телефона, еще не
+    // ушедший с вопросом, не затирается (ревью #656).
+    if (p.kind === "answer" && !c.onlySet) c.only = p.only?.length ? p.only : undefined;
   } else {
     const mine = who === hex(st.sender);
     const sent = mine && c.msgs.find((x) => x.who === "me" && x.counter === o.counter.toString());
@@ -154,22 +157,24 @@ export function deciding(c, id) {
   if (f) Object.assign(f, { busy: true, err: "" });
 }
 
-// questionPayload is the question of chat c with its choice (#647).
-// Не выбрано — как настроено в окне: поля не уходят вовсе.
+// questionPayload is the question of chat c with its choice (#647). Модель —
+// если выбрана; источники — только измененные на телефоне (onlySet): иначе
+// чат ищет, где ищет в окне (ревью #656).
 export function questionPayload(c, text, desk) {
   const p = { kind: "question", text }, ch = chosen(c, desk);
   if (ch.model) p.model = ch.model;
-  if (ch.only) p.only = ch.only;
+  if (ch.only && c.onlySet) p.only = ch.only;
   return p;
 }
 
-// chosen is chat c's choice that the window still offers (desk): модель и
-// источники, которых в окне больше нет, отсекаются; ничего не осталось — как
-// в окне (ревью #656). Состояния окна нет — выбор как есть, отсечет окно.
+// chosen is chat c's choice as the phone shows and sends it: источники,
+// которых в окне больше нет, отсекаются; ничего не осталось — все. Модель —
+// как есть: окно примет любую взятую раньше, а список телефона короткий
+// (ревью #656). Состояния окна нет — источники как есть, отсечет окно.
 export function chosen(c, desk) {
-  let model = c.model || undefined, only = Array.isArray(c.only) ? c.only : undefined;
+  const model = c.model || undefined;
+  let only = Array.isArray(c.only) ? c.only : undefined;
   if (desk) {
-    if (model && !(desk.models || []).includes(model)) model = undefined;
     if (only) {
       const ids = (desk.sources || []).map((x) => x.id);
       only = only.filter((x) => ids.includes(x));
@@ -194,7 +199,7 @@ export function deskChat(st) {
 
 // pickSources turns the checked sources of a chat into its choice: ни одного —
 // нельзя, чату негде искать (как в окне); все — явным списком, окно читает его
-// как «все». Не выбирал вовсе (undefined) — источники чата окна (ревью #656).
+// как «все».
 export function pickSources(on) {
   if (!on.length) return { ok: false };
   return { ok: true, only: on };

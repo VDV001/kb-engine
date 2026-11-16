@@ -474,7 +474,7 @@ func (r Relay) ask(ctx context.Context, st *State, chat string, req Payload) Pay
 		return Payload{Kind: KindError, Text: err.Error()}
 	}
 	st.Chats[chat] = a.Chat
-	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources, Context: a.Context}
+	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources, Context: a.Context, Only: a.Only}
 }
 
 // minPostGap — предел частоты отправки окна в ящик (сервер: раз в секунду).

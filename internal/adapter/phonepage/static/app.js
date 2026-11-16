@@ -372,8 +372,7 @@ function paintChoice(c) {
   m.textContent = (ch.model || d.model || "модель") + " ▾";
   m.setAttribute("aria-label", "Модель: " + (ch.model || d.model) + (ch.model ? "" : " — как в окне"));
   const all = d.sources || [], on = ch.only ? ch.only.length : all.length;
-  // Не выбирал — ищет, где чат окна: сколько там, телефон не знает (ревью #656).
-  s.textContent = "Источники · " + (ch.only ? on + (on === all.length ? "" : " из " + all.length) : "как в окне");
+  s.textContent = "Источники · " + on + (on === all.length ? "" : " из " + all.length);
   s.hidden = !all.length;
   const p = $("pick");
   p.hidden = !ui.pick;
@@ -387,7 +386,7 @@ function paintChoice(c) {
   };
   if (ui.pick === "model") {
     p.replaceChildren(head("Модель для этого чата"), row("radio", "model", "", "Как в окне · " + d.model, !ch.model),
-      ...(d.models || []).filter((x) => x !== d.model || ch.model).map((x) => row("radio", "model", x, x, ch.model === x)));
+      ...[...new Set([...(d.models || []), ...(ch.model ? [ch.model] : [])])].filter((x) => x !== d.model || ch.model).map((x) => row("radio", "model", x, x, ch.model === x)));
   } else {
     const part = (conn) => all.filter((x) => !!x.conn === conn).map((x) => row("checkbox", "src", x.id, x.name, !ch.only || ch.only.includes(x.id)));
     const local = part(false), conns = part(true);
@@ -522,7 +521,8 @@ async function send(chat, payload, mark) {
 
 async function ask(text) {
   const c = st.chats[ui.chat];
-  await send(ui.chat, questionPayload(c, text, st.desk), (counter) => asked(c, text, counter, Date.now()));
+  // Выбор источников ушел с вопросом — дальше правду о чате скажет ответ окна.
+  await send(ui.chat, questionPayload(c, text, st.desk), (counter) => { asked(c, text, counter, Date.now()); delete c.onlySet; });
 }
 
 // flush posts the outbox in order; неотправленное остается до следующего опроса.
@@ -681,6 +681,7 @@ $("pick").addEventListener("change", async (e) => { // выбор — этого
       return;
     }
     c.only = r.only; // все — явным списком: окно читает его как «все»
+    c.onlySet = true;
   }
   await persist();
   show();

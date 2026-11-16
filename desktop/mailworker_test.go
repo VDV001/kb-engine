@@ -407,9 +407,9 @@ func TestMailWorkerAnswersTheDesk(t *testing.T) {
 }
 
 // Телефон берет модель только из тех, что человек уже брал (журнал), — а не
-// любую из списка шлюза за счет ключа человека; проверка — без сети цен: она
-// идет под замком чата. Выбранная модель не выпадает, когда окно поработает
-// с другими (ревью #656: недавних всего 3).
+// любую из списка шлюза за счет ключа человека; проверка — без сети цен.
+// Выбранная модель не выпадает, когда окно поработает с другими (ревью #656:
+// недавних всего 3).
 func TestTurnModelOnlyFromThePhoneList(t *testing.T) {
 	d, _, tok, _ := newTestChatDesk(t)
 	tok.m[chatKeyAccount] = "k"
@@ -427,11 +427,11 @@ func TestTurnModelOnlyFromThePhoneList(t *testing.T) {
 		rec.calls = append(rec.calls, call)
 	}
 	d.calls = rec
-	if _, _, err := d.turnModel("anthropic/claude-sonnet-5.5"); err == nil {
+	if err := d.phoneModel("anthropic/claude-sonnet-5.5"); err == nil {
 		t.Error("a gateway model the phone was never shown was taken")
 	}
-	if c, _, err := d.turnModel("llama3"); err != nil || c.Model != "llama3" {
-		t.Errorf("a recent model: %q, %v", c.Model, err)
+	if err := d.phoneModel("llama3"); err != nil {
+		t.Errorf("a model used before: %v", err)
 	}
 }
 

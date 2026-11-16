@@ -98,20 +98,24 @@ func usedModels(calls []domain.ModelCall) []string {
 	return out
 }
 
-// phoneModels are the models the phone may pick (#647): нынешняя и все, что
-// человек уже брал (журнал), без цен шлюза — без сети, ходом. Все взятые, а
-// не последние recentModels: выбор телефона не выпадает, когда окно
-// поработает с другими (ревью #656).
+// phoneModels are the models the phone may pick (#647), нынешняя первой:
+// все, что человек уже брал для ответа и поиска (журнал), без цен шлюза — без
+// сети. Все взятые, а не последние recentModels: выбор телефона не выпадает,
+// когда окно поработает с другими; голос и распознавание пишут тот же журнал,
+// их модели — не модели чата (ревью #656).
 //
-// ponytail: журнал читается целиком на каждый вопрос телефона со своей
-// моделью — на фоне хода модели это мелочь. Потолок: журнал в сотни тысяч
-// вызовов. Путь: держать список моделей по mtime журнала.
+// ponytail: журнал читается целиком на вопрос телефона со своей моделью и на
+// запрос desk — вне замка чата. Потолок: журнал в сотни тысяч вызовов. Путь:
+// держать список моделей по mtime журнала.
 func (d *chatDesk) phoneModels() ([]string, error) {
 	c := d.config()
 	calls, err := d.usedCalls()
 	if err != nil {
 		return nil, err
 	}
+	calls = slices.DeleteFunc(calls, func(x domain.ModelCall) bool {
+		return x.Purpose() != domain.CallAnswer && x.Purpose() != domain.CallSearch
+	})
 	var out []string
 	for _, id := range append([]string{c.Model}, usedModels(calls)...) {
 		if id != "" && !slices.Contains(out, id) {
