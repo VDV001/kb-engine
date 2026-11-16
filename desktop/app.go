@@ -498,8 +498,14 @@ func (a *App) PickChatFile() (string, error) {
 // ChatFind searches the chat's sources for a document to attach.
 func (a *App) ChatFind(q string) ([]chatDoc, error) { return a.chat.Find(q) }
 
-// DeleteChat removes a chat.
+// DeleteChat moves a chat to the trash.
 func (a *App) DeleteChat(id string) error { return a.chat.Delete(id) }
+
+// ChatTrash lists deleted chats (неделя в корзине).
+func (a *App) ChatTrash() ([]chatSummary, error) { return a.chat.Trash() }
+
+// RestoreChat returns a deleted chat to the list.
+func (a *App) RestoreChat(id string) error { return a.chat.Restore(id) }
 
 // IndexStatus reports whether a build is running and how the last one went.
 func (a *App) IndexStatus() indexStatus { return a.index.Status() }

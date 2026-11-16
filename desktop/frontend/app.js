@@ -3264,15 +3264,16 @@ function chatWhen(iso) {
 }
 async function renderChatList() {
   try { chatState.list = (await native().Chats()) || []; } catch { chatState.list = []; }
+  try { chatState.trash = (await native().ChatTrash?.()) || []; } catch { chatState.trash = []; }
   paintChatList();
 }
 function paintChatList() {
   const q = ($("#chat-find").hidden ? "" : $("#chat-find").value).trim().toLowerCase();
   const list = chatState.list.filter((c) => !q || c.title.toLowerCase().includes(q));
-  // Удаление стирает историю с диска насовсем — сначала вопрос в строке, как у
+  // Удаление — в корзину на неделю, но сначала вопрос в строке, как у
   // подключений: «×» рядом с названием легко задеть.
   $("#chat-list").innerHTML = list.map((c) => c.id === chatState.confirmDel
-    ? `<li class="chat-confirm"><span>Удалить «${esc(c.title)}»? История сотрется.</span>
+    ? `<li class="chat-confirm"><span>Удалить «${esc(c.title)}»? Неделю его можно вернуть из корзины.</span>
       <button class="btn danger" data-del-yes="${esc(c.id)}">Удалить</button><button class="btn" data-del-no>Отмена</button></li>`
     : c.id === chatState.renaming
     ? `<li class="chat-rename"><input class="chat-find" id="chat-rename-in" maxlength="60" value="${esc(c.title)}" aria-label="Название чата"></li>`
@@ -3280,6 +3281,10 @@ function paintChatList() {
       <button class="chat-ren" data-ren="${esc(c.id)}" aria-label="Переименовать чат: ${esc(c.title)}" data-tip="Переименовать">✎</button>
       <button class="chat-del" data-del="${esc(c.id)}" aria-label="Удалить чат: ${esc(c.title)}" data-tip="Удалить чат">×</button></li>`).join("") ||
     `<li class="muted chat-empty" style="padding:7px 10px">${q ? "Чатов с таким названием нет" : "Чатов пока нет"}</li>`;
+  // Корзина (ревью #662): удаленные здесь и с телефона — неделю, «Вернуть».
+  const trash = chatState.trash || [];
+  if (trash.length) $("#chat-list").insertAdjacentHTML("beforeend", `<li><button class="lnk chat-trash" data-trash-toggle aria-expanded="${!!chatState.trashOpen}" data-tip="Корзина" data-tip-b="удаленные чаты лежат неделю, потом стираются">Корзина · ${trash.length}</button></li>` +
+    (chatState.trashOpen ? trash.map((c) => `<li class="chat-confirm"><span>${esc(c.title)}</span><button class="btn" data-restore="${esc(c.id)}">Вернуть</button></li>`).join("") : ""));
   dropStaleTip();
   const inp = $("#chat-rename-in");
   if (inp && document.activeElement !== inp) { inp.focus(); inp.select(); }
@@ -3503,9 +3508,20 @@ if (window.runtime) window.runtime.EventsOn("phone:turn", async (t) => {
 if (window.runtime) window.runtime.EventsOn("chats:changed", async (id) => {
   if (!chatState.renaming) await renderChatList();
   if (id && id === chatState.id && !chatState.busy) {
-    try { chatState.chat = await native().Chat(id); renderChat(); } catch { /* чат откроется заново при выборе */ }
+    try { chatState.chat = await native().Chat(id); renderChat(); } catch {
+      // Открытый чат удалили с телефона (ревью #662): вид — на новый чат, а не
+      // вопрос в чат, которого уже нет.
+      chatState.id = ""; chatState.chat = null;
+      renderChat();
+      await loadChatDraft();
+    }
   }
 });
+// restoreChat returns a chat from the trash: «Вернуть» в подсказке и в корзине.
+async function restoreChat(id) {
+  try { await native().RestoreChat(id); } catch (err) { showChatNote("Чат не вернулся: " + errText(err)); }
+  await renderChatList();
+}
 if (window.runtime) window.runtime.EventsOn("chat:delta", (t) => {
   if (!chatState.busy) return;
   chatState.partial = t || "";
@@ -3618,6 +3634,9 @@ async function askChat() {
     micLoop.on = false;
     stopVoice(); // до заметки: остановка возвращает обычную подпись под полем
     showChatNote("Нет ответа: " + errText(e));
+    // Чат удалили, пока шел ход (с телефона): вид — на новый чат (ревью #665).
+    await renderChatList();
+    if (chatState.id && !chatState.list.some((c) => c.id === chatState.id)) { chatState.id = ""; chatState.chat = null; }
   } finally {
     chatState.busy = false;
     fitChatQ();
@@ -4021,6 +4040,9 @@ $("#chat-list").addEventListener("focusout", (e) => {
   if (e.target.closest("#chat-rename-in")) finishRename(true);
 });
 $("#chat-list").addEventListener("click", async (e) => {
+  if (e.target.closest("[data-trash-toggle]")) { chatState.trashOpen = !chatState.trashOpen; return paintChatList(); }
+  const back = e.target.closest("[data-restore]");
+  if (back) return restoreChat(back.dataset.restore);
   const ren = e.target.closest("[data-ren]");
   if (ren) return startRename(ren.dataset.ren);
   const ask = e.target.closest("[data-del]");
@@ -4040,7 +4062,7 @@ $("#chat-list").addEventListener("click", async (e) => {
     chatState.confirmDel = null;
     const title = (chatState.list.find((c) => c.id === id) || {}).title || "чат";
     try { await native().DeleteChat(id); } catch (err) { paintChatList(); showChatNote("Чат не удален: " + errText(err)); return; }
-    toast("Чат удален", ` · «${title}»`, null, "del");
+    toast("Чат удален", ` · «${title}» в корзине неделю`, () => restoreChat(id), "del");
     if (id === chatState.id) { chatState.id = ""; chatState.chat = null; }
     await renderChatList();
     renderChat();
