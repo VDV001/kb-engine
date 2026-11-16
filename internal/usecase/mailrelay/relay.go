@@ -154,6 +154,8 @@ type Outgoing struct {
 	Chat    string  `json:"chat"`
 	Counter uint64  `json:"counter"`
 	Payload Payload `json:"payload"`
+	// Notify — после отправки позвать телефон push: это итог хода модели.
+	Notify bool `json:"notify,omitempty"`
 	// Sealed — запечатано один раз: повтор отправки — те же байты, и сервер
 	// склеит строку, дошедшую при потерянном ответе (ревью #635).
 	Sealed []byte `json:"sealed"`
@@ -198,6 +200,13 @@ type Relay struct {
 	StepEvery time.Duration
 	// Logf — журнал сбоев шагов хода (nil — молча).
 	Logf func(string, ...any)
+	// Notifier зовет телефоны push после итога хода модели (nil — не зовет).
+	Notifier Notifier
+}
+
+// Notifier tells the phones an answer is waiting (kb-сервер, /api/mail/notify).
+type Notifier interface {
+	Notify(ctx context.Context) error
 }
 
 // Tick posts what is waiting, then reads the mailbox to the end and answers
