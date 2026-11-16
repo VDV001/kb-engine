@@ -80,6 +80,16 @@ export function waitView(c) {
   return { text: q && q.sent === false ? "Ждет отправки" : "Отправлено · ждет компьютер", step: "" };
 }
 
+// asked starts a new question in chat c (#646): его ожидание — с нуля.
+export function asked(c, text, counter, at) {
+  c.msgs.push({ who: "me", text, at, counter, sent: false });
+  c.pending = true;
+  c.updated = at;
+}
+
+// posted marks the question of outbox item o sent: сервер его принял.
+export function posted(st, o) {}
+
 // searchChat is the mailbox chat of this phone's searches: выдача и документы
 // идут им и в список чатов не попадают. От отправителя — повторная привязка
 // тем же ключом сохраняет его.

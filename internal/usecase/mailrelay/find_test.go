@@ -335,3 +335,31 @@ func TestRelayTellsThePhoneItAccepted(t *testing.T) {
 		t.Fatalf("accepted before the answer: %t, mailbox %+v", a.saw, got)
 	}
 }
+
+// quick steps once at once and answers before StepEvery runs out.
+type quick struct{ sourced }
+
+func (s *quick) AskStepped(ctx context.Context, chat, question string, step func(mailrelay.Step)) (mailrelay.Answer, error) {
+	step(mailrelay.Step{Text: "Документы: сроки"})
+	time.Sleep(1500 * time.Millisecond)
+	return s.AskSourced(ctx, chat, question)
+}
+
+// «Принял» не задерживает первый шаг на весь StepEvery: только на предел
+// частоты ящика, секунду (ревью #653).
+func TestRelayFirstStepSoonAfterAccepted(t *testing.T) {
+	b, s := &slowBox{}, &store{}
+	b.box.phone("c-1", "A", 1, q("сроки?"))
+	r := newRelay(&b.box, &asker{}, s)
+	r.Box, r.Asker, r.StepEvery = b, &quick{}, 3*time.Second
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	var kinds []string
+	for _, p := range payloads(t, &b.box) {
+		kinds = append(kinds, p.Kind)
+	}
+	if strings.Join(kinds, ",") != "accepted,step,answer" {
+		t.Fatalf("mailbox %v: the first step waited the whole StepEvery", kinds)
+	}
+}
