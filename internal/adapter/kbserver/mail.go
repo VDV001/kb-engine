@@ -174,5 +174,15 @@ func describeMail(err error) string {
 // Notify asks the server to push the phones and returns how many got it;
 // push на сервере выключен — 0 без ошибки.
 func (c Client) Notify(ctx context.Context) (int, error) {
-	return 0, errors.ErrUnsupported
+	var out struct {
+		Sent int `json:"sent"`
+	}
+	err := c.mail(ctx, mailReq{method: http.MethodPost, path: "/api/mail/notify", want: http.StatusOK, notFound: errPushOff}, &out)
+	if errors.Is(err, errPushOff) {
+		return 0, nil
+	}
+	return out.Sent, err
 }
+
+// errPushOff is 404 of notify: на сервере нет KB_PUSH_CONTACT.
+var errPushOff = errors.New("kbserver: push is off on the server")
