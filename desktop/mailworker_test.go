@@ -75,7 +75,13 @@ var phoneSender = mailcrypt.Sender{1, 2, 3, 4, 5, 6, 7, 8}
 
 func phoneAsks(t *testing.T, srv *httptest.Server, key mailcrypt.Key, chat string, counter uint64, text string) {
 	t.Helper()
-	plain, _ := json.Marshal(mailrelay.Payload{Kind: mailrelay.KindQuestion, Text: text})
+	phoneSends(t, srv, key, chat, counter, mailrelay.Payload{Kind: mailrelay.KindQuestion, Text: text})
+}
+
+// phoneSends posts any request of the phone.
+func phoneSends(t *testing.T, srv *httptest.Server, key mailcrypt.Key, chat string, counter uint64, p mailrelay.Payload) {
+	t.Helper()
+	plain, _ := json.Marshal(p)
 	sealed, err := mailcrypt.Seal(key, mailcrypt.Meta{Chat: chat, From: domain.MailPhone, Sender: phoneSender, Counter: counter}, plain)
 	if err != nil {
 		t.Fatal(err)
@@ -375,5 +381,96 @@ func TestPhoneDeskState(t *testing.T) {
 	}
 	if strings.Join(names, ",") != "notes|false,kb.example.ru|false,Ozon · Пример|true" {
 		t.Errorf("sources %v — закрытое для чата подключение телефону не показывается", names)
+	}
+}
+
+// --- ревью #656
+
+// Окно отвечает телефону на desk настоящим кругом работника: состояние окна
+// подключено там же, где ход модели (useChat), а не полем, поставленным в тесте.
+func TestMailWorkerAnswersTheDesk(t *testing.T) {
+	s, tok, srv, _ := newWorkerSettings(t)
+	key := mailcrypt.NewKey()
+	tok.m[mailKeyAccount("srv1")] = key.Encode()
+	d, _, _, _ := newTestChatDesk(t)
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	w := newMailWorker(s, chatAsker(d), t.TempDir())
+	w.useChat(d)
+	phoneSends(t, srv, key, "desk-0101", 1, mailrelay.Payload{Kind: mailrelay.KindDesk, Text: "state"})
+	if err := w.tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	got := phoneReads(t, srv, key)
+	if len(got) != 1 || got[0].Kind != mailrelay.KindDesk || got[0].Desk == nil || got[0].Desk.Model != "qwen3" {
+		t.Fatalf("phone got %+v — the desk is not wired into the worker's relay", got)
+	}
+}
+
+// Телефон берет модель только из показанного ему — нынешняя и недавние, — а
+// не любую из списка шлюза за счет ключа человека; проверка — без сети цен:
+// она идет под замком чата.
+func TestTurnModelOnlyFromThePhoneList(t *testing.T) {
+	d, _, tok, _ := newTestChatDesk(t)
+	tok.m[chatKeyAccount] = "k"
+	if err := d.SetSettings(desktopconfig.Chat{URL: pricesURL, Model: "qwen3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	prices := gatewayPrices(t)
+	d.prices = func(ctx context.Context) (map[string]domain.ModelPrice, error) {
+		t.Error("a turn's model asked the gateway for prices")
+		return prices(ctx)
+	}
+	used, _ := domain.NewModelCall(d.now().Add(-time.Hour), domain.CallAnswer, "llama3", 10, 10, true, time.Second, time.Second, false)
+	d.calls = &callsRec{calls: []domain.ModelCall{used}}
+	if _, _, err := d.turnModel("anthropic/claude-sonnet-5.5"); err == nil {
+		t.Error("a gateway model the phone was never shown was taken")
+	}
+	if c, _, err := d.turnModel("llama3"); err != nil || c.Model != "llama3" {
+		t.Errorf("a recent model: %q, %v", c.Model, err)
+	}
+}
+
+// Вопрос с телефона без выбора ищет там же, где чат окна, и не стирает его
+// выбор; устаревшие и закрытые чату id отсекаются, а не сужают поиск до нуля.
+func TestPhoneTurnKeepsTheChatSources(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	s := d.settings
+	if err := s.SetSources(serverList("srv1", "https://kb.example.ru", true), nil, map[string]string{"srv1": srvToken}); err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	s.cfg.Connections = append(s.cfg.Connections,
+		desktopconfig.Connection{ID: "oz1", Kind: desktopconfig.ConnOzon, Name: "Пример", Enabled: true, Share: true},
+		desktopconfig.Connection{ID: "oz2", Kind: desktopconfig.ConnOzon, Name: "Закрытый", Enabled: true})
+	s.mu.Unlock()
+	rec, err := d.Ask(askReq{Question: "сроки?", Sources: []string{"srv1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ans := chatAnswerer(d)
+	for _, tc := range []struct {
+		name string
+		only []string
+		want string
+	}{
+		{"no choice — the chat's own", nil, "srv1"},
+		{"stale and closed ids — the chat's own", []string{"gone", "oz2"}, "srv1"},
+		{"a known choice — taken, the stale dropped", []string{"oz1", "gone"}, "oz1"},
+	} {
+		if _, err := ans(t.Context(), rec.ID, tc.name, mailrelay.Options{Only: tc.only}, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+		got, err := d.load(rec.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Join(got.Sources, ",") != tc.want {
+			t.Errorf("%s: chat sources %v, want %s", tc.name, got.Sources, tc.want)
+		}
 	}
 }

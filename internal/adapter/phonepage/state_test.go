@@ -242,6 +242,28 @@ want(JSON.stringify(s.questionPayload(st18.chats.c, "сроки?")) === JSON.str
 Object.assign(st18.chats.c, { model: "llama3", only: ["f-1"] });
 want(JSON.stringify(s.questionPayload(st18.chats.c, "сроки?")) === JSON.stringify({ kind: "question", text: "сроки?", model: "llama3", only: ["f-1"] }), "the chat's choice goes with the question");
 
+// 19. Ревью #656: состояние окна — своим служебным чатом, а не чатом поиска:
+// отказ на desk не становится ошибкой поиска и наоборот; отказ не снимает
+// «спросили» — иначе запрос уходил бы на каждое открытие чата.
+const st19 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: {}, deskAsked: 100 };
+const dc = s.deskChat(st19);
+want(dc !== s.searchChat(st19) && dc === s.deskChat({ ...st19 }), "the desk has its own stable chat");
+want(s.take(st19, { seq: 1, chat: dc, from: "desk" }, dk14(1, { kind: "error", text: "окно старое" })) === true && st19.deskErr === "окно старое" && st19.deskAsked === 100 && !st19.search?.error, "a desk refusal stays the desk's and keeps «asked»");
+s.take(st19, { seq: 2, chat: s.searchChat(st19), from: "desk" }, dk14(2, { kind: "error", text: "источник недоступен" }));
+want(st19.search?.error === "источник недоступен" && st19.deskErr === "окно старое", "a search refusal is the search's even while the desk was asked");
+want(s.take(st19, { seq: 3, chat: dc, from: "desk" }, dk14(3, { kind: "desk", desk: desk18 })) === true && st19.desk?.model === "qwen3" && !st19.deskErr, "the desk state lands from its chat");
+want(s.take(st19, { seq: 4, chat: "desk-ffff", from: "desk" }, dk14(4, { kind: "desk", desk: { model: "x" } })) === false && st19.desk.model === "qwen3", "another phone's desk chat is not ours");
+// Устаревший выбор не уходит: модели и источники, которых окно больше не
+// показывает, отсекаются; ничего не осталось — как в окне.
+const c19 = { model: "gone", only: ["f-1", "gone"], msgs: [] };
+want(JSON.stringify(s.questionPayload(c19, "q", desk18)) === JSON.stringify({ kind: "question", text: "q", only: ["f-1"] }), "stale model and source are dropped");
+want(JSON.stringify(s.questionPayload({ only: ["gone"], msgs: [] }, "q", desk18)) === JSON.stringify({ kind: "question", text: "q" }), "nothing left — the window's choice");
+// Выбор источников как в окне: все — «как в окне», ни одного — нельзя.
+const all19 = ["f-1", "oz1"];
+want(s.pickSources(all19, []).ok === false, "no source at all is refused");
+want(s.pickSources(all19, ["oz1", "f-1"]).ok && s.pickSources(all19, ["oz1", "f-1"]).only === undefined, "all — as in the window");
+want(s.pickSources(all19, ["oz1"]).only?.join() === "oz1", "a part is the chat's choice");
+
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 

@@ -168,6 +168,16 @@ export function searchChat(st) {
   return "search-" + hex(st.sender || []);
 }
 
+// deskChat is the mailbox chat of the window's state for this phone (#647).
+export function deskChat(st) {
+  return searchChat(st);
+}
+
+// pickSources turns the checked sources of a chat into its choice.
+export function pickSources(all, on) {
+  return { ok: true, only: on.length === all.length ? undefined : on };
+}
+
 // found applies the desk's answer to a search: выдача, документ или отказ.
 // Выдача старого запроса не подменяет новый.
 function found(st, m, p) {
