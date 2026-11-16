@@ -61,6 +61,7 @@ func MailHandler(svc mail.Service, logf func(string, ...any)) http.Handler {
 	mux.HandleFunc("POST /api/mail/devices", h.with(h.addPhone))
 	mux.HandleFunc("GET /api/mail/devices", h.with(h.listPhones))
 	mux.HandleFunc("DELETE /api/mail/devices/{device}", h.with(h.revokePhone))
+	mux.HandleFunc("PUT /api/mail/devices/{device}/name", h.with(h.renamePhone))
 	mux.HandleFunc("GET /api/mail/push/key", h.with(h.pushKey))
 	mux.HandleFunc("PUT /api/mail/push", h.with(h.subscribe))
 	mux.HandleFunc("DELETE /api/mail/push", h.with(h.unsubscribe))
@@ -83,6 +84,16 @@ func (h mailRoutes) with(next func(http.ResponseWriter, *http.Request, mailCalle
 			http.Error(w, "bearer token required", http.StatusUnauthorized)
 			return
 		}
+		// Вход телефона — для окна: «заходил в 12:06», имя по браузеру.
+		//
+		// ponytail: синхронно, до обработчика — раз в VisitEvery опрос телефона
+		// ждет три обращения к бакету (остальные опросы Visits отсекает в
+		// памяти). Потолок — медленный бакет; путь — запись в горутине со своим
+		// сроком, когда сервер уйдет из Serverless Container (там горутина после
+		// ответа замерзает, как у Notify).
+		if err := h.svc.Visit(r.Context(), c.id, c.side, c.device, phoneName(r.UserAgent(), r.Header.Get("Sec-CH-UA-Model"))); err != nil {
+			h.logf("mail: visit: %v", err)
+		}
 		next(w, r, c)
 	}
 }
@@ -95,6 +106,9 @@ func (h mailRoutes) fail(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
 	case errors.Is(err, domain.ErrPushOff):
 		http.Error(w, err.Error(), http.StatusNotFound)
+	case errors.Is(err, domain.ErrBadPhoneName):
+		// 422, а не 400: окно отличает «имя не подходит» от испорченного запроса (ревью #652).
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 	case errors.Is(err, domain.ErrBadPushSubscription):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, domain.ErrMailDeskOnly), errors.Is(err, domain.ErrMailPhoneOnly):
@@ -127,18 +141,45 @@ func (h mailRoutes) listPhones(w http.ResponseWriter, r *http.Request, c mailCal
 		return
 	}
 	type phoneDTO struct {
-		Device string    `json:"device"`
-		At     time.Time `json:"at"`
+		Device string     `json:"device"`
+		At     time.Time  `json:"at"`
+		Seen   *time.Time `json:"seen,omitempty"` // нет — телефон еще не входил
+		Name   string     `json:"name,omitempty"`
+		// SeenKnown — входы прочитаны: нет seen значит «не входил». Сервер до
+		// #652 поля не шлет, и окно не путает его с «не входил» (ревью #652).
+		SeenKnown bool `json:"seen_known,omitempty"`
 	}
 	out := make([]phoneDTO, 0, len(list))
 	for _, p := range list {
-		out = append(out, phoneDTO{Device: p.Device, At: p.At})
+		d := phoneDTO{Device: p.Device, At: p.At, Name: p.Name, SeenKnown: !p.SeenUnknown}
+		if !p.Seen.IsZero() {
+			d.Seen = &p.Seen
+		}
+		out = append(out, d)
 	}
 	writeJSONStatus(w, http.StatusOK, map[string][]phoneDTO{"devices": out})
 }
 
 func (h mailRoutes) revokePhone(w http.ResponseWriter, r *http.Request, c mailCaller) {
 	if err := h.svc.RevokePhone(r.Context(), c.id, c.side, r.PathValue("device")); err != nil {
+		h.fail(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// maxNameBody bounds the rename request: имя до 40 знаков и поле JSON.
+const maxNameBody = 1 << 10
+
+func (h mailRoutes) renamePhone(w http.ResponseWriter, r *http.Request, c mailCaller) {
+	var in struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxNameBody)).Decode(&in); err != nil {
+		http.Error(w, "body must be {\"name\": \"...\"}", http.StatusBadRequest)
+		return
+	}
+	if err := h.svc.RenamePhone(r.Context(), c.id, c.side, r.PathValue("device"), in.Name); err != nil {
 		h.fail(w, err)
 		return
 	}
@@ -257,4 +298,47 @@ func writeJSONStatus(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// phoneName names a phone by its browser: модель из Client Hints (Chrome на
+// Android после Accept-CH страницы /m/), иначе устройство из User-Agent.
+func phoneName(userAgent, model string) string {
+	if m, err := strconv.Unquote(model); err == nil && domain.IsPhoneModel(m) {
+		return withBrand(m)
+	}
+	switch {
+	case strings.Contains(userAgent, "iPhone"):
+		return domain.PhoneIPhone
+	case strings.Contains(userAgent, "iPad"):
+		return domain.PhoneIPad
+	case strings.Contains(userAgent, "Android"):
+		return androidName(userAgent)
+	case strings.Contains(userAgent, "Macintosh"):
+		// iPad в Safari (iPadOS 13+) шлет UA Mac; отличить его можно только
+		// касаниями в самой странице (ревью #652).
+		return domain.PhoneIPadOrMac
+	case strings.Contains(userAgent, "Windows"):
+		return domain.PhoneWindows
+	}
+	return ""
+}
+
+// androidName reads the model from «Android 14; SM-A546B)»; урезанный Chrome
+// пишет вместо модели «K» — тогда просто «Android».
+func androidName(userAgent string) string {
+	_, rest, _ := strings.Cut(userAgent, "Android")
+	_, m, _ := strings.Cut(rest, ";")
+	m, _, closed := strings.Cut(m, ")")
+	if m = strings.TrimSpace(m); closed && m != "K" && domain.IsPhoneModel(m) {
+		return withBrand(m)
+	}
+	return domain.PhoneAndroid
+}
+
+// withBrand names Samsung by its model prefix: «SM-S918B» → «Samsung SM-S918B».
+func withBrand(m string) string {
+	if strings.HasPrefix(m, "SM-") {
+		return "Samsung " + m
+	}
+	return m
 }

@@ -32,7 +32,7 @@ func newMailSettings(t *testing.T) (*folderSettings, *fakeTokens, *httptest.Serv
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: store}, Phones: userauth.Phones{Store: store}, Now: time.Now},
+	h := httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: store}, Phones: userauth.Phones{Store: store}, Visits: &userauth.Visits{Store: store}, Now: time.Now},
 		func(string, ...any) {})
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get(kbserver.TokenHeader) != srvToken {
@@ -260,5 +260,54 @@ func TestMailPairPhoneWithoutQR(t *testing.T) {
 	}
 	if list := mustPhones(t, s); len(list) != 0 {
 		t.Errorf("phone created on the server: %v", list)
+	}
+}
+
+// В списке телефонов окно показывает имя по браузеру и последний вход: так
+// видно, что телефон вошел по QR, и какой это телефон (владелец 16.11).
+func TestMailPhonesNameAndSeen(t *testing.T) {
+	seen := time.Date(2026, 11, 16, 9, 6, 0, 0, time.UTC)
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"devices":[{"device":"p-1","at":"2026-11-16T09:04:00Z","seen":"2026-11-16T09:06:00Z","name":"Samsung SM-S918B","seen_known":true},{"device":"p-2","at":"2026-11-16T09:05:00Z","seen_known":true},{"device":"p-3","at":"2026-11-16T09:05:00Z"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	s, _, _ := newServerSettings(t)
+	if err := s.SetSources(serverList("srv1", srv.URL, true), nil, map[string]string{"srv1": srvToken}); err != nil {
+		t.Fatal(err)
+	}
+	s.mailHTTP = srv.Client()
+	list, err := s.MailPhones("srv1")
+	if err != nil || len(list) != 3 {
+		t.Fatalf("phones: %+v, %v", list, err)
+	}
+	if list[0].Name != "Samsung SM-S918B" || list[0].Seen != seen.Local().Format("02.01.2006 15:04") {
+		t.Errorf("visited phone row %+v", list[0])
+	}
+	if list[1].Name != "" || list[1].Seen != "" || list[1].SeenUnknown {
+		t.Errorf("phone that never came in %+v", list[1])
+	}
+	// Сервер не прочитал входы или старше #652 (нет seen_known): окно не ждет
+	// молча входа, которого не увидит (ревью #652).
+	if !list[2].SeenUnknown {
+		t.Errorf("phone with unknown visits %+v", list[2])
+	}
+}
+
+// «Переименовать» в окне: имя видно в списке, плохое имя — понятный отказ (#622).
+func TestMailRenamePhone(t *testing.T) {
+	s, _, _ := newMailSettings(t)
+	a, err := s.MailPairPhone("srv1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MailRenamePhone("srv1", a.Device, "iPhone 17 Pro"); err != nil {
+		t.Fatal(err)
+	}
+	if list, err := s.MailPhones("srv1"); err != nil || len(list) != 1 || list[0].Name != "iPhone 17 Pro" {
+		t.Fatalf("after rename: %+v, %v", list, err)
+	}
+	err = s.MailRenamePhone("srv1", a.Device, strings.Repeat("я", 41))
+	if err == nil || !strings.Contains(err.Error(), "до 40") {
+		t.Fatalf("long name: %v", err)
 	}
 }

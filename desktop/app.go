@@ -359,6 +359,11 @@ func (a *App) MailPairPhone(id string) (phonePairing, error) { return a.settings
 // MailPhones lists the phones paired with the kb server's mailbox.
 func (a *App) MailPhones(id string) ([]phoneRow, error) { return a.settings.MailPhones(id) }
 
+// MailRenamePhone names a phone of the kb server's mailbox.
+func (a *App) MailRenamePhone(id, device, name string) error {
+	return a.settings.MailRenamePhone(id, device, name)
+}
+
 // MailRevokePhone unpairs a phone from the kb server's mailbox.
 func (a *App) MailRevokePhone(id, device string) error { return a.settings.MailRevokePhone(id, device) }
 

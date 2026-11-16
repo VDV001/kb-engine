@@ -22,12 +22,19 @@ var ErrNoMailbox = errors.New("kbserver: no mailbox")
 var (
 	ErrMailRefused = fmt.Errorf("%w: mailbox", ErrRejected)
 	ErrNoSuchPhone = fmt.Errorf("%w: no such phone", ErrRejected)
+	// ErrBadPhoneName — сервер не принял имя телефона: пустое, длинное, непечатное.
+	ErrBadPhoneName = fmt.Errorf("%w: bad phone name", ErrRejected)
 )
 
 // Phone is a phone paired with the person's mailbox.
 type Phone struct {
 	Device string    `json:"device"`
 	At     time.Time `json:"at"`
+	Seen   time.Time `json:"seen"` // ноль — телефон еще не входил
+	Name   string    `json:"name"` // по браузеру телефона; пусто до первого входа
+	// SeenKnown — сервер прочитал входы: ноль в Seen значит «не входил». Нет —
+	// входы не прочитались или сервер старше #652.
+	SeenKnown bool `json:"seen_known"`
 }
 
 // AddPhone pairs a new phone and returns its device id and token. Токен
@@ -59,6 +66,16 @@ func (c Client) RevokePhone(ctx context.Context, device string) error {
 	// 404 здесь — «такого телефона нет», а не «нет ящика»: путь ящика сервер знает.
 	return c.mail(ctx, mailReq{method: http.MethodDelete, path: "/api/mail/devices/" + url.PathEscape(device), want: http.StatusNoContent,
 		notFound: ErrNoSuchPhone}, nil)
+}
+
+// RenamePhone gives the phone the name the person chose.
+func (c Client) RenamePhone(ctx context.Context, device, name string) error {
+	body, err := json.Marshal(map[string]string{"name": name})
+	if err != nil {
+		return err
+	}
+	return c.mail(ctx, mailReq{method: http.MethodPut, path: "/api/mail/devices/" + url.PathEscape(device) + "/name", body: body,
+		want: http.StatusNoContent, notFound: ErrNoSuchPhone, unprocessable: ErrBadPhoneName}, nil)
 }
 
 // MailMessage is one sealed message of the mailbox; сторону назвал токен отправителя.
@@ -104,12 +121,35 @@ func (c Client) MailPost(ctx context.Context, chat string, sealed []byte) (int64
 // mailReq is one mailbox request: want — код успеха, notFound — что значит 404
 // (nil — ErrNoMailbox), limit — предел ответа (0 — maxBody).
 type mailReq struct {
-	method, path string
-	query        url.Values
-	body         []byte
-	want         int
-	notFound     error
-	limit        int64
+	method, path  string
+	query         url.Values
+	body          []byte
+	want          int
+	notFound      error
+	unprocessable error // 422 этого запроса: сервер понял запрос и отказал по делу
+	limit         int64
+}
+
+// refusal names the error of answer code; ожидаемый код — nil.
+func (r mailReq) refusal(code int, body []byte) error {
+	switch code {
+	case r.want:
+		return nil
+	case http.StatusNotFound:
+		return cmp.Or(r.notFound, ErrNoMailbox)
+	case http.StatusUnprocessableEntity:
+		if r.unprocessable != nil {
+			return fmt.Errorf("%w: %s", r.unprocessable, strings.TrimSpace(string(body)))
+		}
+		return fmt.Errorf("%w: %s", ErrMailRefused, strings.TrimSpace(string(body)))
+	case http.StatusBadRequest, http.StatusConflict, http.StatusRequestEntityTooLarge:
+		// Слова сервера: «too many phones» — человеку есть что сделать.
+		return fmt.Errorf("%w: %s", ErrMailRefused, strings.TrimSpace(string(body)))
+	}
+	if err := StatusErr(r.path, code); err != nil {
+		return err
+	}
+	return fmt.Errorf("%w: %s answered %d", ErrNotKB, r.path, code)
 }
 
 // mail makes one mailbox request.
@@ -134,18 +174,8 @@ func (c Client) mail(ctx context.Context, r mailReq, into any) error {
 	if err != nil {
 		return err
 	}
-	switch code := resp.StatusCode; code {
-	case r.want:
-	case http.StatusNotFound:
-		return cmp.Or(r.notFound, ErrNoMailbox)
-	case http.StatusBadRequest, http.StatusConflict, http.StatusRequestEntityTooLarge:
-		// Слова сервера: «too many phones» — человеку есть что сделать.
-		return fmt.Errorf("%w: %s", ErrMailRefused, strings.TrimSpace(string(body)))
-	default:
-		if err := StatusErr(r.path, code); err != nil {
-			return err
-		}
-		return fmt.Errorf("%w: %s answered %d", ErrNotKB, r.path, code)
+	if err := r.refusal(resp.StatusCode, body); err != nil {
+		return err
 	}
 	if into == nil {
 		return nil

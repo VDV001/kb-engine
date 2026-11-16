@@ -75,7 +75,7 @@ func tenantsHandler(ctx context.Context, store blob.Store, stderr io.Writer, opt
 		o(&cfg)
 	}
 	svc := mail.Service{Box: mailbox.Store{Blob: store, Seen: &mailbox.Seen{}}, Phones: freshPhones{userauth.Phones{Store: store}, phones},
-		Subs: userauth.Phones{Store: store}, Now: time.Now, Logf: logf}
+		Subs: userauth.Phones{Store: store}, Visits: &userauth.Visits{Store: store}, Now: time.Now, Logf: logf}
 	if cfg.contact != "" { // без контакта push выключен: Push nil, маршруты — 404
 		svc.Push = &lazyPusher{store: store, contact: cfg.contact, transport: cfg.transport}
 	}
