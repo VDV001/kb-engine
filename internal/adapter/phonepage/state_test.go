@@ -158,6 +158,22 @@ const themeJs = (await import("node:fs")).readFileSync(new URL("theme.js", proce
 want(themeJs.includes('"' + s.themeColor("dark", true) + '"') && themeJs.includes('"' + s.themeColor("light", false) + '"'), "theme.js paints the same status bar colors");
 want(bgs.length >= 2 && bgs[0] === s.themeColor("dark", true) && bgs.slice(1).every((c) => c === s.themeColor("light", false)), "status bar color equals --z-bg of style.css: " + bgs.join(","));
 
+// 14. Состояния вопроса на телефоне (#646): в очереди → отправлено → компьютер
+// принял → отвечает (шаг) → ответ.
+const dk14 = (n, p) => ({ sender: u8(2, 2, 2, 2, 2, 2, 2, 2), counter: BigInt(n), plain: enc(p) });
+const st14 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { c: { title: "Чат", msgs: [{ who: "me", text: "сколько?", counter: "1", sent: false }], pending: true, updated: 1 } } };
+want(s.waitView(st14.chats.c).text === "Ждет отправки", "unsent question waits to be sent: " + s.waitView(st14.chats.c).text);
+s.take(st14, { seq: 1, chat: "c", from: "phone", at: "2026-11-16T10:00:00Z" }, { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), counter: 1n, plain: enc({ kind: "question", text: "сколько?" }) });
+want(s.waitView(st14.chats.c).text === "Отправлено · ждет компьютер", "sent question waits for the computer: " + s.waitView(st14.chats.c).text);
+want(s.take(st14, { seq: 2, chat: "c", from: "desk" }, dk14(1, { kind: "accepted", text: "" })) === true, "accepted changes the chat");
+const v14 = s.waitView(st14.chats.c);
+want(v14.text === "Компьютер принял · отвечает" && !v14.step && st14.chats.c.msgs.length === 1, "accepted shows, not as a message: " + JSON.stringify(v14));
+s.take(st14, { seq: 3, chat: "c", from: "desk" }, dk14(2, { kind: "step", text: "Документы: поставки" }));
+want(s.waitView(st14.chats.c).step === "Документы: поставки", "the step shows under accepted");
+s.take(st14, { seq: 4, chat: "c", from: "desk" }, dk14(3, { kind: "answer", text: "12" }));
+want(!st14.chats.c.pending && !st14.chats.c.accepted, "the answer clears the wait");
+want(s.take(st14, { seq: 5, chat: "c", from: "desk" }, dk14(4, { kind: "accepted", text: "" })) === false && !st14.chats.c.accepted, "a late accepted after the answer does not show");
+
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 

@@ -18,6 +18,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/mailcrypt"
 	"github.com/daniil/kb-engine/internal/adapter/userauth"
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/chat"
 	"github.com/daniil/kb-engine/internal/usecase/mail"
 	"github.com/daniil/kb-engine/internal/usecase/mailrelay"
 )
@@ -237,5 +238,34 @@ func TestMailBoxMarksRefusals(t *testing.T) {
 	}
 	if _, err := b.Post(t.Context(), "c-1", make([]byte, domain.MaxMailSealed+1)); !errors.Is(err, mailrelay.ErrRefused) {
 		t.Errorf("too large: %v, want ErrRefused", err)
+	}
+}
+
+// Вопрос с телефона виден в окне сразу (#646): страница слышит начало хода с
+// чатом окна и вопросом, шаги и конец — и при отказе модели тоже.
+func TestMailWorkerShowsThePhoneTurn(t *testing.T) {
+	w := newMailWorker(nil, nil, t.TempDir())
+	var got []phoneTurn
+	w.turn = func(e phoneTurn) { got = append(got, e) }
+	fail := error(nil)
+	w.answer = func(_ context.Context, _, _ string, began func(string), step func(chat.Use)) (mailrelay.Answer, error) {
+		began("w-1")
+		step(chat.Use{Kind: chat.UseDocs, What: "поставки"})
+		return mailrelay.Answer{Chat: "w-1", Text: "12"}, fail
+	}
+	var steps []string
+	if _, err := (workerAsker{w}).AskStepped(t.Context(), "", "сколько?", func(s mailrelay.Step) { steps = append(steps, s.Text) }); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 || got[0] != (phoneTurn{Chat: "w-1", Question: "сколько?"}) || got[1].Step == nil || got[1].Step.What != "поставки" || got[2] != (phoneTurn{Chat: "w-1", Done: true}) {
+		t.Fatalf("page heard %+v", got)
+	}
+	if len(steps) != 1 || steps[0] != "Документы: поставки" {
+		t.Errorf("phone steps %v", steps)
+	}
+	got, fail = nil, errors.New("model down")
+	_, _ = (workerAsker{w}).AskStepped(t.Context(), "", "еще?", nil)
+	if len(got) != 2 || got[1] != (phoneTurn{Chat: "w-1", Done: true}) {
+		t.Fatalf("after a failed turn the page heard %+v — «отвечает» would hang", got)
 	}
 }

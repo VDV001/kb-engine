@@ -81,6 +81,8 @@ const (
 	KindDoc      = "doc"
 	// KindStep — ход модели: куда чат ходит сейчас (окно → телефон, #622).
 	KindStep = "step"
+	// KindAccepted — окно взяло вопрос в работу (#646): телефон пишет «компьютер принял».
+	KindAccepted = "accepted"
 )
 
 // Hit is one found document: Ref — чем телефон его откроет; Text — только у

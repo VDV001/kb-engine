@@ -65,6 +65,11 @@ export function take(st, m, o) {
   return true;
 }
 
+// waitView is what the waiting question of chat c shows (#646).
+export function waitView(c) {
+  return { text: "", step: "" };
+}
+
 // searchChat is the mailbox chat of this phone's searches: выдача и документы
 // идут им и в список чатов не попадают. От отправителя — повторная привязка
 // тем же ключом сохраняет его.

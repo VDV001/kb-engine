@@ -44,6 +44,7 @@ type mailWorker struct {
 	find     mailrelay.Finder  // поиск с телефона; nil — отказ словами
 	dir      string            // где лежат mail-<id>.json
 	changed  func(chat string) // ответ записан в чат окна: странице перечитать список и чат
+	turn     func(phoneTurn)   // ход по вопросу с телефона — странице (#646)
 	logf     func(string, ...any)
 	creds    map[string]mailCreds // только горутина работника
 }
@@ -62,7 +63,7 @@ type mailCreds struct {
 const mailCredsTTL = 5 * time.Minute
 
 func newMailWorker(s *folderSettings, ask askFn, dir string) *mailWorker {
-	return &mailWorker{settings: s, ask: ask, dir: dir, changed: func(string) {}, logf: log.Printf, creds: map[string]mailCreds{}}
+	return &mailWorker{settings: s, ask: ask, dir: dir, changed: func(string) {}, turn: func(phoneTurn) {}, logf: log.Printf, creds: map[string]mailCreds{}}
 }
 
 // run ticks until ctx ends; круги не перекрываются — одна горутина.
@@ -190,7 +191,17 @@ func (w *mailWorker) askAndTell(ctx context.Context, chat, question string) (str
 
 // answerFn runs a model turn and tells where the answer came from; step — ход
 // модели по мере ответа (nil — без хода).
-type answerFn func(ctx context.Context, chat, question string, step func(chat.Use)) (mailrelay.Answer, error)
+// began — чат окна, в котором пойдет ход, известен (до ответа модели, #646).
+type answerFn func(ctx context.Context, chat, question string, began func(id string), step func(chat.Use)) (mailrelay.Answer, error)
+
+// phoneTurn is what the window page hears about a phone's question (#646):
+// начало хода, шаг или конец; Chat — чат окна.
+type phoneTurn struct {
+	Chat     string    `json:"chat"`
+	Question string    `json:"question,omitempty"`
+	Step     *chat.Use `json:"step,omitempty"`
+	Done     bool      `json:"done,omitempty"`
+}
 
 // workerAsker is the relay's model: с метками «взято», когда окно их знает.
 type workerAsker struct{ w *mailWorker }
@@ -210,7 +221,7 @@ func (a workerAsker) AskStepped(ctx context.Context, id, question string, step f
 	if step != nil {
 		each = func(u chat.Use) { step(mailrelay.Step{Text: stepLabel(u)}) }
 	}
-	ans, err := a.w.answer(ctx, id, question, each)
+	ans, err := a.w.answer(ctx, id, question, nil, each)
 	if err == nil {
 		a.w.changed(ans.Chat)
 	}
@@ -250,14 +261,14 @@ func stepLabel(u chat.Use) string {
 func chatAsker(d *chatDesk) askFn {
 	answer := chatAnswerer(d)
 	return func(ctx context.Context, chat, question string) (string, string, error) {
-		a, err := answer(ctx, chat, question, nil)
+		a, err := answer(ctx, chat, question, nil, nil)
 		return a.Chat, a.Text, err
 	}
 }
 
 // chatAnswerer is chatAsker with the «взято» labels of the answer (answerSources).
 func chatAnswerer(d *chatDesk) answerFn {
-	return func(ctx context.Context, chat, question string, step func(chat.Use)) (mailrelay.Answer, error) {
+	return func(ctx context.Context, chat, question string, began func(string), step func(chat.Use)) (mailrelay.Answer, error) {
 		quiet := askOut{worker: true, step: step}
 		rec, err := d.ask(ctx, askReq{ID: chat, Question: question}, quiet)
 		if chat != "" && errors.Is(err, fs.ErrNotExist) {

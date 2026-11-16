@@ -103,6 +103,8 @@ type chatMessage struct {
 	Docs []string `json:"docs,omitempty"` // ref документов ответа
 	// Uses — откуда ответ: документы, подключения, внешнее (отзыв 14.11).
 	Uses []chat.Use `json:"uses,omitempty"`
+	// From — «phone»: вопрос задан с телефона (#646), окно так его и помечает.
+	From string `json:"from,omitempty"`
 }
 
 type chatDoc struct {

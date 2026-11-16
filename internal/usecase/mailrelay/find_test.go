@@ -286,14 +286,52 @@ func TestRelaySendsTheLatestStepWithoutBlocking(t *testing.T) {
 	for _, p := range got {
 		kinds = append(kinds, p.Kind)
 	}
-	// Шагов — от одного до трех (пачку горутина может застать целиком), но
-	// последним перед ответом уходит самый свежий.
+	// Первым — «компьютер принял» (#646); шагов — от одного до трех (пачку
+	// горутина может застать целиком), но последним перед ответом уходит самый свежий.
 	n := len(got)
-	if n < 2 || n > 4 || got[n-1].Kind != mailrelay.KindAnswer || got[n-2].Kind != mailrelay.KindStep {
+	if n < 3 || n > 5 || got[0].Kind != mailrelay.KindAccepted || got[n-1].Kind != mailrelay.KindAnswer || got[n-2].Kind != mailrelay.KindStep {
 		t.Fatalf("ящик: %v %+v", kinds, got)
 	}
 	last := got[n-2].Text
 	if !strings.HasPrefix(last, "Документы: яя") || !strings.HasSuffix(last, "…") || strings.Contains(last, "окне") || len(last) > 210 {
 		t.Errorf("последний шаг: %q", last)
+	}
+}
+
+// waiter thinks until the phone has «компьютер принял» in the mailbox (или 2 с).
+type waiter struct {
+	sourced
+	box *slowBox
+	saw bool
+}
+
+func (w *waiter) AskStepped(ctx context.Context, chat, question string, step func(mailrelay.Step)) (mailrelay.Answer, error) {
+	for range 200 {
+		w.box.mu.Lock()
+		n := len(w.box.box.msgs) // первым лежит вопрос телефона
+		w.box.mu.Unlock()
+		if n > 1 {
+			w.saw = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return w.AskSourced(ctx, chat, question)
+}
+
+// Телефон узнает, что компьютер взял вопрос, пока модель еще думает, а не
+// только по первому шагу или ответу (#646).
+func TestRelayTellsThePhoneItAccepted(t *testing.T) {
+	b, s := &slowBox{}, &store{}
+	b.box.phone("c-1", "A", 1, q("сроки?"))
+	a := &waiter{box: b}
+	r := newRelay(&b.box, &asker{}, s)
+	r.Box, r.Asker, r.StepEvery = b, a, 20*time.Millisecond
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	got := payloads(t, &b.box)
+	if !a.saw || len(got) != 2 || got[0].Kind != mailrelay.KindAccepted || got[1].Kind != mailrelay.KindAnswer {
+		t.Fatalf("accepted before the answer: %t, mailbox %+v", a.saw, got)
 	}
 }
