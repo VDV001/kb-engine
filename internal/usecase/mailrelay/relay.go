@@ -24,6 +24,7 @@ package mailrelay
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -476,7 +477,8 @@ func (r Relay) handle(ctx context.Context, st *State, m Message) (bool, error) {
 	}
 	reply.Text = trim(reply.Text, r.MaxText)
 	st.DeskCounter++
-	asked := req.Kind == KindQuestion || req.Kind == KindVoice && req.Text == VoiceAsk
+	// Push — итогу хода модели: тишина и отказ голоса — не ответ (ревью #660).
+	asked := req.Kind == KindQuestion || req.Kind == KindVoice && reply.Kind == KindAnswer
 	out := Outgoing{Chat: m.Chat, Counter: st.DeskCounter, Payload: reply, Notify: asked}
 	var err error
 	if out.Sealed, err = r.sealFitting(&out); err != nil {
@@ -731,30 +733,44 @@ func clip(text string, limit int) string {
 	return text[:max(cut, 0)] + "…"
 }
 
+// DefaultHearTimeout bounds one recognition: повисший сервер распознавания не
+// держит ящик телефона — работник один на все серверы (ревью #660).
+const DefaultHearTimeout = 2 * time.Minute
+
 // voice hears the phone's recording (#648): кусок — из файлов ящика, сверка
-// с хешем из аутентичного сообщения до расшифровки, затем удаление — окно
-// забрало запись, держать ее в бакете незачем. Диктовка — текст телефону;
-// вопрос голосом — ход модели с расслышанным.
+// id, размера и хеша из аутентичного сообщения до расшифровки; совпал —
+// удаляется сразу, до хода модели (не совпал — не удаляется: это могла быть
+// ждущая запись другого телефона). Отказы — кодами, причины — в журнал окна:
+// в них пути компьютера (ревью #660). Диктовка — текст телефону; вопрос
+// голосом — ход модели с расслышанным; тишина — «не расслышал».
 func (r Relay) voice(ctx context.Context, st *State, chat string, req Payload) Payload {
 	if r.Files == nil || r.Hear == nil {
 		return Payload{Kind: KindError, Text: DeskUnsupported}
 	}
+	if domain.ValidateMailFileID(req.File.ID) != nil {
+		return Payload{Kind: KindError, Text: VoiceGone}
+	}
 	sealed, err := r.Files.Get(ctx, req.File.ID)
 	if err != nil {
-		return Payload{Kind: KindError, Text: err.Error()}
+		r.logf("mailrelay: voice: get %s: %v", req.File.ID, err)
+		return Payload{Kind: KindError, Text: VoiceGone}
 	}
-	defer func() {
-		if err := r.Files.Delete(ctx, req.File.ID); err != nil {
-			r.logf("mailrelay: voice: delete %s: %v", req.File.ID, err)
-		}
-	}()
 	sum := sha256.Sum256(sealed)
-	if hex.EncodeToString(sum[:]) != req.File.SHA256 {
+	if len(sealed) != req.File.Size || hex.EncodeToString(sum[:]) != req.File.SHA256 {
 		return Payload{Kind: KindError, Text: VoiceMismatch}
 	}
-	text, err := r.Hear.Hear(ctx, sealed)
+	// Свой срок, а не срок круга: закрытие окна посреди хода не оставит запись.
+	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	if err := r.Files.Delete(dctx, req.File.ID); err != nil {
+		r.logf("mailrelay: voice: delete %s: %v", req.File.ID, err)
+	}
+	cancel()
+	hctx, cancel := context.WithTimeout(ctx, cmp.Or(r.HearTimeout, DefaultHearTimeout))
+	text, err := r.Hear.Hear(hctx, sealed)
+	cancel()
 	if err != nil {
-		return Payload{Kind: KindError, Text: err.Error()}
+		r.logf("mailrelay: voice: hear: %v", err)
+		return Payload{Kind: KindError, Text: VoiceUnheard}
 	}
 	text = strings.TrimSpace(text)
 	if req.Text != VoiceAsk || text == "" {
