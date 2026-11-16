@@ -292,6 +292,13 @@ want(st21.chats.c.say?.text === "30 дней" && st21.chats.c.say.at > 0, "the a
 want(s.voiceLimit({ hear: "apple" }) < 60_000 && s.voiceLimit({ hear: "device" }) === 90_000, "Apple through the network takes under a minute");
 want(/без сети/.test(s.hearNote("device")) && /Apple/.test(s.hearNote("apple")) && /облак/.test(s.hearNote("cloud")) && s.hearNote("") === "", "who hears the voice, in words");
 
+// 22. «+» (#650): файл больше 10 МБ — отказ словами; пустой — тоже; куски —
+// подряд, без дыр и перекрытий, не больше предела куска.
+want(/10 МБ/.test(s.attachRefusal(s.MAX_ATTACH + 1)) && /пуст/.test(s.attachRefusal(0)) && s.attachRefusal(s.MAX_ATTACH) === "", "the 10 MB limit and an empty file are refused in words");
+const pb = s.pieceBounds(7, 3);
+want(JSON.stringify(pb) === JSON.stringify([[0, 3], [3, 6], [6, 7]]), "pieces cover the file in order");
+want(s.pieceBounds(6, 3).length === 2 && s.pieceBounds(1, 3).length === 1, "pieces: exact and small");
+
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 

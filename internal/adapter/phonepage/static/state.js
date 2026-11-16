@@ -362,3 +362,16 @@ const VOICE_WORDS = {
   gone: "Запись не дошла до компьютера — скажите еще раз.",
   unheard: "Компьютер не смог распознать запись — проверьте «Слушает» в настройках окна.",
 };
+
+// MAX_ATTACH — предел файла с телефона (#650, mailrelay.MaxAttachment).
+export const MAX_ATTACH = 10 << 20;
+
+// attachRefusal says why a file can't go; "" — может.
+export function attachRefusal() {
+  return "";
+}
+
+// pieceBounds cuts size bytes into pieces of at most max: [начало, конец).
+export function pieceBounds() {
+  return [];
+}
