@@ -138,6 +138,12 @@ const (
 	MemoryNo      = "no"
 	MemorySaved   = "saved"
 	MemorySkipped = "skipped"
+	// MemoryGone — факт не предлагался этому чату, уже решен или забыт: карточку
+	// телефон снимает (ревью #655). Слова рисует телефон: здесь только коды.
+	MemoryGone = "gone"
+	// MemoryBad — решение не разобрано; MemoryUnsupported — окно не умеет.
+	MemoryBad         = "bad"
+	MemoryUnsupported = "unsupported"
 )
 
 // Fact is a fact about the person the window offers to remember.
@@ -152,11 +158,6 @@ type Fact struct {
 type Note struct {
 	Chat    string
 	Payload Payload
-}
-
-// Notes gives the notes the window queued since the last tick.
-type Notes interface {
-	Take() []Note
 }
 
 // Memory decides a fact the window offered: yes — запомнить с текстом text.
@@ -294,8 +295,9 @@ type Relay struct {
 	Logf func(string, ...any)
 	// Notifier зовет телефоны push после итога хода модели (nil — не зовет).
 	Notifier Notifier
-	// Notes — то, что окно говорит телефону само: «Запомнить о Вас?» (nil — нечего).
-	Notes Notes
+	// Notes — то, что окно говорит телефону само: «Запомнить о Вас?». Круг берет
+	// чаты своего ящика, остальное — мимо.
+	Notes []Note
 	// Memory — решения телефона по предложенным фактам (nil — отказ словами).
 	Memory Memory
 	// Desk — состояние окна для телефона (nil — отказ словами).
@@ -478,11 +480,8 @@ const maxOffered = 20
 // offer queues the window's notes for their phone chats (#647): чат окна →
 // чат ящика по State.Chats; чат, которого телефон не заводил, — мимо.
 func (r Relay) offer(st *State) error {
-	if r.Notes == nil {
-		return nil
-	}
 	queued := false
-	for _, n := range r.Notes.Take() {
+	for _, n := range r.Notes {
 		chat := mailChat(st, n.Chat)
 		if chat == "" {
 			continue
@@ -491,7 +490,10 @@ func (r Relay) offer(st *State) error {
 		out := Outgoing{Chat: chat, Counter: st.DeskCounter, Payload: n.Payload}
 		var err error
 		if out.Sealed, err = r.sealFitting(&out); err != nil {
-			return err
+			// Не влезло (shrink фактов не уменьшает) — мимо этой заметки, круг идет
+			// дальше: вопросы телефона важнее предложения (ревью #655).
+			r.logf("mailrelay: %s: %v", n.Payload.Kind, err)
+			continue
 		}
 		st.Outbox = append(st.Outbox, out)
 		if st.Offered == nil {
@@ -528,25 +530,34 @@ func mailChat(st *State, w string) string {
 // только по предложенному и один раз — иначе телефон по id удалил бы чужой или
 // уже одобренный факт портрета.
 func (r Relay) decide(ctx context.Context, st *State, chat string, req Payload) Payload {
+	reply := Payload{Kind: KindMemory}
+	if len(req.Facts) > 0 { // с id — телефон найдет свою карточку и в отказе
+		reply.Facts = []Fact{{ID: req.Facts[0].ID}}
+	}
 	if len(req.Facts) != 1 || (req.Text != MemoryYes && req.Text != MemoryNo) {
-		return Payload{Kind: KindMemory, Text: "решение по факту не разобрано"}
+		reply.Text = MemoryBad
+		return reply
 	}
 	f := req.Facts[0]
-	reply := Payload{Kind: KindMemory, Facts: []Fact{{ID: f.ID}}}
 	i := slices.Index(st.Offered[chat], f.ID)
 	switch {
 	case i < 0:
-		reply.Text = "этот факт телефону не предлагался или уже решен"
+		reply.Text = MemoryGone
 	case r.Memory == nil:
-		reply.Text = "окно этой версии не запоминает с телефона"
+		reply.Text = MemoryUnsupported
 	default:
 		yes := req.Text == MemoryYes
-		if err := r.Memory.Decide(ctx, f.ID, yes, f.Text); err != nil {
-			reply.Text = err.Error()
+		err := r.Memory.Decide(ctx, f.ID, yes, f.Text)
+		switch {
+		case errors.Is(err, domain.ErrFactDecided), errors.Is(err, domain.ErrFactNotFound): // решен или забыт в окне
+			reply.Text = MemoryGone
+		case err != nil:
+			reply.Text = err.Error() // слова окна о сбое портрета; карточка остается
 			return reply
+		default:
+			reply.Text = map[bool]string{true: MemorySaved, false: MemorySkipped}[yes]
 		}
 		st.Offered[chat] = slices.Delete(st.Offered[chat], i, i+1)
-		reply.Text = map[bool]string{true: MemorySaved, false: MemorySkipped}[yes]
 	}
 	return reply
 }

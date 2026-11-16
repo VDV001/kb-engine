@@ -221,6 +221,15 @@ s.take(st17, { seq: 3, chat: "c", from: "desk" }, dk14(3, { kind: "memory", text
 want(st17.chats.c.remember.length === 1 && st17.chats.c.remember[0].id === "f2", "saved takes the card away");
 s.take(st17, { seq: 4, chat: "c", from: "desk" }, dk14(4, { kind: "memory", text: "портрет недоступен", facts: [{ id: "f2" }] }));
 want(st17.chats.c.remember[0].err === "портрет недоступен" && !st17.chats.c.remember[0].busy, "a refusal keeps the card with the words");
+// Ревью #655: «gone» (решено в окне, не предлагался) снимает карточку; другой
+// код — карточка остается с ним; «Скрыть» убирает карточку на телефоне.
+st17.chats.c.remember = [{ id: "g1", text: "a" }, { id: "g2", text: "b" }, { id: "g3", text: "c" }];
+s.take(st17, { seq: 10, chat: "c", from: "desk" }, dk14(10, { kind: "memory", text: "gone", facts: [{ id: "g1" }] }));
+want(!st17.chats.c.remember.some((x) => x.id === "g1"), "gone takes the card away");
+s.take(st17, { seq: 11, chat: "c", from: "desk" }, dk14(11, { kind: "memory", text: "bad", facts: [{ id: "g2" }] }));
+want(st17.chats.c.remember.find((x) => x.id === "g2")?.err === "bad", "another code stays on the card");
+s.hideFact(st17.chats.c, "g2");
+want(st17.chats.c.remember.length === 1 && st17.chats.c.remember[0].id === "g3", "hide takes the card away on the phone");
 const st17b = { ...st17, seen: {}, chats: {} };
 want(s.take(st17b, { seq: 5, chat: "x", from: "desk" }, dk14(5, offer)) === false && !st17b.chats.x, "an offer to a chat the phone does not know is dropped");
 

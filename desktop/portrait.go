@@ -251,6 +251,12 @@ func (d *chatDesk) PortraitRemove(id string) error {
 	return portraitErr(d.withPortrait(nil, func(s *portrait.Service) error { return s.Remove(context.Background(), id) }))
 }
 
+// PortraitDecide decides a fact waiting for approval from the phone (#647):
+// одобренный — ErrFactDecided, телефон его не тронет (ревью безопасности #655).
+func (d *chatDesk) PortraitDecide(id string, yes bool, text string) error {
+	return portraitErr(d.withPortrait(nil, func(s *portrait.Service) error { return s.Decide(context.Background(), id, yes, text) }))
+}
+
 // PortraitApprove lets a fact into the chat; text — правка перед одобрением.
 func (d *chatDesk) PortraitApprove(id, text string) error {
 	return portraitErr(d.withPortrait(nil, func(s *portrait.Service) error { return s.Approve(context.Background(), id, text) }))
@@ -383,8 +389,10 @@ func portraitErr(err error) error {
 		return errors.New("файл портрета испорчен — окно его не перезапишет; поправьте или уберите portrait.json в папке портрета")
 	case errors.Is(err, domain.ErrFactExists):
 		return errors.New("такой факт уже есть")
-	case errors.Is(err, domain.ErrFactNotFound):
-		return errors.New("этого факта уже нет — портрет изменился")
+	case errors.Is(err, domain.ErrFactNotFound): // причина остается: ящик телефона снимает по ней карточку
+		return humanErr{"этого факта уже нет — портрет изменился", err}
+	case errors.Is(err, domain.ErrFactDecided):
+		return humanErr{"этот факт уже решен", err}
 	case errors.Is(err, domain.ErrInvalidFact):
 		return fmt.Errorf("факт не подходит: пустой, длиннее %d знаков или с переводом строки", domain.MaxFactRunes)
 	case errors.Is(err, portrait.ErrModelReply):

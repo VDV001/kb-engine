@@ -207,18 +207,34 @@ func (s *Service) Remove(ctx context.Context, id string) error {
 
 // Approve lets the fact into the chat; text — правка перед одобрением, пусто — как есть.
 func (s *Service) Approve(ctx context.Context, id, text string) error {
-	return s.change(ctx, func(p domain.Portrait) (domain.Portrait, error) {
-		if strings.TrimSpace(text) != "" {
-			for _, f := range p.Facts() {
-				if f.ID() == id && strings.TrimSpace(text) != f.Text() {
-					var err error
-					if p, err = p.Edit(id, text, f.Origin().Corrected()); err != nil {
-						return p, err
-					}
+	return s.change(ctx, func(p domain.Portrait) (domain.Portrait, error) { return approveIn(p, id, text) })
+}
+
+func approveIn(p domain.Portrait, id, text string) (domain.Portrait, error) {
+	if strings.TrimSpace(text) != "" {
+		for _, f := range p.Facts() {
+			if f.ID() == id && strings.TrimSpace(text) != f.Text() {
+				var err error
+				if p, err = p.Edit(id, text, f.Origin().Corrected()); err != nil {
+					return p, err
 				}
 			}
 		}
-		return p.Approve(id)
+	}
+	return p.Approve(id)
+}
+
+// Decide decides a fact waiting for approval: yes — одобрить с правкой text
+// (пусто — как есть), no — забыть. Одобренный факт — ErrFactDecided.
+func (s *Service) Decide(ctx context.Context, id string, yes bool, text string) error {
+	return s.change(ctx, func(p domain.Portrait) (domain.Portrait, error) {
+		if err := p.Waiting(id); err != nil {
+			return p, err
+		}
+		if !yes {
+			return p.Remove(id)
+		}
+		return approveIn(p, id, text)
 	})
 }
 

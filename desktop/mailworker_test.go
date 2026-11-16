@@ -285,30 +285,45 @@ func TestMailWorkerQueuesFacts(t *testing.T) {
 	if again := w.Take(); len(again) != 0 {
 		t.Errorf("notes given twice: %+v", again)
 	}
+	// Не больше maxPhoneFacts за раз: одна пачка не раздувает сообщение ящика (ревью #655).
+	many := make([]factView, 15)
+	for i := range many {
+		many[i] = factView{ID: fmt.Sprintf("f%d", i), Text: "x"}
+	}
+	w.remember(portraitNews{Chat: "w-1", Facts: many})
+	if got := w.Take(); len(got) != 1 || len(got[0].Payload.Facts) != maxPhoneFacts {
+		t.Errorf("15 facts → %+v", got)
+	}
+	// «Новое — только в портрете» окна действует и на телефон (ревью #655).
+	w.quiet = func() bool { return true }
+	w.remember(portraitNews{Chat: "w-1", Facts: many[:1]})
+	if got := w.Take(); len(got) != 0 {
+		t.Errorf("memory quiet, the phone still gets %+v", got)
+	}
 }
 
-// «Да» с телефона — одобрить с текстом, «Нет» — убрать; страница снимает свою карточку.
+// Решение телефона — портретом окна через Decide (только ждущий одобрения
+// факт); странице — снять карточку; сбой — карточка остается (#647, ревью #655).
 func TestPhoneMemoryDecides(t *testing.T) {
 	var calls []string
+	fail := error(nil)
 	m := phoneMemory{
-		approve: func(id, text string) error { calls = append(calls, "approve "+id+" "+text); return nil },
-		remove:  func(id string) error { calls = append(calls, "remove "+id); return nil },
+		decide: func(id string, yes bool, text string) error {
+			calls = append(calls, fmt.Sprintf("decide %s %t %s", id, yes, text))
+			return fail
+		},
 		decided: func(id string, yes bool) { calls = append(calls, fmt.Sprintf("decided %s %t", id, yes)) },
 	}
 	if err := m.Decide(t.Context(), "f1", true, "Ведет закупки"); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Decide(t.Context(), "f2", false, ""); err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"approve f1 Ведет закупки", "decided f1 true", "remove f2", "decided f2 false"}
-	if strings.Join(calls, "|") != strings.Join(want, "|") {
+	want := "decide f1 true Ведет закупки|decided f1 true"
+	if strings.Join(calls, "|") != want {
 		t.Fatalf("calls %v", calls)
 	}
-	m.approve = func(string, string) error { return errors.New("портрет недоступен") }
-	calls = nil
-	if err := m.Decide(t.Context(), "f3", true, "x"); err == nil || len(calls) != 0 {
-		t.Fatalf("failed approve: %v, %v — the page must not drop its card", err, calls)
+	calls, fail = nil, errors.New("портрет недоступен")
+	if err := m.Decide(t.Context(), "f3", false, ""); err == nil || len(calls) != 1 {
+		t.Fatalf("failed decide: %v, %v — the page must not drop its card", err, calls)
 	}
 }
 
