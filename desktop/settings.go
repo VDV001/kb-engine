@@ -24,6 +24,7 @@ import (
 // errors.Is, а не подстроку.
 var (
 	errNoFolders  = errors.New("нужна хотя бы одна включенная папка")
+	errNoSources  = errors.New("нужен хотя бы один включенный источник")
 	errBadFolder  = errors.New("не подходит")
 	errBadCatalog = errors.New("файла каталога нет")
 )

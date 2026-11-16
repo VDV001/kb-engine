@@ -34,6 +34,7 @@ const (
 var (
 	ErrSourceID     = errors.New("у источника нет id или он повторяется")
 	ErrSourceTarget = errors.New("у источника не задан или не подходит путь либо адрес")
+	ErrSourceDup    = errors.New("этот источник уже есть в списке")
 )
 
 // Source — один источник. Порядок в Config.Sources — приоритет: при равной

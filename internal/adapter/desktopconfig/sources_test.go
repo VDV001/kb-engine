@@ -88,6 +88,8 @@ func TestConfig_Validate(t *testing.T) {
 		// Токен по открытому http в сеть — нельзя: его прочтет любой на пути.
 		{"http в сеть", []desktopconfig.Source{server("http://kb.example")}, desktopconfig.ErrSourceTarget},
 		{"не адрес", []desktopconfig.Source{server("kb.example")}, desktopconfig.ErrSourceTarget},
+		// Один kb-сервер двумя строками искался бы дважды (отзыв тестера 16.11).
+		{"повтор адреса сервера", []desktopconfig.Source{server("https://kb.example"), {ID: "server-2", Kind: desktopconfig.KindServer, URL: "https://KB.example/", Enabled: true}}, desktopconfig.ErrSourceDup},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
