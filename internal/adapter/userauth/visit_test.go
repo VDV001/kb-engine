@@ -105,16 +105,17 @@ func TestVisits(t *testing.T) {
 	if n := s.writes(); n != 1 {
 		t.Fatalf("visits written %d times within VisitEvery, want 1", n)
 	}
-	_ = v.Visit(ctx, owner, dev, domain.PhoneIPadOrMac, t0.Add(2*time.Minute)) // имя сменилось — сразу
+	_ = v.Visit(ctx, owner, dev, "iPhone 17", t0.Add(2*time.Minute))           // имя с моделью вместо «iPhone» — сразу
+	_ = v.Visit(ctx, owner, dev, domain.PhoneIPadOrMac, t0.Add(3*time.Minute)) // другое имя без модели — не сразу
 	_ = v.Visit(ctx, owner, dev, domain.PhoneIPadOrMac, t0.Add(userauth.VisitEvery+3*time.Minute))
 	if n := s.writes(); n != 3 {
-		t.Fatalf("visits written %d times, want 3 (first, new name, after VisitEvery)", n)
+		t.Fatalf("visits written %d times, want 3 (first, the model, after VisitEvery)", n)
 	}
 	seen, err := v.Seen(ctx, owner)
 	if err != nil || len(seen) != 1 {
 		t.Fatalf("Seen = %+v, %v", seen, err)
 	}
-	if got := seen[dev]; got.Name != domain.PhoneIPadOrMac || !got.At.Equal(t0.Add(userauth.VisitEvery+3*time.Minute)) {
+	if got := seen[dev]; got.Name != "iPhone 17" || !got.At.Equal(t0.Add(userauth.VisitEvery+3*time.Minute)) {
 		t.Errorf("visited phone %+v", got)
 	}
 	if _, ok := seen[quiet]; ok {
@@ -339,5 +340,42 @@ func TestVisitsFailedWriteKeepsNewerCache(t *testing.T) {
 	_ = v.Visit(ctx, owner, dev, "Samsung SM-S918B", t0.Add(10*time.Second))
 	if n := s.writes(); n != 2 {
 		t.Fatalf("visits written %d times, want 2: the failed write rolled the cache back", n)
+	}
+}
+
+// Телефон, чередующий две модели в Sec-CH-UA-Model, не пишет файл на каждом
+// опросе: сразу пишется только первое имя с моделью (ревью безопасности #652).
+func TestVisitsAlternatingModelsDoNotBypassTheLimit(t *testing.T) {
+	ctx := context.Background()
+	s, owner, dev, _ := visitsFixture(t)
+	v := &userauth.Visits{Store: s}
+	for i := range 20 {
+		_ = v.Visit(ctx, owner, dev, []string{"SM-A", "SM-B"}[i%2], t0.Add(time.Duration(i)*time.Second))
+	}
+	if n := s.writes(); n != 1 {
+		t.Fatalf("visits written %d times for 20 polls, want 1", n)
+	}
+}
+
+// Сбой записи одного человека не останавливает входы других: пауза — своя у
+// каждого (ревью безопасности #652).
+func TestVisitsPauseIsPerPerson(t *testing.T) {
+	ctx := context.Background()
+	s, owner, dev, _ := visitsFixture(t)
+	other := id(t, "other")
+	if _, err := userauth.Add(ctx, s, other); err != nil {
+		t.Fatal(err)
+	}
+	theirs, _, _ := userauth.AddDevice(ctx, s, other)
+	v := &userauth.Visits{Store: s}
+	s.failFirst = errors.New("bucket down")
+	if err := v.Visit(ctx, owner, dev, domain.PhoneIPhone, t0); err == nil {
+		t.Fatal("failed write reported no error")
+	}
+	if err := v.Visit(ctx, other, theirs, domain.PhoneAndroid, t0.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if seen, _ := v.Seen(ctx, other); seen[theirs].At.IsZero() {
+		t.Fatal("another person's visit dropped by the pause")
 	}
 }

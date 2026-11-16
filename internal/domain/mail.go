@@ -68,6 +68,9 @@ func IsPhoneModel(m string) bool {
 	})
 }
 
+// SharperPhoneName tells whether next names the phone more precisely than prev.
+func SharperPhoneName(prev, next string) bool { return false }
+
 // genericPhoneNames are the names without a model; пустое — имени еще нет.
 var genericPhoneNames = map[string]bool{"": true, PhoneIPhone: true, PhoneIPad: true, PhoneIPadOrMac: true, PhoneAndroid: true, PhoneWindows: true}
 

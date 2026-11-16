@@ -49,6 +49,25 @@ func TestIsPhoneModel(t *testing.T) {
 	}
 }
 
+// Сразу пишется только уточнение: модель вместо имени без модели; смена одной
+// модели на другую ждет обычного срока (ревью безопасности #652).
+func TestSharperPhoneName(t *testing.T) {
+	for _, c := range []struct {
+		prev, next string
+		want       bool
+	}{
+		{"", domain.PhoneIPhone, true},
+		{domain.PhoneAndroid, "Samsung SM-S918B", true},
+		{"SM-A", "SM-B", false},
+		{domain.PhoneIPhone, domain.PhoneIPadOrMac, false},
+		{"Samsung SM-S918B", domain.PhoneAndroid, false},
+	} {
+		if got := domain.SharperPhoneName(c.prev, c.next); got != c.want {
+			t.Errorf("SharperPhoneName(%q, %q) = %v, want %v", c.prev, c.next, got, c.want)
+		}
+	}
+}
+
 // Менее точное имя не заменяет точное: Chrome шлет модель не в каждом запросе,
 // и «Samsung SM-S918B» не должен прыгать в «Android» и обратно (ревью #652).
 func TestBetterPhoneName(t *testing.T) {
