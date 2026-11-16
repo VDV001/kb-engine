@@ -51,6 +51,7 @@ type mailWorker struct {
 	memory   mailrelay.Memory   // решения телефона по «Запомнить о Вас?» (#647); nil — отказ словами
 	desk     mailrelay.DeskInfo // модель и источники окна для телефона (#647); nil — отказ словами
 	hear     transcriber        // голос телефона (#648): запись → текст; nil — отказ кодом
+	listen   *dictation         // помощник kb-listen для Apple Speech (#648)
 
 	notesMu sync.Mutex
 	notes   []mailrelay.Note // «Запомнить о Вас?» для телефонов: пишет разбор ответа, забирает круг
@@ -218,6 +219,9 @@ func (d phoneDesk) State(context.Context) (mailrelay.DeskState, error) {
 	d.settings.mu.Unlock()
 	c := cfg.Chat.WithDefaults()
 	st := mailrelay.DeskState{Model: c.Model, Sources: []mailrelay.DeskSource{}}
+	if d.hear != nil {
+		st.Hear = d.hear()
+	}
 	for _, s := range cfg.WithSources().Sources {
 		if s.Enabled && searched(cfg, s) {
 			st.Sources = append(st.Sources, mailrelay.DeskSource{ID: s.ID, Name: sourceLabel(s)})
@@ -255,10 +259,36 @@ var chatConnKinds = map[desktopconfig.ConnKind]string{desktopconfig.ConnOzon: "O
 // модель → Слушает»; Apple Speech — помощником kb-listen --file, только на Маке.
 // hearLabel says who hears the phone's voice: mailrelay.Hear*; пусто — никто.
 func (w *mailWorker) hearLabel() string {
-	return ""
+	if w.hear == nil {
+		return ""
+	}
+	w.settings.mu.Lock()
+	id := w.settings.cfg.Chat.Listen
+	w.settings.mu.Unlock()
+	switch {
+	case id != "" && cloudListen[id] != "":
+		return mailrelay.HearCloud
+	case id != "":
+		return mailrelay.HearServer
+	case goruntime.GOOS != "darwin" || w.listen == nil || w.listen.bin == "":
+		return ""
+	case w.listen.Check().OnDevice:
+		return mailrelay.HearDevice
+	}
+	return mailrelay.HearApple
 }
 
 func (w *mailWorker) useVoice(listen *dictation) {
+	w.listen = listen
+	// Запись, оставленная упавшим окном, — расшифрованная речь: убрать до
+	// первого круга (ревью безопасности #660).
+	dir := cmp.Or(listen.tmpDir, os.TempDir())
+	for _, pat := range []string{"kb-phone-*.wav", "kb-listen-*.wav"} {
+		old, _ := filepath.Glob(filepath.Join(dir, pat))
+		for _, f := range old {
+			_ = os.Remove(f)
+		}
+	}
 	w.hear = func(ctx context.Context, wav []byte) (string, error) {
 		tr, err := w.settings.listenTranscriber()
 		switch {
