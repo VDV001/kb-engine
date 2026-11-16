@@ -7,8 +7,8 @@
 //
 // Service worker (sw.js) — только push: «компьютер ответил», когда страница
 // закрыта. Работы без сети нет — страница всегда свежая с сервера.
-import { importKey, seal, open } from "./crypto.js";
-import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted, deciding, hideFact, deskChat, choiceView } from "./state.js";
+import { importKey, seal, open, sealFile } from "./crypto.js";
+import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted, deciding, hideFact, deskChat, choiceView , wavOf } from "./state.js";
 
 const POLL_MS = 10_000; // решение 15.11: короткий опрос раз в 10 с
 const UNAUTH_MS = 60_000; // 401: реже, но не сдаемся — сервер мог ошибиться ненадолго
@@ -396,6 +396,7 @@ function ctxNote(v) {
 function paintChat(c, follow) {
   paintCtx(c);
   paintChoice(c);
+  paintVoice(c);
   // Человек правит факт: опрос раз в 10 с не перестраивает чат под пальцами —
   // поле, фокус и клавиатура остаются (ревью #655).
   if (document.activeElement?.dataset?.memText) return;
@@ -616,6 +617,113 @@ for (const id of ["desk", "desk-main"]) {
     show(false);
   });
 }
+// --- голос (#648) -----------------------------------------------------------
+// Телефон записывает, окно распознает (решение 16.11): звук — WAV 16 кГц одним
+// куском до 90 с, зашифрован ключом чата, лежит в файлах ящика, сообщение
+// называет его хешем. Ответ на вопрос голосом читает голос телефона.
+
+const VOICE_MAX_MS = 90_000; // кусок до 3 МБ: 90 с WAV 16 кГц — 2,9 МБ
+const QUIET_MS = 1500; // вопрос голосом кончается тишиной
+const QUIET_LEVEL = 0.012; // как у kb-listen на Маке
+let rec = null; // { mode, stop } идущей записи
+
+const hexOf = (b) => [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+
+async function startVoice(mode) {
+  if (rec) { rec.stop(); return; } // второе нажатие — конец записи
+  const c = st.chats[ui.chat];
+  if (!c) return;
+  if (mode === "ask" && "speechSynthesis" in window) speechSynthesis.speak(new SpeechSynthesisUtterance("")); // iOS: голос — только после нажатия
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+  } catch (e) {
+    note("Нет доступа к микрофону: " + e.message);
+    return;
+  }
+  const ac = new AudioContext(), src = ac.createMediaStreamSource(stream);
+  // ponytail: ScriptProcessorNode устарел, но есть и в Safari iOS, и в Chrome
+  // Android без отдельного файла ворклета. Потолок — его уберут из браузеров;
+  // путь — AudioWorklet.
+  const proc = ac.createScriptProcessor(4096, 1, 1), chunks = [];
+  const began = Date.now();
+  let spoke = false, quietAt = began, done = false;
+  const stop = async () => {
+    if (done) return;
+    done = true;
+    rec = null;
+    proc.disconnect();
+    src.disconnect();
+    stream.getTracks().forEach((t) => t.stop());
+    const rate = ac.sampleRate;
+    await ac.close();
+    show();
+    if (!spoke) { note("Не слышно речи: запись не ушла.", false); return; }
+    const all = new Float32Array(chunks.reduce((n, a) => n + a.length, 0));
+    let at = 0;
+    for (const a of chunks) { all.set(a, at); at += a.length; }
+    try { await sendVoice(c, mode, wavOf(all, rate)); } catch (err) { note("Голос не отправлен: " + err.message); }
+    show();
+  };
+  proc.onaudioprocess = (e) => {
+    const x = e.inputBuffer.getChannelData(0);
+    chunks.push(new Float32Array(x));
+    let sum = 0;
+    for (const v of x) sum += v * v;
+    if (Math.sqrt(sum / x.length) > QUIET_LEVEL) { spoke = true; quietAt = Date.now(); }
+    if (Date.now() - began > VOICE_MAX_MS || (mode === "ask" && spoke && Date.now() - quietAt > QUIET_MS)) stop();
+  };
+  src.connect(proc);
+  proc.connect(ac.destination);
+  rec = { mode, stop };
+  show();
+}
+
+// sendVoice puts the recording into the mailbox files and names it in the chat.
+async function sendVoice(c, mode, wav) {
+  const sealed = await sealFile(st.pair, wav);
+  const r = await api(API + "/files", { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: sealed });
+  if (r.status === 501 || r.status === 404 || r.status === 400) throw new Error("kb-сервер старше голоса с телефона");
+  if (r.status === 429) throw new Error("много записей подряд — подождите немного");
+  if (!r.ok) throw new Error("kb-сервер ответил " + r.status);
+  const { id } = await r.json();
+  const file = { id, sha256: hexOf(new Uint8Array(await crypto.subtle.digest("SHA-256", sealed))), size: sealed.length };
+  await send(ui.chat, { kind: "voice", text: mode, file }, (counter) => {
+    if (mode === "ask") {
+      asked(c, "🎤 вопрос голосом", counter, Date.now());
+      c.msgs[c.msgs.length - 1].voice = true;
+    } else {
+      c.listening = true;
+    }
+  });
+}
+
+// paintVoice shows the voice state and takes what the window heard.
+function paintVoice(c) {
+  $("mic").setAttribute("aria-pressed", String(rec?.mode === "dictate"));
+  $("talk").setAttribute("aria-pressed", String(rec?.mode === "ask"));
+  $("ask-note").textContent = rec ? (rec.mode === "ask" ? "слушаю вопрос · пауза — конец" : "слушаю · нажмите еще раз, чтобы закончить")
+    : c?.listening ? "компьютер распознает…" : "ответ считает компьютер · переписка зашифрована";
+  if (!c) return;
+  if (c.heard !== undefined) { // диктовка: текст — в поле, отправляет человек
+    const q = $("q");
+    if (c.heard) q.value = (q.value.trim() ? q.value.trimEnd() + " " : "") + c.heard;
+    else note("Компьютер не расслышал слов.", false);
+    delete c.heard;
+    persist();
+  }
+  if (c.say && "speechSynthesis" in window) { // ответ на вопрос голосом — голосом телефона
+    const u = new SpeechSynthesisUtterance(c.say);
+    u.lang = "ru-RU";
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+  }
+  if (c.say) { delete c.say; persist(); }
+}
+
+$("mic").addEventListener("click", () => startVoice("dictate"));
+$("talk").addEventListener("click", () => startVoice("ask"));
+
 $("q").addEventListener("input", () => { // поле растет с текстом до 40% экрана
   $("q").style.height = "auto";
   $("q").style.height = $("q").scrollHeight + "px";
