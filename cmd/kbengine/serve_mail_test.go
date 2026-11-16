@@ -270,7 +270,7 @@ func TestMailLimitsForgetIdle(t *testing.T) {
 		tn.allowMail(mailKey{sum: sha256.Sum256([]byte(strconv.Itoa(i)))})
 	}
 	*now = now.Add(time.Hour)
-	tn.allowMail(mailKey{poll: true})
+	tn.allowMail(mailKey{kind: mailPoll})
 	if n := len(tn.limits); n > 1 {
 		t.Errorf("%d limiters kept after an idle hour, want only the fresh one", n)
 	}

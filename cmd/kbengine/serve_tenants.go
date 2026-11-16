@@ -76,6 +76,9 @@ func tenantsHandler(ctx context.Context, store blob.Store, stderr io.Writer, opt
 	}
 	svc := mail.Service{Box: mailbox.Store{Blob: store, Seen: &mailbox.Seen{}}, Phones: freshPhones{userauth.Phones{Store: store}, phones},
 		Subs: userauth.Phones{Store: store}, Visits: &userauth.Visits{Store: store}, Now: time.Now, Logf: logf}
+	if d, ok := store.(blob.Deleter); ok { // файлы ящика (#658): хранилище умеет удалять
+		svc.Files = mailbox.Files{Blob: store, Del: d}
+	}
 	if cfg.contact != "" { // без контакта push выключен: Push nil, маршруты — 404
 		svc.Push = &lazyPusher{store: store, contact: cfg.contact, transport: cfg.transport}
 	}
@@ -185,7 +188,7 @@ func (t *tenants) serveMail(w http.ResponseWriter, r *http.Request) {
 			side = domain.MailPhone
 		}
 		if ok {
-			k := mailKey{sum: sha256.Sum256([]byte(tok)), poll: r.Method == http.MethodGet && r.URL.Path == "/api/mail"}
+			k := mailKey{sum: sha256.Sum256([]byte(tok)), kind: mailKindOf(r)}
 			if wait, ok := t.allowMail(k); !ok {
 				w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
 				http.Error(w, "too many mailbox requests; poll every 10 s", http.StatusTooManyRequests)
@@ -205,24 +208,50 @@ func (t *tenants) serveMail(w http.ResponseWriter, r *http.Request) {
 // Опрос: договорной темп раз в 10 с, предел вдвое чаще, сразу — 10 страниц
 // истории (2000 / DefaultPage) и запас. Отправка и телефоны: раз в секунду.
 //
+// Загрузка файла (#658) — своя корзина: кусок до 3 МБ, сразу — 8 (два файла
+// по 10 МБ), дальше раз в 10 с; сообщения она не глушит.
+//
 // ponytail: предел — в памяти экземпляра; при нескольких экземплярах он
 // умножается на их число. Путь апгрейда — предел в API Gateway. Сломанный
 // клиент с after=0 все равно читает журнал целиком раз в 5 с (до 8 МБ) —
-// потолок снимет нарезка журнала (mailbox.DefaultMaxBytes).
+// потолок снимет нарезка журнала (mailbox.DefaultMaxBytes). Файлы держит
+// бакет до правила жизненного цикла (deploy/yandex): потолок занятого
+// места — корзина загрузки, умноженная на срок; путь — квота байт на человека.
 var (
 	mailPollRate = rate.Every(5 * time.Second)
 	mailSendRate = rate.Limit(1)
+	mailFileRate = rate.Every(10 * time.Second)
 )
 
 const (
 	mailPollBurst = 12
 	mailSendBurst = 30
+	mailFileBurst = 8
 	mailLimitsCap = 4096 // корзин сверх этого — повод выбросить простаивающие
 )
 
+// mailKind is the bucket of a mailbox request.
+type mailKind uint8
+
+const (
+	mailSend mailKind = iota
+	mailPoll
+	mailFile
+)
+
+func mailKindOf(r *http.Request) mailKind {
+	switch {
+	case r.Method == http.MethodGet && r.URL.Path == "/api/mail":
+		return mailPoll
+	case r.Method == http.MethodPost && r.URL.Path == "/api/mail/files":
+		return mailFile
+	}
+	return mailSend
+}
+
 type mailKey struct {
 	sum  [sha256.Size]byte // хэш токена: сам токен в памяти предела не держим
-	poll bool
+	kind mailKind
 }
 
 // allowMail takes a token from the key's bucket or says how long to wait.
@@ -237,9 +266,13 @@ func (t *tenants) allowMail(k mailKey) (time.Duration, bool) {
 	}
 	l, ok := t.limits[k]
 	if !ok {
-		l = rate.NewLimiter(mailSendRate, mailSendBurst)
-		if k.poll {
+		switch k.kind {
+		case mailPoll:
 			l = rate.NewLimiter(mailPollRate, mailPollBurst)
+		case mailFile:
+			l = rate.NewLimiter(mailFileRate, mailFileBurst)
+		default:
+			l = rate.NewLimiter(mailSendRate, mailSendBurst)
 		}
 		t.limits[k] = l
 	}
