@@ -74,6 +74,30 @@ type Payload struct {
 	Context *ContextFill `json:"context,omitempty"`
 	// Facts — «Запомнить о Вас?» (#647): предложение окна или решение телефона.
 	Facts []Fact `json:"facts,omitempty"`
+	// Only — источники чата окна после хода (#647): телефон их показывает,
+	// менять — в окне; пусто — все.
+	Only []string `json:"only,omitempty"`
+	// Desk — состояние окна для телефона (#647), ответ на desk.
+	Desk *DeskState `json:"desk,omitempty"`
+}
+
+// DeskState is what the phone shows by its input: модель настроек окна и
+// названия источников и подключений чата.
+type DeskState struct {
+	Model   string       `json:"model"`
+	Sources []DeskSource `json:"sources"`
+}
+
+// DeskSource is a source or a connection the chat can search.
+type DeskSource struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Conn bool   `json:"conn,omitempty"` // подключение (Ozon, MPStats), а не папка или сервер
+}
+
+// DeskInfo tells the window's state for the phone.
+type DeskInfo interface {
+	State(ctx context.Context) (DeskState, error)
 }
 
 // ContextFill is how full the chat's context is: токены по счету провайдера и
@@ -97,6 +121,11 @@ const (
 	KindStep = "step"
 	// KindAccepted — окно взяло вопрос в работу (#646): телефон пишет «компьютер принял».
 	KindAccepted = "accepted"
+	// KindDesk — телефон спрашивает состояние окна, окно отвечает им (#647, Desk).
+	KindDesk = "desk"
+	// DeskUnsupported — код отказа на desk (Text у KindError): окно собрано без
+	// Desk. Слова человеку — у телефона.
+	DeskUnsupported = "unsupported"
 	// KindRemember — окно предлагает запомнить факты о человеке (#647, Facts).
 	KindRemember = "remember"
 	// KindMemory — решение телефона по факту (Text yes/no, Facts[0]) и ответ окна
@@ -164,6 +193,8 @@ type Answer struct {
 	Chat, Text string
 	Sources    []Source
 	Context    *ContextFill
+	// Only — источники чата после хода (#647); пусто — все.
+	Only []string
 }
 
 // SourcedAsker is an Asker that also tells where the answer came from.
@@ -270,6 +301,8 @@ type Relay struct {
 	Notes []Note
 	// Memory — решения телефона по предложенным фактам (nil — отказ словами).
 	Memory Memory
+	// Desk — состояние окна для телефона (nil — отказ словами).
+	Desk DeskInfo
 }
 
 // Notifier tells the phones an answer is waiting (kb-сервер, /api/mail/notify).
@@ -366,7 +399,7 @@ func (r Relay) request(st *State, m Message) (Payload, bool) {
 		return Payload{}, false
 	}
 	switch p.Kind {
-	case KindQuestion, KindSearch, KindOpen, KindMemory:
+	case KindQuestion, KindSearch, KindOpen, KindMemory, KindDesk:
 		return p, true
 	}
 	return Payload{}, false
@@ -389,6 +422,8 @@ func (r Relay) handle(ctx context.Context, st *State, m Message) (bool, error) {
 		reply = r.ask(ctx, st, m.Chat, req.Text)
 	case KindMemory:
 		reply = r.decide(ctx, st, m.Chat, req)
+	case KindDesk:
+		reply = r.desk(ctx)
 	default:
 		reply = r.find(ctx, req)
 	}
@@ -430,7 +465,7 @@ func (r Relay) ask(ctx context.Context, st *State, chat, question string) Payloa
 		return Payload{Kind: KindError, Text: err.Error()}
 	}
 	st.Chats[chat] = a.Chat
-	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources, Context: a.Context}
+	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources, Context: a.Context, Only: a.Only}
 }
 
 // minPostGap — предел частоты отправки окна в ящик (сервер: раз в секунду).
@@ -646,6 +681,18 @@ func clip(text string, limit int) string {
 		cut--
 	}
 	return text[:max(cut, 0)] + "…"
+}
+
+// desk tells the phone the window's state (#647): модель и названия источников.
+func (r Relay) desk(ctx context.Context) Payload {
+	if r.Desk == nil {
+		return Payload{Kind: KindError, Text: DeskUnsupported}
+	}
+	st, err := r.Desk.State(ctx)
+	if err != nil {
+		return Payload{Kind: KindError, Text: err.Error()}
+	}
+	return Payload{Kind: KindDesk, Desk: &st}
 }
 
 // ErrNoFinder — relay собран без поиска для телефона. Слова для человека
