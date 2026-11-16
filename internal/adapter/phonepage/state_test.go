@@ -337,6 +337,20 @@ want(s.take(st24, { seq: 3, chat: "c", from: "desk" }, dk14(3, { kind: "edited",
 s.take(st24, { seq: 4, chat: "c", from: "desk" }, dk14(4, { kind: "error", text: "chaterr" }));
 want(/не смогло/.test(st24.chats.c.msgs.at(-1)?.text || ""), "a refused edit is told in words");
 
+// 26. Удаленный на телефоне чат не возвращается призраком (ревью #662): ответ,
+// отказ и шаг окна для него — мимо; его неотправленное из исходящих уходит —
+// платного хода для удаленного чата нет; удаление из окна — то же забвение.
+want(typeof s.forget === "function", "forget is exported");
+if (typeof s.forget === "function") {
+  const st26 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { c: { title: "Сроки", msgs: [{ who: "me", text: "сроки?" }], pending: true, updated: 1 }, k: { title: "Другой", msgs: [], updated: 1 } },
+    outbox: [{ chat: "c", sealed: "q", counter: "1" }, { chat: "k", sealed: "x", counter: "2" }] };
+  s.forget(st26, "c");
+  want(!st26.chats.c && st26.outbox.length === 1 && st26.outbox[0].chat === "k", "forget drops the chat and its queued messages");
+  want(s.take(st26, { seq: 1, chat: "c", from: "desk", at: "2026-11-16T10:00:00Z" }, dk14(1, { kind: "answer", text: "ответ" })) === false && !st26.chats.c, "an answer does not bring a deleted chat back");
+  want(s.take(st26, { seq: 2, chat: "c", from: "desk" }, dk14(2, { kind: "error", text: "chaterr" })) === false && !st26.chats.c, "a refusal does not bring it back either");
+  s.take(st26, { seq: 3, chat: "k", from: "desk" }, dk14(3, { kind: "delete", text: "chat" }));
+  want(!st26.chats.k && s.take(st26, { seq: 4, chat: "k", from: "desk" }, dk14(4, { kind: "answer", text: "поздно" })) === false && !st26.chats.k, "the window's delete forgets the chat too");
+}
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 
