@@ -1,10 +1,14 @@
 package phonepage_test
 
 import (
+	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/daniil/kb-engine/internal/usecase/mailrelay"
 )
 
 // stateCheck runs static/state.js in node: логика страницы без DOM и сети —
@@ -316,6 +320,14 @@ want(st23.chats.c.pending === true && st23.chats.c.heard === "диктовка",
 s.take(st23, { seq: 4, chat: "c", from: "desk" }, dk14(4, { kind: "error", text: "silent" }));
 want(/не расслышал/.test(st23.chats.c.msgs.at(-1).text), "silence of a voice question is told in words");
 
+// 25. Ревью #661: отказ по вопросу с файлом — словами про файл, а не про
+// голос; у «больше 10 МБ» свои слова.
+const st25 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { c: { title: "Чат", msgs: [{ who: "me", text: "📎 договор.pdf", attach: true }], pending: true, updated: 1 } } };
+s.take(st25, { seq: 1, chat: "c", from: "desk" }, dk14(1, { kind: "error", text: "mismatch" }));
+want(/файл/i.test(st25.chats.c.msgs.at(-1).text) && !/запис|голос/i.test(st25.chats.c.msgs.at(-1).text), "a file refusal speaks of the file");
+st25.chats.c.msgs.push({ who: "me", text: "📎 big.pdf", attach: true });
+s.take(st25, { seq: 2, chat: "c", from: "desk" }, dk14(2, { kind: "error", text: "toolarge" }));
+want(/10 МБ/.test(st25.chats.c.msgs.at(-1).text), "too large has words");
 // 24. Один чат в двух местах (#649): переименование и удаление из окна — в
 // чат телефона; подтверждение окна чат не меняет; отказ — словами.
 const st24 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { c: { title: "Старое", msgs: [], updated: 1 }, d: { title: "Другой", msgs: [], updated: 1 } } };
@@ -339,5 +351,18 @@ func TestPhoneStateLogic(t *testing.T) {
 	out, err := exec.Command(node, "--input-type=module", "-e", stateCheck, "file://"+mod).CombinedOutput()
 	if got := strings.TrimSpace(string(out)); err != nil || got != "ok" {
 		t.Fatalf("node: %v\n%s", err, got)
+	}
+}
+
+// Предел файла на телефоне — тот же, что у окна (ревью #661): разойдутся —
+// телефон пропустит, окно ответит отказом.
+func TestPhoneAttachLimitMatchesTheRelay(t *testing.T) {
+	src, err := os.ReadFile("static/state.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("export const MAX_ATTACH = %d;", mailrelay.MaxAttachment)
+	if !strings.Contains(string(src), want) {
+		t.Errorf("state.js has no %q", want)
 	}
 }

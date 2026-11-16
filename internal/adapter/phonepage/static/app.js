@@ -503,21 +503,32 @@ async function send(chat, payload, mark) {
 
 async function ask(text) {
   const chat = ui.chat, c = st.chats[chat], p = { kind: "question", text };
-  const att = ui.attach;
+  const att = ui.attach?.chat === chat ? ui.attach : null; // файл — того чата, где его приложили (ревью #661)
   if (att) { // «+» (#650): файл — кусками в файлах ящика, вопрос называет их по порядку
     ui.attach = null;
+    const pieces = [];
     try {
       const data = new Uint8Array(await att.file.arrayBuffer());
-      const pieces = [];
-      for (const [a, b] of pieceBounds(data.length, MAX_FILE_PLAIN)) pieces.push(await putPiece(await sealFile(st.pair, data.subarray(a, b))));
+      const bounds = pieceBounds(data.length, MAX_FILE_PLAIN);
+      for (const [i, [a, b]] of bounds.entries()) {
+        note("Файл уходит: кусок " + (i + 1) + " из " + bounds.length + "…", false);
+        pieces.push(await putPiece(await sealFile(st.pair, data.subarray(a, b))));
+      }
       p.attach = { name: att.file.name, type: att.file.type, size: data.length, pieces };
     } catch (err) {
-      ui.attach = att; // файл остается приложенным: повторить можно той же кнопкой
+      // Загруженное без вопроса никому не нужно — убрать; файл и текст остаются
+      // для повтора, вопрос не ушел (ревью #661).
+      for (const f of pieces) api(API + "/files/" + f.id, { method: "DELETE" }).catch(() => {});
+      ui.attach = att;
+      err.kept = true;
       throw err;
     }
   }
   const shown = att ? "📎 " + att.file.name + (text ? "\n" + text : "") : text;
-  await send(chat, p, (counter) => asked(c, shown, counter, Date.now()));
+  await send(chat, p, (counter) => {
+    asked(c, shown, counter, Date.now());
+    if (att) c.msgs[c.msgs.length - 1].attach = true; // отказ по нему — словами про файл
+  });
 }
 
 // flush posts the outbox in order; неотправленное остается до следующего опроса.
@@ -740,6 +751,7 @@ async function putPiece(sealed) {
   if (r.status === 401) throw unauth();
   if (r.status === 501 || r.status === 404 || r.status === 400 || r.status === 415) throw new Error("kb-сервер старше файлов с телефона");
   if (r.status === 429) throw new Error("много файлов подряд — подождите немного");
+  if (r.status === 413) throw new Error("кусок больше предела kb-сервера");
   if (!r.ok) throw new Error("kb-сервер ответил " + r.status);
   const { id } = await r.json();
   return { id, sha256: hexOf(new Uint8Array(await crypto.subtle.digest("SHA-256", sealed))), size: sealed.length };
@@ -769,8 +781,9 @@ function localRussianVoice() {
 
 // paintVoice shows the voice state and takes what the window heard.
 function paintVoice(c) {
-  $("att").hidden = !ui.attach;
-  if (ui.attach) $("att").textContent = "📎 " + ui.attach.file.name + " · убрать";
+  const att = ui.attach?.chat === ui.chat ? ui.attach : null;
+  $("att").hidden = !att;
+  if (att) $("att").textContent = "📎 " + att.file.name + " · убрать";
   const hear = st.desk?.hear || "";
   $("mic").hidden = $("talk").hidden = !hear; // окно не слышит — кнопок нет
   $("mic").setAttribute("aria-pressed", String(rec?.mode === "dictate"));
@@ -827,7 +840,7 @@ $("file").addEventListener("change", () => {
   if (!f) return;
   const why = attachRefusal(f.size);
   if (why) { note(why); return; }
-  ui.attach = { file: f };
+  ui.attach = { file: f, chat: ui.chat };
   show();
 });
 $("att").addEventListener("click", () => { ui.attach = null; show(); }); // нажатие на плашку — убрать файл
@@ -870,7 +883,7 @@ $("ctx").addEventListener("click", () => { // нажатие на круг — �
 });
 $("ask").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const text = $("q").value.trim() || (ui.attach ? "Что в этом файле?" : "");
+  const text = $("q").value.trim() || (ui.attach?.chat === ui.chat ? "Что в этом файле?" : "");
   if (!text || !ui.chat) return;
   const c = st.chats[ui.chat];
   if (!c.msgs.length) c.title = text.slice(0, 60);
@@ -881,7 +894,12 @@ $("ask").addEventListener("submit", async (e) => {
     await ask(text);
     note("");
   } catch (err) {
-    note(err.unauth ? "kb-сервер не пускает телефон: вопрос сохранен и уйдет, когда пустит." : "Пока не отправлено: " + err.message + ". Уйдет со следующим опросом.");
+    if (err.kept) { // файл не ушел — и вопрос не ушел: вернуть текст, сказать правду
+      if ($("q").value === "" && text !== "Что в этом файле?") $("q").value = text;
+      note("Файл не отправлен: " + err.message + ". Вопрос и файл остались — отправьте еще раз.");
+    } else {
+      note(err.unauth ? "kb-сервер не пускает телефон: вопрос сохранен и уйдет, когда пустит." : "Пока не отправлено: " + err.message + ". Уйдет со следующим опросом.");
+    }
   }
   $("send").disabled = false;
   show(true);

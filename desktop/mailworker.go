@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	goruntime "runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -501,6 +502,9 @@ func (a workerAsker) AskStepped(ctx context.Context, id, question string, step f
 
 // AskAttached is AskStepped with the phone's files (#650).
 func (a workerAsker) AskAttached(ctx context.Context, id, question string, files []mailrelay.File, step func(mailrelay.Step)) (mailrelay.Answer, error) {
+	if a.w.answer == nil && len(files) > 0 { // файл не выбрасывается молча (ревью #661)
+		return mailrelay.Answer{}, errors.New("окно собрано без вложений с телефона")
+	}
 	if a.w.answer == nil {
 		c, text, err := a.Ask(ctx, id, question)
 		return mailrelay.Answer{Chat: c, Text: text}, err
@@ -574,6 +578,13 @@ func chatAsker(d *chatDesk) askFn {
 func chatAnswerer(d *chatDesk) answerFn {
 	return func(ctx context.Context, chat, question string, files []mailrelay.File, began func(string), step func(chat.Use)) (mailrelay.Answer, error) {
 		quiet := askOut{worker: true, step: step, began: began}
+		if len(files) > 0 { // в чате окна вопрос назван с файлом (ревью #661)
+			names := make([]string, 0, len(files))
+			for _, f := range files {
+				names = append(names, "📎 "+f.Name)
+			}
+			question = strings.Join(names, "\n") + "\n" + question
+		}
 		req := askReq{ID: chat, Question: question}
 		for _, f := range files {
 			doc, err := d.phoneDoc(ctx, f)

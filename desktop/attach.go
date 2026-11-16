@@ -287,7 +287,7 @@ func extractBytes(ctx context.Context, ext extraction, raw []byte, kind string) 
 func (d *chatDesk) phoneDoc(ctx context.Context, f mailrelay.File) (chat.Doc, error) {
 	kind := strings.TrimPrefix(strings.ToLower(filepath.Ext(f.Name)), ".")
 	if kind == "" {
-		kind = phoneKinds[f.Type]
+		kind = weblink.KindOfMIME(f.Type) // одна таблица типов с ссылками (ревью #661)
 	}
 	text, err := extractBytes(ctx, d.ext, f.Data, kind)
 	if err != nil {
@@ -295,7 +295,3 @@ func (d *chatDesk) phoneDoc(ctx context.Context, f mailrelay.File) (chat.Doc, er
 	}
 	return chat.Doc{Ref: "phone:" + f.Name, Title: f.Name, Source: "Телефон", Text: text}, nil
 }
-
-// phoneKinds names a file without an extension by its type.
-var phoneKinds = map[string]string{"application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png", "image/heic": "heic", "text/plain": "txt",
-	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx"}
