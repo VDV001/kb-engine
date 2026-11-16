@@ -398,7 +398,7 @@ func (r Relay) request(st *State, m Message) (Payload, bool) {
 		return Payload{}, false
 	}
 	switch p.Kind {
-	case KindQuestion, KindSearch, KindOpen, KindMemory:
+	case KindQuestion, KindSearch, KindOpen, KindMemory, KindDesk:
 		return p, true
 	}
 	return Payload{}, false
@@ -421,6 +421,8 @@ func (r Relay) handle(ctx context.Context, st *State, m Message) (bool, error) {
 		reply = r.ask(ctx, st, m.Chat, req.Text)
 	case KindMemory:
 		reply = r.decide(ctx, st, m.Chat, req)
+	case KindDesk:
+		reply = r.desk(ctx)
 	default:
 		reply = r.find(ctx, req)
 	}
@@ -462,7 +464,7 @@ func (r Relay) ask(ctx context.Context, st *State, chat, question string) Payloa
 		return Payload{Kind: KindError, Text: err.Error()}
 	}
 	st.Chats[chat] = a.Chat
-	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources, Context: a.Context}
+	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources, Context: a.Context, Model: a.Model, Only: a.Only}
 }
 
 // minPostGap — предел частоты отправки окна в ящик (сервер: раз в секунду).
@@ -678,6 +680,23 @@ func clip(text string, limit int) string {
 		cut--
 	}
 	return text[:max(cut, 0)] + "…"
+}
+
+// desk tells the phone the window's state (#647): модель и названия источников.
+func (r Relay) desk(ctx context.Context) Payload {
+	if r.FindTimeout > 0 { // тот же срок, что у поиска: работник один на все серверы
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, r.FindTimeout)
+		defer cancel()
+	}
+	if r.Desk == nil {
+		return Payload{Kind: KindError, Text: "окно этой версии не отдает телефону модель и источники"}
+	}
+	st, err := r.Desk.State(ctx)
+	if err != nil {
+		return Payload{Kind: KindError, Text: err.Error()}
+	}
+	return Payload{Kind: KindDesk, Desk: &st}
 }
 
 // ErrNoFinder — relay собран без поиска для телефона. Слова для человека

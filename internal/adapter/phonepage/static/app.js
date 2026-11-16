@@ -8,7 +8,7 @@
 // Service worker (sw.js) — только push: «компьютер ответил», когда страница
 // закрыта. Работы без сети нет — страница всегда свежая с сервера.
 import { importKey, seal, open } from "./crypto.js";
-import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted, deciding, hideFact } from "./state.js";
+import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted, deciding, hideFact, deskChat, choiceView } from "./state.js";
 
 const POLL_MS = 10_000; // решение 15.11: короткий опрос раз в 10 с
 const UNAUTH_MS = 60_000; // 401: реже, но не сдаемся — сервер мог ошибиться ненадолго
@@ -362,6 +362,17 @@ function memCard(f) {
   return li;
 }
 
+// paintChoice shows chat c's model and sources (#647): только показ — менять
+// их в окне (решение 16.11); нажатие объясняет это.
+function paintChoice(c) {
+  const v = c && choiceView(c, st.desk), m = $("model"), s = $("srcs");
+  m.hidden = s.hidden = !v;
+  if (!v) return;
+  m.textContent = v.model || "модель";
+  s.textContent = "Источники · " + v.on + (v.on === v.total ? "" : " из " + v.total);
+  s.hidden = !v.total;
+}
+
 // paintCtx draws the context ring of the open chat (#647); числа — только из ctxView.
 function paintCtx(c) {
   const v = ctxView(c?.context, !!c?.msgs.some((m) => m.who === "desk")), b = $("ctx");
@@ -384,6 +395,7 @@ function ctxNote(v) {
 
 function paintChat(c, follow) {
   paintCtx(c);
+  paintChoice(c);
   // Человек правит факт: опрос раз в 10 с не перестраивает чат под пальцами —
   // поле, фокус и клавиатура остаются (ревью #655).
   if (document.activeElement?.dataset?.memText) return;
@@ -561,6 +573,19 @@ function openChat(id) {
   ui.chat = id;
   ui.view = "chat";
   show(true);
+  askDesk();
+}
+
+// askDesk asks the window for its model and sources (#647) — не чаще раза в
+// 5 минут: меняются редко, а каждый запрос — круг ящика. deskAsked — когда
+// спросили: старое окно desk не знает, и вопрос повторяется через тот же
+// срок, а не на каждое открытие чата.
+const DESK_EVERY = 5 * 60_000;
+async function askDesk() {
+  const now = Date.now();
+  if (now - (st.deskAsked || 0) < DESK_EVERY || (st.desk && now - (st.deskAt || 0) < DESK_EVERY)) return;
+  st.deskAsked = now;
+  try { await send(deskChat(st), { kind: "desk", text: "state" }); } catch { /* в исходящих: уйдет со следующим опросом */ }
 }
 
 $("new-chat").addEventListener("click", () => {
@@ -614,6 +639,14 @@ $("msgs").addEventListener("click", async (e) => { // «Запомнить о В
   } catch (err) { // решение в исходящих: уйдет со следующим опросом, как вопрос
     note(err.unauth ? "kb-сервер не пускает телефон: решение сохранено и уйдет, когда пустит." : "Пока не отправлено: " + err.message + ". Уйдет со следующим опросом.");
   }
+});
+$("model").addEventListener("click", () => {
+  const v = choiceView(st.chats[ui.chat] || {}, st.desk);
+  if (v) note("Модель чата: " + v.model + ". Сменить ее можно в окне DVK на компьютере.", false);
+});
+$("srcs").addEventListener("click", () => {
+  const v = choiceView(st.chats[ui.chat] || {}, st.desk);
+  if (v) note("Чат ищет: " + (v.names.join(", ") || "нигде из нынешних источников") + ". Сменить источники можно в окне DVK на компьютере.", false);
 });
 $("ctx").addEventListener("click", () => { // нажатие на круг — что значит заполнение
   const c = st.chats[ui.chat], v = ctxView(c?.context, !!c?.msgs.some((m) => m.who === "desk"));

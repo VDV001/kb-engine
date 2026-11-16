@@ -35,6 +35,8 @@ export function take(st, m, o) {
   try { p = JSON.parse(new TextDecoder().decode(o.plain)); } catch { return false; }
   const at = Date.parse(m.at) || Date.now();
   if (m.from === "desk") st.lastDesk = Math.max(st.lastDesk || 0, at);
+  if (m.chat === deskChat(st)) return desked(st, m, p);
+  if (m.chat.startsWith("desk-")) return false; // состояние окна для другого телефона того же ключа
   if (m.chat === searchChat(st)) return found(st, m, p);
   if (m.chat.startsWith("search-")) return false; // поиск другого телефона того же ключа
   if (m.from === "desk" && (p.kind === "remember" || p.kind === "memory")) return remembered(st.chats[m.chat], p);
@@ -62,6 +64,10 @@ export function take(st, m, o) {
     // в окне он ничего не сохраняет и прежний счет остается (ревью #654).
     if (p.context?.used > 0) c.context = { used: p.context.used, window: p.context.window || 0 };
     else if (p.kind === "answer") delete c.context;
+    if (p.kind === "answer") { // модель и источники чата — от окна (#647); источников нет — все
+      if (p.model) c.model = p.model;
+      c.only = p.only?.length ? p.only : undefined;
+    }
   } else {
     const mine = who === hex(st.sender);
     const sent = mine && c.msgs.find((x) => x.who === "me" && x.counter === o.counter.toString());
@@ -159,14 +165,29 @@ export function searchChat(st) {
   return "search-" + hex(st.sender || []);
 }
 
-// deskChat is the mailbox chat of the window's state for this phone (#647).
+// deskChat is the mailbox chat of the window's state for this phone (#647):
+// свой, а не чат поиска — отказ на desk не становится ошибкой поиска.
 export function deskChat(st) {
-  return searchChat(st);
+  return "desk-" + hex(st.sender || []);
 }
 
-// choiceView is what the phone shows of chat c's model and sources.
-export function choiceView() {
-  return null;
+// desked applies the window's state (#647). Отказ (окно без desk) — мимо:
+// модель и источники не показываются, повтор — через срок askDesk.
+function desked(st, m, p) {
+  if (m.from !== "desk" || p.kind !== "desk") return false;
+  st.desk = p.desk || null;
+  st.deskAt = Date.now();
+  return true;
+}
+
+// choiceView is what the phone shows of chat c's model and sources (#647):
+// модель чата (до ответа — модель окна) и источники, которые окно знает;
+// источники не выбраны — все. Без состояния окна — нечего показать.
+export function choiceView(c, desk) {
+  if (!desk) return null;
+  const all = desk.sources || [], only = Array.isArray(c.only) ? c.only : null;
+  const shown = only ? all.filter((x) => only.includes(x.id)) : all;
+  return { model: c.model || desk.model || "", on: shown.length, total: all.length, names: shown.map((x) => x.name) };
 }
 
 // found applies the desk's answer to a search: выдача, документ или отказ.
