@@ -28,8 +28,8 @@ var (
 type Phone struct {
 	Device string    `json:"device"`
 	At     time.Time `json:"at"`
-	Seen   time.Time `json:"-"`
-	Name   string    `json:"-"`
+	Seen   time.Time `json:"seen"` // ноль — телефон еще не входил
+	Name   string    `json:"name"` // по браузеру телефона; пусто до первого входа
 }
 
 // AddPhone pairs a new phone and returns its device id and token. Токен

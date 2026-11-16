@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
@@ -87,8 +88,13 @@ func RevokeDevice(ctx context.Context, s blob.Store, id domain.UserID, device st
 	if err != nil {
 		return err
 	}
-	// Подписку стираем следом; не вышло — не беда: Pushes сверяет с DevicesKey.
+	// Подписку и вход стираем следом; не вышло — не беда: Pushes и List
+	// сверяют с DevicesKey.
 	_ = clearPush(ctx, s, id, device)
+	_ = update(ctx, s, SeenKey, func(r *seenRegistryDTO) error {
+		r.Seen = slices.DeleteFunc(r.Seen, func(e seenDTO) bool { return e.ID == id.String() && e.Device == device })
+		return nil
+	})
 	return nil
 }
 
@@ -120,11 +126,17 @@ func (p Phones) Add(ctx context.Context, id domain.UserID) (string, string, erro
 // List lists the phones of id.
 func (p Phones) List(ctx context.Context, id domain.UserID) ([]mail.Phone, error) {
 	ds, err := Devices(ctx, p.Store, id)
+	if err != nil {
+		return []mail.Phone{}, err
+	}
+	// Входы — подсказка окну, а не доступ: не прочитались — список без них.
+	vs, _ := seen(ctx, p.Store, id)
 	out := make([]mail.Phone, 0, len(ds))
 	for _, d := range ds {
-		out = append(out, mail.Phone{Device: d.Device, At: d.At})
+		v := vs[d.Device]
+		out = append(out, mail.Phone{Device: d.Device, At: d.At, Seen: v.At, Name: v.Name})
 	}
-	return out, err
+	return out, nil
 }
 
 // Revoke unpairs phone device of id.
@@ -266,6 +278,20 @@ const SeenKey = "auth/seen.json"
 // телефон опрашивает ящик раз в 10 с, а запись — чтение и запись бакета.
 type Visits struct {
 	Store blob.Store
+
+	mu   sync.Mutex
+	last map[string]seenDTO // id|device → последнее записанное
+}
+
+type seenRegistryDTO struct {
+	Seen []seenDTO `json:"seen"`
+}
+
+type seenDTO struct {
+	ID     string    `json:"id"`
+	Device string    `json:"device"`
+	Name   string    `json:"name,omitempty"`
+	At     time.Time `json:"at"`
 }
 
 // VisitEvery — как часто вход телефона переписывается в SeenKey; первый вход
@@ -274,5 +300,49 @@ const VisitEvery = 5 * time.Minute
 
 // Visit notes that phone device of id came in at at, named name.
 func (v *Visits) Visit(ctx context.Context, id domain.UserID, device, name string, at time.Time) error {
-	return errors.ErrUnsupported
+	k := id.String() + "|" + device
+	v.mu.Lock()
+	prev, ok := v.last[k]
+	v.mu.Unlock()
+	if ok && prev.Name == name && at.Sub(prev.At) < VisitEvery {
+		return nil
+	}
+	entry := seenDTO{ID: id.String(), Device: device, Name: name, At: at.UTC()}
+	err := update(ctx, v.Store, SeenKey, func(r *seenRegistryDTO) error {
+		r.Seen = slices.DeleteFunc(r.Seen, func(s seenDTO) bool { return s.ID == entry.ID && s.Device == device })
+		r.Seen = append(r.Seen, entry)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	v.mu.Lock()
+	if v.last == nil {
+		v.last = map[string]seenDTO{}
+	}
+	v.last[k] = entry
+	v.mu.Unlock()
+	return nil
+}
+
+// seen reads the visits of id's phones: device → последний вход.
+func seen(ctx context.Context, s blob.Store, id domain.UserID) (map[string]seenDTO, error) {
+	var r seenRegistryDTO
+	o, err := s.Get(ctx, SeenKey)
+	switch {
+	case errors.Is(err, blob.ErrNotFound):
+	case err != nil:
+		return nil, fmt.Errorf("userauth: read %s: %w", SeenKey, err)
+	default:
+		if err := json.Unmarshal(o.Data, &r); err != nil {
+			return nil, fmt.Errorf("userauth: registry %s: %w", SeenKey, err)
+		}
+	}
+	out := map[string]seenDTO{}
+	for _, e := range r.Seen {
+		if e.ID == id.String() {
+			out[e.Device] = e
+		}
+	}
+	return out, nil
 }

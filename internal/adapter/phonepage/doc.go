@@ -34,6 +34,9 @@ func Handler() http.Handler {
 		h.Set("Content-Security-Policy", csp)
 		h.Set("Referrer-Policy", "no-referrer") // адрес с ключом во фрагменте не уходит дальше
 		h.Set("X-Content-Type-Options", "nosniff")
+		// Модель телефона для окна («Samsung SM-S918B»): Chrome шлет ее этому
+		// адресу дальше в запросах к ящику; Safari не шлет — там «iPhone».
+		h.Set("Accept-CH", "Sec-CH-UA-Model")
 		h.Set("Cache-Control", "no-cache") // новая версия страницы — с первого же открытия
 		if strings.HasSuffix(r.URL.Path, ".webmanifest") {
 			h.Set("Content-Type", "application/manifest+json")

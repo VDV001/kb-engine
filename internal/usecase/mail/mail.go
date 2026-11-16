@@ -211,5 +211,8 @@ func (s Service) PushKey(ctx context.Context) (string, error) {
 // Visit notes that the calling phone came in; компьютер не отмечается, без
 // Visits — ничего. Сбой — ошибка: вызывающий только пишет ее в журнал.
 func (s Service) Visit(ctx context.Context, id domain.UserID, side domain.MailSide, device, name string) error {
-	return errors.ErrUnsupported
+	if side != domain.MailPhone || s.Visits == nil {
+		return nil
+	}
+	return s.Visits.Visit(ctx, id, device, name, s.Now())
 }

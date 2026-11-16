@@ -83,6 +83,10 @@ func (h mailRoutes) with(next func(http.ResponseWriter, *http.Request, mailCalle
 			http.Error(w, "bearer token required", http.StatusUnauthorized)
 			return
 		}
+		// Вход телефона — для окна: «заходил в 12:06», имя по браузеру.
+		if err := h.svc.Visit(r.Context(), c.id, c.side, c.device, phoneName(r.UserAgent(), r.Header.Get("Sec-CH-UA-Model"))); err != nil {
+			h.logf("mail: visit: %v", err)
+		}
 		next(w, r, c)
 	}
 }
@@ -127,12 +131,18 @@ func (h mailRoutes) listPhones(w http.ResponseWriter, r *http.Request, c mailCal
 		return
 	}
 	type phoneDTO struct {
-		Device string    `json:"device"`
-		At     time.Time `json:"at"`
+		Device string     `json:"device"`
+		At     time.Time  `json:"at"`
+		Seen   *time.Time `json:"seen,omitempty"` // нет — телефон еще не входил
+		Name   string     `json:"name,omitempty"`
 	}
 	out := make([]phoneDTO, 0, len(list))
 	for _, p := range list {
-		out = append(out, phoneDTO{Device: p.Device, At: p.At})
+		d := phoneDTO{Device: p.Device, At: p.At, Name: p.Name}
+		if !p.Seen.IsZero() {
+			d.Seen = &p.Seen
+		}
+		out = append(out, d)
 	}
 	writeJSONStatus(w, http.StatusOK, map[string][]phoneDTO{"devices": out})
 }
@@ -261,4 +271,52 @@ func writeJSONStatus(w http.ResponseWriter, code int, v any) {
 
 // phoneName names a phone by its browser: модель из Client Hints (Chrome на
 // Android после Accept-CH страницы /m/), иначе устройство из User-Agent.
-func phoneName(userAgent, model string) string { return "" }
+func phoneName(userAgent, model string) string {
+	if m, err := strconv.Unquote(model); err == nil && plainModel(m) {
+		return withBrand(m)
+	}
+	switch {
+	case strings.Contains(userAgent, "iPhone"):
+		return "iPhone"
+	case strings.Contains(userAgent, "iPad"):
+		return "iPad"
+	case strings.Contains(userAgent, "Android"):
+		return androidName(userAgent)
+	case strings.Contains(userAgent, "Macintosh"):
+		return "Mac"
+	case strings.Contains(userAgent, "Windows"):
+		return "Windows"
+	}
+	return ""
+}
+
+// androidName reads the model from «Android 14; SM-A546B)»; урезанный Chrome
+// пишет вместо модели «K» — тогда просто «Android».
+func androidName(userAgent string) string {
+	_, rest, _ := strings.Cut(userAgent, "Android")
+	_, m, _ := strings.Cut(rest, ";")
+	m, _, closed := strings.Cut(m, ")")
+	if m = strings.TrimSpace(m); closed && m != "K" && plainModel(m) {
+		return withBrand(m)
+	}
+	return "Android"
+}
+
+// plainModel accepts a model name a person can read: буквы, цифры, пробел, - _ .
+// и не длиннее 40 — значение пришло от клиента и показывается в окне.
+func plainModel(m string) bool {
+	if m == "" || len(m) > 40 {
+		return false
+	}
+	return strings.IndexFunc(m, func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && !strings.ContainsRune(" -_.", r)
+	}) < 0
+}
+
+// withBrand names Samsung by its model prefix: «SM-S918B» → «Samsung SM-S918B».
+func withBrand(m string) string {
+	if strings.HasPrefix(m, "SM-") {
+		return "Samsung " + m
+	}
+	return m
+}
