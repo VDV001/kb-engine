@@ -2039,12 +2039,16 @@ body:not(.no-mk-spark) .mk-legend i.fc { border-image: linear-gradient(90deg, va
 /* Строка телефона — плашка: слева имя и дата (дата уходит под имя, если тесно),
    справа «Отвязать» кнопкой-рамкой, как остальные в карточке, а не ссылкой
    (отзыв 15.11: ссылки выглядели дешево и съезжали). */
-.conn-phone-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 12px; padding: 8px 10px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg-2); font-size: 13px; color: var(--z-ink); }
-.conn-phone-off { height: 28px; padding: 0 12px; }
+.conn-phone-list li { display: grid; gap: 8px; padding: 8px 10px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg-2); font-size: 13px; color: var(--z-ink); }
+.conn-phone-off, .conn-phone-btn { height: 28px; padding: 0 12px; }
 .conn-phone-off:hover:not(:disabled) { border-color: var(--z-bad); color: var(--z-bad); }
-.conn-phone-list li > div { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 10px; }
-.conn-phone-list li > div > * { white-space: nowrap; }
+/* Имя, под ним «заходил · привязан · id», ниже кнопки: в узкой карточке текст не сжимается в столбик (отзыв 16.11). */
+.conn-phone-who { display: grid; gap: 4px; min-width: 0; }
+.conn-phone-who > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conn-phone-list small { color: var(--z-muted); }
+.conn-phone-who small > span { white-space: nowrap; } /* дата целиком, перенос — между частями */
+.conn-phone-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.conn-phone-name { min-width: 0; max-width: 100%; width: 24ch; font: inherit; font-size: 13px; color: var(--z-ink); background: var(--z-bg-3); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 3px 8px; }
 .conn-qr { display: grid; justify-items: start; gap: 8px; }
 .conn-qr img { width: 240px; height: 240px; padding: 12px; background: #fff; border-radius: var(--z-radius); image-rendering: pixelated; }
 .conn-grid .conn-quiet .lnk.bad:hover { color: var(--z-bad); }

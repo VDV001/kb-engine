@@ -51,3 +51,11 @@ func TestPageServesWithStrictHeaders(t *testing.T) {
 		}
 	}
 }
+
+// Страница просит у Chrome модель телефона: окно называет телефон по ней (#622).
+func TestPageAsksForTheModel(t *testing.T) {
+	rec := get(phonepage.Handler(), "/m/")
+	if ach := rec.Header().Get("Accept-CH"); !strings.Contains(ach, "Sec-CH-UA-Model") {
+		t.Fatalf("Accept-CH %q", ach)
+	}
+}

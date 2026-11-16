@@ -137,28 +137,49 @@ func Revoke(ctx context.Context, s blob.Store, id domain.UserID) error {
 	if err != nil {
 		return err
 	}
-	return update(ctx, s, DevicesKey, func(r *registryDTO) error {
+	err = update(ctx, s, DevicesKey, func(r *registryDTO) error {
 		r.Users = slices.DeleteFunc(r.Users, func(u userDTO) bool { return u.ID == id.String() })
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	// Входы телефонов — следом; не вышло — не беда: окно их уже не спросит, а
+	// новый вход без живого телефона не пишется (ревью #652).
+	_ = clearSeen(ctx, s, id, func(string) bool { return true })
+	return nil
 }
 
 // update reads the registry, applies change and writes it back under the
 // version it read, retrying when someone else wrote in between.
 func update[T any](ctx context.Context, s blob.Store, key string, change func(*T) error) error {
+	return updateKey(ctx, s, key, false, change)
+}
+
+// errUnchanged from change: менять нечего, update ничего не пишет и не ошибается.
+var errUnchanged = errors.New("userauth: unchanged")
+
+// updateKey is update; loose — испорченный объект читается пустым: так только
+// для подсказок окну (входы телефонов), реестры токенов — строго.
+func updateKey[T any](ctx context.Context, s blob.Store, key string, loose bool, change func(*T) error) error {
 	for range writeAttempts {
 		var r T
 		o, err := s.Get(ctx, key)
 		switch {
 		case errors.Is(err, blob.ErrNotFound):
 		case err != nil:
-			return fmt.Errorf("userauth: read registry: %w", err)
+			return fmt.Errorf("userauth: read %s: %w", key, err)
 		default:
 			if err := json.Unmarshal(o.Data, &r); err != nil {
-				return fmt.Errorf("userauth: registry %s: %w", key, err)
+				if !loose {
+					return fmt.Errorf("userauth: registry %s: %w", key, err)
+				}
+				r = *new(T)
 			}
 		}
-		if err := change(&r); err != nil {
+		if err := change(&r); errors.Is(err, errUnchanged) {
+			return nil
+		} else if err != nil {
 			return err
 		}
 		data, err := json.MarshalIndent(r, "", "  ")
