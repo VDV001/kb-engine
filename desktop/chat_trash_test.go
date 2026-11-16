@@ -129,8 +129,9 @@ func TestChat_DeleteDoesNotWaitForAnotherTurn(t *testing.T) {
 	d.model = func(desktopconfig.Chat, string) chat.Model { return g }
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	go func() { _, _ = d.ask(ctx, askReq{ID: a.ID, Question: "еще"}, askOut{}) }()
-	defer close(g.release)
+	turn := make(chan struct{})
+	go func() { _, _ = d.ask(ctx, askReq{ID: a.ID, Question: "еще"}, askOut{}); close(turn) }()
+	defer func() { close(g.release); <-turn }() // ход дописывает чат до уборки TempDir
 	<-g.entered
 	done := make(chan struct{})
 	go func() { _ = d.Delete(b.ID); _, _ = d.Trash(); close(done) }()

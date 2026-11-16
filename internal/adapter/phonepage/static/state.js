@@ -106,13 +106,14 @@ export function take(st, m, o) {
 
 // forget deletes chat id on the phone (ревью #662): чат, его неотправленное из
 // исходящих (вопрос удаленного чата не стоит платного хода) и метка «удален» —
-// поздний ответ окна не заведет чат-призрак.
+// поздний ответ окна не заведет чат-призрак. Неотправленное помечается в том
+// же массиве: отправка держит его голову через await (ревью #665).
 // ponytail: метки «удален» копятся по одной на удаленный чат (16 байт id);
 // станут заметны — забывать старше месяца.
 export function forget(st, id) {
   delete st.chats[id];
   (st.gone ||= {})[id] = 1;
-  if (st.outbox) st.outbox = st.outbox.filter((o) => o.chat !== id);
+  for (const o of st.outbox || []) if (o.chat === id) o.drop = true;
 }
 
 // waitView is what the waiting question of chat c shows (#646).

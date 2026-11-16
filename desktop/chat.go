@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -169,6 +170,9 @@ type chatDesk struct {
 	pmu        sync.Mutex
 	proposals  []pendingIteration
 	mu         sync.Mutex // один вопрос за раз: файл чата пишется целиком
+	// fmu — короткий замок файлов чатов: запись, перенос в корзину и обратно.
+	// Удаление берет только его, а не mu на весь ход (ревью #665).
+	fmu sync.Mutex
 	// memoryNew tells the page about new facts waiting for approval (событие portrait:new).
 	memoryNew  func(portraitNews)
 	portraitMu sync.Mutex
@@ -405,7 +409,7 @@ func (d *chatDesk) ask(parent context.Context, r askReq, out askOut) (chatRecord
 		chatMessage{Role: string(chat.RoleAssistant), Text: turn.Answer, Docs: used, Uses: append(web, turn.Uses...)})
 	rec.Model, rec.Updated, rec.Sources = c.Model, d.now(), slices.Clone(r.Sources)
 	rec.ContextUsed = turn.PromptTokens // 0 — провайдер не прислал счет: старое число не показываем
-	if err := d.save(rec); err != nil {
+	if err := d.saveLive(rec, id != ""); err != nil {
 		return chatRecord{}, err
 	}
 	d.dropAskedDrafts(out, rec.ID)
@@ -495,6 +499,7 @@ func (d *chatDesk) foundDoc(ref string) (chat.Doc, bool) {
 
 // List returns the chats, newest first.
 func (d *chatDesk) List() ([]chatSummary, error) {
+	d.purgeTrash()
 	files, err := filepath.Glob(filepath.Join(d.dir, "*.json"))
 	if err != nil {
 		return nil, err
@@ -528,17 +533,17 @@ func (d *chatDesk) contextOf(rec chatRecord) *contextNote {
 	return &contextNote{Used: rec.ContextUsed, Window: d.config().ContextWindow}
 }
 
-// Delete moves a chat to the trash. Под замком чатов, как ход и
-// переименование: удаление с телефона посреди хода ждет его конца, иначе
-// сохранение хода вернуло бы чат (ревью #662).
+// Delete moves a chat to the trash at once: ход, переименование и сжатие
+// пишут удаленный чат только через saveLive, и та его не вернет (ревью #662,
+// #665 — ждать конца чужого хода удаление не должно).
 func (d *chatDesk) Delete(id string) error {
 	p, err := d.path(id)
 	if err != nil {
 		return err
 	}
-	d.mu.Lock()
+	d.fmu.Lock()
 	err = d.toTrash(id, p)
-	d.mu.Unlock()
+	d.fmu.Unlock()
 	if err != nil {
 		return err
 	}
@@ -570,6 +575,9 @@ func (d *chatDesk) load(id string) (chatRecord, error) {
 
 func (d *chatDesk) loadFrom(p, id string) (chatRecord, error) {
 	raw, err := os.ReadFile(p)
+	if errors.Is(err, fs.ErrNotExist) {
+		return chatRecord{}, fmt.Errorf("%w (%w)", errChatGone, err) // и errors.Is(fs.ErrNotExist): так узнают удаленный статистика и сжатие
+	}
 	if err != nil {
 		return chatRecord{}, err
 	}
@@ -578,6 +586,26 @@ func (d *chatDesk) loadFrom(p, id string) (chatRecord, error) {
 		return chatRecord{}, fmt.Errorf("чат %s не читается: %w", id, err)
 	}
 	return rec, nil
+}
+
+// errChatGone — чат удалили (на телефоне или в окне), пока шел ход.
+var errChatGone = errors.New("чат удален: он в корзине под списком чатов, «Вернуть» вернет его")
+
+// saveLive saves rec unless the chat existed and was deleted meanwhile:
+// ход, переименование и сжатие удаленный чат не воскрешают.
+func (d *chatDesk) saveLive(rec chatRecord, existed bool) error {
+	d.fmu.Lock()
+	defer d.fmu.Unlock()
+	if existed {
+		p, err := d.path(rec.ID)
+		if err != nil {
+			return err
+		}
+		if _, err := os.Stat(p); errors.Is(err, fs.ErrNotExist) {
+			return errChatGone
+		}
+	}
+	return d.save(rec)
 }
 
 // save writes the chat atomically, 0600: история — личное.
@@ -895,7 +923,7 @@ func (d *chatDesk) CompressChat(id string) (chatRecord, error) {
 	rec.Compressed = &chatCompressed{Text: sum.Text, Folded: sum.Folded}
 	rec.ContextUsed = 0 // счет был до сжатия; новый придет с ближайшим ответом
 	rec.Updated = d.now()
-	if err := d.save(rec); err != nil {
+	if err := d.saveLive(rec, true); err != nil {
 		return chatRecord{}, err
 	}
 	rec.CanCompress = canCompress(rec)

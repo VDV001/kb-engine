@@ -43,7 +43,8 @@ func TestRelayEditsTheWindowsChat(t *testing.T) {
 		t.Fatalf("renamed %v, deleted %v", e.renamed, e.deleted)
 	}
 	got := payloads(t, b)
-	if len(got) != 4 || got[1].Kind != mailrelay.KindEdited || got[2].Kind != mailrelay.KindEdited || got[3].Kind != mailrelay.KindEdited {
+	// Удаление уходит всем телефонам ключа тем же кругом (ревью #665).
+	if len(got) != 5 || got[1].Kind != mailrelay.KindEdited || got[2].Kind != mailrelay.KindDelete || got[3].Kind != mailrelay.KindEdited || got[4].Kind != mailrelay.KindEdited {
 		t.Fatalf("answers %+v", got)
 	}
 }

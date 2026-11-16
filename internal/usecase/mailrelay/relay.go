@@ -367,7 +367,15 @@ type State struct {
 	// Titles — название с телефона для чата, которого окно еще не знает: ляжет
 	// на чат окна после первого хода (ревью #662).
 	Titles map[string]string `json:"titles,omitempty"`
+	// Deleted — удаленные чаты ящика: вопрос, отправленный до удаления, не
+	// заводит новый чат окна и не тратит ход (ревью #665).
+	// ponytail: по записи на удаленный чат (id ~16 байт); станет заметно —
+	// забывать старше срока ящика.
+	Deleted map[string]bool `json:"deleted,omitempty"`
 }
+
+// maxTitles bounds State.Titles: названия чатов, которых окно еще не знает.
+const maxTitles = 50
 
 // Store keeps the state.
 type Store interface {
@@ -506,6 +514,9 @@ func (r Relay) request(st *State, m Message) (Payload, bool) {
 		return Payload{}, false // повтор или старое: сервер мог повторить
 	}
 	st.Seen[key] = o.Counter
+	if st.Deleted[m.Chat] {
+		return Payload{}, false // чат удален: поздний вопрос не заводит его заново
+	}
 	var p Payload
 	if json.Unmarshal(o.Plain, &p) != nil || strings.TrimSpace(p.Text) == "" {
 		return Payload{}, false
@@ -708,8 +719,7 @@ func (r Relay) offer(st *State) error {
 		}
 		st.Outbox = append(st.Outbox, out)
 		if n.Payload.Kind == KindDelete { // окно удалило чат: связь и предложенное забыть (#649)
-			delete(st.Chats, chat)
-			delete(st.Offered, chat)
+			forgetChat(st, chat)
 		}
 		if st.Offered == nil {
 			st.Offered = map[string][]string{}
@@ -955,7 +965,9 @@ func (r Relay) editChat(ctx context.Context, st *State, chat string, req Payload
 			if st.Titles == nil {
 				st.Titles = map[string]string{}
 			}
-			st.Titles[chat] = string(title)
+			if _, ok := st.Titles[chat]; ok || len(st.Titles) < maxTitles {
+				st.Titles[chat] = string(title)
+			}
 		} else {
 			delete(st.Titles, chat)
 		}
@@ -968,15 +980,44 @@ func (r Relay) editChat(ctx context.Context, st *State, chat string, req Payload
 	if req.Kind == KindRename {
 		err = r.Chats.RenameChat(ctx, id, string(title))
 	} else {
-		// Связь не забывается здесь: окно ответит заметкой об удалении, она
-		// дойдет до всех телефонов ключа и забудет связь в offer (ревью #662).
 		err = r.Chats.DeleteChat(ctx, id)
 	}
 	if err != nil {
 		r.logf("mailrelay: %s %s: %v", req.Kind, id, err)
 		return Payload{Kind: KindError, Text: ChatEditFailed}
 	}
+	if req.Kind == KindDelete {
+		// Удаление — всем телефонам ключа тем же кругом, а не заметкой окна:
+		// заметки теряются при сбое круга (ревью #665). Эхо окна пройдет
+		// мимо — связи уже нет.
+		r.queueDesk(st, chat, Payload{Kind: KindDelete, Text: "chat"})
+		forgetChat(st, chat)
+	}
 	return done
+}
+
+// forgetChat drops everything the relay keeps for a deleted mailbox chat,
+// кроме Seen: он защищает от повтора старых сообщений.
+func forgetChat(st *State, chat string) {
+	delete(st.Chats, chat)
+	delete(st.Offered, chat)
+	delete(st.Titles, chat)
+	if st.Deleted == nil {
+		st.Deleted = map[string]bool{}
+	}
+	st.Deleted[chat] = true
+}
+
+// queueDesk seals p from the window into chat's outbox.
+func (r Relay) queueDesk(st *State, chat string, p Payload) {
+	st.DeskCounter++
+	out := Outgoing{Chat: chat, Counter: st.DeskCounter, Payload: p}
+	var err error
+	if out.Sealed, err = r.sealFitting(&out); err != nil {
+		r.logf("mailrelay: %s: %v", p.Kind, err)
+		return
+	}
+	st.Outbox = append(st.Outbox, out)
 }
 
 // pendingTitle puts the phone's early title on the window's new chat.

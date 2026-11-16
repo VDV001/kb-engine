@@ -536,15 +536,16 @@ async function ask(text) {
 const flush = single(async () => {
   while (st?.outbox.length) {
     const o = st.outbox[0];
+    if (o.drop) { st.outbox.shift(); continue; } // удаленного чата (forget): не отправлять
     const r = await api(API + "/" + o.chat, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sealed: o.sealed }) });
     if (r.status === 401) throw unauth();
     if (r.status === 400 || r.status === 413) { // отказ насовсем: не затыкать исходящие
-      st.outbox.shift();
+      if (st.outbox[0] === o) st.outbox.shift();
       note("Сервер не принял запрос: " + (await r.text()));
       continue;
     }
     if (!r.ok) throw new Error("kb-сервер ответил " + r.status);
-    st.outbox.shift();
+    if (st.outbox[0] === o) st.outbox.shift(); // снимать только отправленное
     posted(st, o);
     await persist();
     if (ui.view === "chat" && ui.chat === o.chat) show(); // «Ждет отправки» → «Отправлено» сразу

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -19,7 +20,7 @@ const trashKeep = 7 * 24 * time.Hour
 func (d *chatDesk) trashDir() string { return filepath.Join(d.dir, ".trash") }
 
 // toTrash moves chat file p to the trash; время удаления — mtime файла.
-// Под d.mu: ход и переименование не пишут чат поверх удаления.
+// Под d.fmu: запись чата не идет поверх переноса.
 func (d *chatDesk) toTrash(id, p string) error {
 	if err := os.MkdirAll(d.trashDir(), 0o700); err != nil {
 		return err
@@ -29,13 +30,30 @@ func (d *chatDesk) toTrash(id, p string) error {
 		return err
 	}
 	now := d.now()
-	return os.Chtimes(dst, now, now)
+	// ponytail: не вышло поставить время — чат уже в корзине, удаление
+	// состоялось; срок тогда считается от последней записи чата и может
+	// выйти раньше недели. Путь: время удаления в имени файла.
+	if err := os.Chtimes(dst, now, now); err != nil {
+		log.Printf("chats: время удаления %s: %v", id, err)
+	}
+	return nil
+}
+
+// purgeTrash erases chats older than trashKeep: зовется списком чатов, чтобы
+// неделя держалась и без показа корзины (ревью #665).
+func (d *chatDesk) purgeTrash() {
+	d.fmu.Lock()
+	defer d.fmu.Unlock()
+	files, _ := filepath.Glob(filepath.Join(d.trashDir(), "*.json"))
+	for _, f := range files {
+		_, _ = d.trashed(strings.TrimSuffix(filepath.Base(f), ".json"))
+	}
 }
 
 // Trash lists deleted chats, свежие сверху; старше недели — стирает.
 func (d *chatDesk) Trash() ([]chatSummary, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	d.fmu.Lock()
+	defer d.fmu.Unlock()
 	files, err := filepath.Glob(filepath.Join(d.trashDir(), "*.json"))
 	if err != nil {
 		return nil, err
@@ -50,7 +68,7 @@ func (d *chatDesk) Trash() ([]chatSummary, error) {
 		if err != nil {
 			continue
 		}
-		out = append(out, chatSummary{ID: rec.ID, Title: rec.Title, Updated: rec.Updated})
+		out = append(out, chatSummary{ID: id, Title: rec.Title, Updated: rec.Updated}) // id — имя файла: по нему вернут
 	}
 	slices.SortFunc(out, func(a, b chatSummary) int { return b.Updated.Compare(a.Updated) })
 	return out, nil
@@ -63,8 +81,8 @@ func (d *chatDesk) Restore(id string) error {
 	if err != nil {
 		return err
 	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	d.fmu.Lock()
+	defer d.fmu.Unlock()
 	src, err := d.trashed(id)
 	if err != nil {
 		return err

@@ -3634,6 +3634,9 @@ async function askChat() {
     micLoop.on = false;
     stopVoice(); // до заметки: остановка возвращает обычную подпись под полем
     showChatNote("Нет ответа: " + errText(e));
+    // Чат удалили, пока шел ход (с телефона): вид — на новый чат (ревью #665).
+    await renderChatList();
+    if (chatState.id && !chatState.list.some((c) => c.id === chatState.id)) { chatState.id = ""; chatState.chat = null; }
   } finally {
     chatState.busy = false;
     fitChatQ();
