@@ -1377,15 +1377,33 @@ function phonesPanel(id) {
   const p = connPhones[id];
   if (!p) return "";
   const off = p.busy ? " disabled" : ""; // пока идет запрос, панель не трогают: второй щелчок — второй запрос (ревью #633)
-  const rows = (p.list || []).map((x) => `<li><div><span>Телефон ${esc(x.device)}</span><small>привязан ${esc(x.at)}</small></div><button class="btn conn-phone-off" type="button"${off} data-phone-revoke="${esc(id)}" data-device="${esc(x.device)}"${mkTip("Отвязать", "токен телефона перестанет открывать ящик сразу; отвязан последний — ключ чата сотрется, следующий телефон получит новый")}>Отвязать</button></li>`).join("");
+  const rows = (p.list || []).map((x) => `<li><div><span>${esc(x.name || "Телефон")}</span><small>${esc(x.device)} · привязан ${esc(x.at)} · ${x.seen ? "заходил " + esc(x.seen) : "ждет первого входа"}</small></div><button class="btn conn-phone-off" type="button"${off} data-phone-revoke="${esc(id)}" data-device="${esc(x.device)}"${mkTip("Отвязать", "токен телефона перестанет открывать ящик сразу; отвязан последний — ключ чата сотрется, следующий телефон получит новый")}>Отвязать</button></li>`).join("");
   return `<div class="conn-phones">
-    <p class="d">Чат с телефона: телефон пишет, задачу делает этот компьютер, переписка шифруется — ключ знают только окно и телефоны. Страница для телефона — следующий этап (#622): сейчас код только привязывает телефон к ящику.</p>
-    ${p.err ? `<p class="conn-check bad" role="status">✕ ${esc(p.err)}</p>` : ""}${p.busy ? `<p class="conn-check" role="status">${esc(p.busy)}</p>` : ""}
+    <p class="d">Чат с телефона: телефон пишет, задачу делает этот компьютер, переписка шифруется — ключ знают только окно и телефоны. Привязка — QR-кодом: камера телефона открывает страницу DVK, и она привязывается сама; окно увидит вход и скроет код.</p>
+    ${p.err ? `<p class="conn-check bad" role="status">✕ ${esc(p.err)}</p>` : ""}${p.done ? `<p class="conn-check ok" role="status">${esc(p.done)}</p>` : ""}${p.busy ? `<p class="conn-check" role="status">${esc(p.busy)}</p>` : ""}
     ${p.list ? (rows ? `<ul class="conn-phone-list">${rows}</ul>` : `<p class="d">Привязанных телефонов нет.</p>`) : ""}
     ${p.qr ? `<div class="conn-qr"><img src="${esc(p.qr)}" alt="QR-код привязки телефона"><p class="d">Наведите камеру телефона. В коде ключ чата: не показывайте его посторонним и скройте, когда телефон привязан.</p><button class="btn" type="button"${off} data-phone-qr-hide="${esc(id)}">Скрыть код</button></div>` : ""}
     <div class="mk-cn-acts"><button class="btn primary" type="button"${off} data-phone-pair="${esc(id)}">Подключить телефон</button><button class="btn" type="button"${off} data-phones-close="${esc(id)}">Свернуть</button></div>
   </div>`;
 }
+// watchPairing: пока виден QR, раз в 3 с спрашивает список телефонов; новый
+// телефон вошел — QR убирается (в нем ключ чата) и окно говорит, какой телефон
+// привязан. Перерисовка — только на этом: опрос не дергает панель под курсором.
+const PAIR_WATCH_MS = 3000, PAIR_WATCH_MAX_MS = 10 * 60_000;
+function watchPairing(id, device, started) {
+  setTimeout(async () => {
+    const still = () => connPhones[id]?.qr && connPhones[id].waitFor === device;
+    if (!still() || Date.now() - started > PAIR_WATCH_MAX_MS) return;
+    let list = null;
+    try { list = (await native().MailPhones(id)) || []; } catch { /* сеть мигнула — следующий круг */ }
+    if (!still()) return;
+    const hit = list?.find((x) => x.device === device && x.seen);
+    if (!hit) return watchPairing(id, device, started);
+    Object.assign(connPhones[id], { list, qr: "", waitFor: "", done: "✓ Телефон привязан: " + (hit.name || hit.device) });
+    renderConnections();
+  }, PAIR_WATCH_MS);
+}
+
 // loadPhones reads the list; ошибку действия, которое его вызвало (привязка,
 // отвязка), не стирает: ее сбрасывает только следующее действие (ревью #633).
 async function loadPhones(id) {
@@ -1456,11 +1474,12 @@ $("#conn-list").addEventListener("click", async (e) => {
   const pair = e.target.closest("[data-phone-pair]");
   if (pair) {
     const id = pair.dataset.phonePair;
-    connPhones[id] = { ...connPhones[id], busy: "привязываю телефон…", err: "", qr: "" };
+    connPhones[id] = { ...connPhones[id], busy: "привязываю телефон…", err: "", qr: "", done: "", waitFor: "" };
     renderConnections();
-    let qr = "", fail = "";
-    try { qr = (await native().MailPairPhone(id)).qr; } catch (err) { fail = errText(err); }
-    if (connPhones[id]) Object.assign(connPhones[id], { qr, err: fail });
+    let qr = "", device = "", fail = "";
+    try { ({ qr, device } = await native().MailPairPhone(id)); } catch (err) { fail = errText(err); }
+    if (connPhones[id]) Object.assign(connPhones[id], { qr, err: fail, waitFor: device });
+    if (qr && device) watchPairing(id, device, Date.now());
     return loadPhones(id);
   }
   const rv = e.target.closest("[data-phone-revoke]");

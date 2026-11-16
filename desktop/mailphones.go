@@ -146,7 +146,11 @@ func (f *folderSettings) MailPhones(id string) ([]phoneRow, error) {
 	}
 	rows := make([]phoneRow, 0, len(list))
 	for _, p := range list {
-		rows = append(rows, phoneRow{Device: p.Device, At: p.At.Local().Format("02.01.2006 15:04")})
+		row := phoneRow{Device: p.Device, At: p.At.Local().Format("02.01.2006 15:04"), Name: p.Name}
+		if !p.Seen.IsZero() {
+			row.Seen = p.Seen.Local().Format("02.01.2006 15:04")
+		}
+		rows = append(rows, row)
 	}
 	return rows, nil
 }

@@ -2044,6 +2044,7 @@ body:not(.no-mk-spark) .mk-legend i.fc { border-image: linear-gradient(90deg, va
 .conn-phone-list li > div { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 10px; }
 .conn-phone-list li > div > * { white-space: nowrap; }
 .conn-phone-list small { color: var(--z-muted); }
+.conn-phone-list li > div > small { white-space: normal; } /* id · привязан · заходил — переносится, а не обрезается */
 .conn-qr { display: grid; justify-items: start; gap: 8px; }
 .conn-qr img { width: 240px; height: 240px; padding: 12px; background: #fff; border-radius: var(--z-radius); image-rendering: pixelated; }
 .conn-grid .conn-quiet .lnk.bad:hover { color: var(--z-bad); }
