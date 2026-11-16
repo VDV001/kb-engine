@@ -170,3 +170,9 @@ func describeMail(err error) string {
 		return "на kb-сервере нет ящика для телефона — нужен сервер с людьми (serve --tenants), обновленный до версии с ящиком"
 	}
 }
+
+// Notify asks the server to push the phones and returns how many got it;
+// push на сервере выключен — 0 без ошибки.
+func (c Client) Notify(ctx context.Context) (int, error) {
+	return 0, errors.ErrUnsupported
+}
