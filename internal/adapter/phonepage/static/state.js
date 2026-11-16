@@ -76,7 +76,9 @@ export function take(st, m, o) {
 
 // waitView is what the waiting question of chat c shows (#646).
 // В очереди → отправлено → компьютер принял → шаг хода; ответ снимает ожидание.
-export function waitView(c) {
+// silent — окно молчит дольше asleep: принятый вопрос оно уже не переспросит.
+export function waitView(c, silent = false) {
+  if (c.accepted && silent) return { text: "Компьютер принял вопрос и замолчал: ответа может не быть — задайте его еще раз", step: "" };
   if (c.accepted) return { text: "Компьютер принял · отвечает", step: typeof c.step === "string" ? c.step : "" };
   const q = [...c.msgs].reverse().find((x) => x.who === "me");
   return { text: q && q.sent === false ? "Ждет отправки" : "Отправлено · ждет компьютер", step: "" };
@@ -89,6 +91,24 @@ export function ctxView(x) {
   if (!x.window) return { text: "?", tone: "ok", fill: 0 };
   const f = x.used / x.window;
   return { text: Math.round(f * 100) + "%", tone: f >= 0.8 ? "bad" : f >= 0.5 ? "warn" : "ok", fill: Math.min(1, f) };
+}
+
+// asked starts a new question in chat c (#646): его ожидание — с нуля.
+export function asked(c, text, counter, at) {
+  c.msgs.push({ who: "me", text, at, counter, sent: false });
+  c.pending = true;
+  c.updated = at;
+  delete c.accepted; // «принял» и шаг — прежнего вопроса (ревью #653)
+  delete c.step;
+}
+
+// posted marks the question of outbox item o sent: сервер его принял, ждать
+// своего эха из ящика (до опроса) незачем (ревью #653). Старые исходящие —
+// без счетчика: их отметит эхо.
+export function posted(st, o) {
+  if (!o.counter) return;
+  const m = st.chats[o.chat]?.msgs.find((x) => x.who === "me" && x.counter === o.counter);
+  if (m) m.sent = true;
 }
 
 // searchChat is the mailbox chat of this phone's searches: выдача и документы

@@ -186,6 +186,20 @@ want(s.ctxView({ used: 6000, window: 0 })?.text === "?" && s.ctxView(null) === n
 s.take(st15, { seq: 2, chat: "c", from: "desk" }, dk14(2, { kind: "answer", text: "без счета" }));
 want(st15.chats.c.context === undefined, "an answer without a count drops the old fill, like the window");
 
+// 16. Ревью #653: новый вопрос не наследует «принял» и шаг прежнего; вопрос,
+// принятый сервером, — «отправлено» сразу, а не после опроса; окно замолчало
+// посреди ответа — так и сказать, а не «отвечает» без конца.
+const st16 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { c: { title: "Чат", msgs: [{ who: "me", text: "первый", counter: "1", sent: true }], pending: true, accepted: true, step: "Документы: поставки", updated: 1 } } };
+s.asked(st16.chats.c, "второй", "2", 5);
+const v16 = s.waitView(st16.chats.c);
+want(v16.text === "Ждет отправки" && !v16.step && st16.chats.c.msgs.length === 2 && st16.chats.c.pending, "a new question starts its own wait: " + JSON.stringify(v16));
+s.posted(st16, { chat: "c", counter: "2" });
+want(st16.chats.c.msgs[1].sent === true && s.waitView(st16.chats.c).text === "Отправлено · ждет компьютер", "a question the server took is sent at once");
+s.posted(st16, { chat: "c" }); s.posted(st16, { chat: "нет", counter: "9" }); // старые исходящие без счетчика, чужой чат
+st16.chats.c.accepted = true;
+want(/замолчал/.test(s.waitView(st16.chats.c, true).text) && !/отвечает/.test(s.waitView(st16.chats.c, true).text), "accepted but the desk went silent: " + s.waitView(st16.chats.c, true).text);
+want(s.waitView(st16.chats.c, false).text === "Компьютер принял · отвечает", "accepted and the desk alive");
+
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 

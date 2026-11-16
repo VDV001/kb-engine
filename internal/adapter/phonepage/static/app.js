@@ -8,7 +8,7 @@
 // Service worker (sw.js) — только push: «компьютер ответил», когда страница
 // закрыта. Работы без сети нет — страница всегда свежая с сервера.
 import { importKey, seal, open } from "./crypto.js";
-import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView } from "./state.js";
+import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted } from "./state.js";
 
 const POLL_MS = 10_000; // решение 15.11: короткий опрос раз в 10 с
 const UNAUTH_MS = 60_000; // 401: реже, но не сдаемся — сервер мог ошибиться ненадолго
@@ -351,7 +351,7 @@ function paintChat(c, follow) {
     const li = document.createElement("li"), sp = document.createElement("span");
     li.className = "wait";
     sp.className = "spin";
-    const v = waitView(c); // отправлено → принял → шаг (#646)
+    const v = waitView(c, !!asleep(st, Date.now())); // отправлено → принял → шаг (#646)
     li.append(sp, document.createTextNode(v.text));
     if (v.step) { // ход модели подписью окна
       const step = document.createElement("div");
@@ -368,7 +368,9 @@ function paintChat(c, follow) {
     const b = document.createElement("b");
     b.textContent = "Компьютер не отвечает" + (since ? " с " + hhmm(since) : "");
     const s = document.createElement("span");
-    s.textContent = "Вопрос ждет в ящике и уйдет в работу, когда окно DVK на компьютере откроется. Страницу можно закрыть.";
+    s.textContent = c.accepted // принятый вопрос окно не переспросит (ревью #653)
+      ? "Окно DVK замолчало посреди ответа: когда оно откроется, задайте вопрос еще раз."
+      : "Вопрос ждет в ящике и уйдет в работу, когда окно DVK на компьютере откроется. Страницу можно закрыть.";
     $("asleep").replaceChildren(b, s);
   }
   if (follow || atBottom) box.scrollTop = box.scrollHeight; // читающего выше не дергаем
@@ -416,7 +418,7 @@ async function send(chat, payload, mark) {
     const stored = await load("state");
     st.counter = mergeCounter(st.counter, stored?.counter) + 1n; // счетчик — до отправки
     const sealed = await seal(st.pair, { chat, from: "phone", sender: st.sender, counter: st.counter }, enc.encode(JSON.stringify(payload)));
-    st.outbox.push({ chat, sealed: b64(sealed) });
+    st.outbox.push({ chat, sealed: b64(sealed), counter: st.counter.toString() }); // счетчик — отметить «отправлено» (posted)
     mark?.(st.counter.toString());
     await save("state", { ...st, counter: st.counter.toString() });
   });
@@ -425,11 +427,7 @@ async function send(chat, payload, mark) {
 
 async function ask(text) {
   const c = st.chats[ui.chat];
-  await send(ui.chat, { kind: "question", text }, (counter) => {
-    c.msgs.push({ who: "me", text, at: Date.now(), counter, sent: false });
-    c.pending = true;
-    c.updated = Date.now();
-  });
+  await send(ui.chat, { kind: "question", text }, (counter) => asked(c, text, counter, Date.now()));
 }
 
 // flush posts the outbox in order; неотправленное остается до следующего опроса.
@@ -446,7 +444,9 @@ const flush = single(async () => {
     }
     if (!r.ok) throw new Error("kb-сервер ответил " + r.status);
     st.outbox.shift();
+    posted(st, o);
     await persist();
+    if (ui.view === "chat" && ui.chat === o.chat) show(); // «Ждет отправки» → «Отправлено» сразу
   }
 });
 

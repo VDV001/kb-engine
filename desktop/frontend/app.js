@@ -3302,13 +3302,14 @@ function renderChat() {
       : `<div class="msg bot">${answerHTML(m.text)}${usesHTML(m.uses)}</div>`)
       + (i === folded - 1 ? `<div class="chat-fold" role="separator">Выше сжато ${folded} сообщ.: модель видит конспект, а не их. Исходный разговор сохранен.</div>` : "")).join("");
   }
+  // Вопрос с телефона в этом чате — сразу за сообщениями, до карточек памяти и
+  // версий, и виден, даже когда идет свой вопрос окна (ревью #653).
+  const ph = c && chatState.phone[chatState.id];
+  if (ph) log.insertAdjacentHTML("beforeend", `<div class="msg user">${esc(ph.question)}${phoneTag()}</div><div class="msg bot thinking" id="phone-partial">${phoneWait(ph)}</div>`);
   if (c && !chatState.busy) log.insertAdjacentHTML("beforeend", memInChat() + verOffersInChat());
   if (chatState.busy) {
     log.insertAdjacentHTML("beforeend", `<div class="msg bot thinking" id="chat-partial"></div>`);
     paintPartial();
-  } else if (chatState.phone[chatState.id]) { // вопрос с телефона в этом чате: как свой, пока модель отвечает
-    const t = chatState.phone[chatState.id];
-    log.insertAdjacentHTML("beforeend", `<div class="msg user">${esc(t.question)}${phoneTag()}</div><div class="msg bot thinking">${t.steps.length ? stepsHTML(t.steps) : `<span class="building"></span>думаю…`}</div>`);
   }
   log.scrollTop = log.scrollHeight;
   const docs = (c && c.docs) || [];
@@ -3365,18 +3366,35 @@ if (window.runtime) window.runtime.EventsOn("chat:step", (u) => {
 // индикатором хода, что у своих вопросов; в другом чате — строкой внизу.
 // Функция, а не константа: mkTip объявлен ниже, при загрузке его еще нет.
 const phoneTag = () => `<span class="msg-from"${mkTip("С телефона", "вопрос задан на телефоне; ответ ушел и туда")}>с телефона</span>`;
-if (window.runtime) window.runtime.EventsOn("phone:turn", (t) => {
+const phoneWait = (t) => (t.steps.length ? stepsHTML(t.steps) : `<span class="building"></span>думаю…`);
+if (window.runtime) window.runtime.EventsOn("phone:turn", async (t) => {
   if (!t || !t.chat) return;
-  const here = t.chat === chatState.id;
+  const open = t.chat === chatState.id, seen = open && !$("#chat-view").hidden;
   if (t.question) {
     chatState.phone[t.chat] = { question: t.question, steps: [] };
-    if (!here) toast("Вопрос с телефона", ` · «${t.question}» — отвечаю`, null, "info");
+    // Строкой — если чат не на экране; «Вернуть» другого тоста не затираем (ревью #653).
+    if (!seen && !undoFn) toast("Вопрос с телефона", ` · «${t.question}» — отвечаю`, null, "info");
   } else if (t.step && chatState.phone[t.chat]) {
     chatState.phone[t.chat].steps.push(t.step);
+    const el = open && $("#phone-partial"); // только свой блок: лог не перестраивается и не прыгает вниз
+    if (el) {
+      const log = $("#chat-log"), atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+      el.innerHTML = phoneWait(chatState.phone[t.chat]);
+      if (atBottom) log.scrollTop = log.scrollHeight;
+    }
+    return;
   } else if (t.done) {
+    // Сначала свежий чат с вопросом и ответом, потом снять ожидание: иначе
+    // вопрос мигает (ревью #653). Идет свой вопрос окна — он остается последним.
+    if (open) {
+      try {
+        const fresh = await native().Chat(t.chat), mine = chatState.busy ? chatState.chat?.messages.at(-1) : null;
+        if (t.chat === chatState.id) chatState.chat = mine ? { ...fresh, messages: [...fresh.messages, mine] } : fresh;
+      } catch { /* чат перечитается при выборе */ }
+    }
     delete chatState.phone[t.chat];
   }
-  if (here && !chatState.busy) renderChat();
+  if (open) renderChat();
 });
 // Работник ящика ответил телефону в чате окна (#622): список чатов — свежий,
 // открытый чат с этим ходом — тоже. Пока человек переименовывает чат, список не

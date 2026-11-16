@@ -6,7 +6,8 @@
 // Телефон пишет question (вопрос модели), search (поиск по источникам окна) или
 // open (текст найденного по ref); окно отвечает answer (с sources — откуда
 // ответ), results (hits), doc (title и text) или error; пока модель думает —
-// accepted (взято в работу) и step (ход). Поиск и открытие идут
+// accepted (взято в работу) и step (ход): оба — только при StepEvery > 0
+// (окно включает всегда), без шагов телефон ждет ответа словами «отправлено». Поиск и открытие идут
 // мимо модели — бесплатны и не тратят ее ход.
 //
 // Порядок ради одного правила — модель не запускается дважды на один вопрос
@@ -367,6 +368,9 @@ func (r Relay) ask(ctx context.Context, st *State, chat, question string) Payloa
 	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources, Context: a.Context}
 }
 
+// minPostGap — предел частоты отправки окна в ящик (сервер: раз в секунду).
+const minPostGap = time.Second
+
 // maxStepText — столько байт подписи шага уходит телефону.
 const maxStepText = 200
 
@@ -416,8 +420,9 @@ func (r Relay) stepLoop(ctx context.Context, in chan Step, st *State, chat strin
 	var last time.Time
 	// Первым — «компьютер принял» (#646): телефон видит, что вопрос взят, пока
 	// модель еще думает, а не только по первому шагу. Тем же пределом частоты.
+	// Первый шаг ждет после него только предел частоты ящика, а не весь StepEvery (ревью #653).
 	if began := r.now(); r.post(ctx, st, chat, Payload{Kind: KindAccepted}) {
-		last = began
+		last = began.Add(min(minPostGap, r.StepEvery) - r.StepEvery)
 	}
 	for {
 		var s Step
@@ -461,7 +466,9 @@ func (r Relay) post(ctx context.Context, st *State, chat string, p Payload) bool
 	ctx, cancel := context.WithTimeout(ctx, stepPostTimeout)
 	defer cancel()
 	if _, err := r.Box.Post(ctx, chat, sealed); err != nil {
-		r.logf("mailrelay: %s: post: %v", p.Kind, err)
+		if ctx.Err() == nil { // ход кончился раньше отправки — не сбой
+			r.logf("mailrelay: %s: post: %v", p.Kind, err)
+		}
 		return false
 	}
 	return true
