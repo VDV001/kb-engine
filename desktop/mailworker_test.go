@@ -28,6 +28,12 @@ const phoneToken = "phone-token-622-test"
 // srvToken — сторона компьютера, phoneToken — телефона (как serve --tenants).
 func newWorkerSettings(t *testing.T) (*folderSettings, *fakeTokens, *httptest.Server, *atomic.Int64) {
 	t.Helper()
+	return newWorkerSettingsSeeing(t, func(string) {})
+}
+
+// newWorkerSettingsSeeing is newWorkerSettings that reports each desk request's path.
+func newWorkerSettingsSeeing(t *testing.T, seen func(path string)) (*folderSettings, *fakeTokens, *httptest.Server, *atomic.Int64) {
+	t.Helper()
 	store, err := blobfs.New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -44,6 +50,7 @@ func newWorkerSettings(t *testing.T) (*folderSettings, *fakeTokens, *httptest.Se
 		switch r.Header.Get(kbserver.TokenHeader) {
 		case srvToken:
 			hits.Add(1)
+			seen(r.URL.Path)
 		case phoneToken:
 			side = domain.MailPhone
 		default:
@@ -133,6 +140,28 @@ func TestMailWorkerAnswersThePhone(t *testing.T) {
 	}
 	if len(calls) != 2 || calls[1] != (askCall{"w-1", "еще"}) {
 		t.Errorf("after restart: %+v — the old question asked again or the chat lost", calls)
+	}
+}
+
+// Ответ ушел в ящик — окно зовет телефоны push (#622).
+func TestMailWorkerNotifiesAfterTheAnswer(t *testing.T) {
+	var notifies int
+	s, tok, srv, _ := newWorkerSettingsSeeing(t, func(p string) {
+		if p == "/api/mail/notify" {
+			notifies++
+		}
+	})
+	key := mailcrypt.NewKey()
+	tok.m[mailKeyAccount("srv1")] = key.Encode()
+	ask := func(_ context.Context, _, q string) (string, string, error) {
+		return "w-1", "ответ на " + q, nil
+	}
+	phoneAsks(t, srv, key, "c-1", 1, "привет")
+	if err := newMailWorker(s, ask, t.TempDir()).tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if notifies != 1 {
+		t.Fatalf("notify calls %d, want 1", notifies)
 	}
 }
 
