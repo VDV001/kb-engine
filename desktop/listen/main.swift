@@ -13,6 +13,10 @@
 //   сервера распознавания: whisper и т. п.); итог — {"recorded":PATH,"final":true},
 //   без речи — с "silent":true (серверу не отдается). В разговоре без рук
 //   запись без речи кончается сама через noSpeechLimit секунд.
+// --file PATH — распознать готовую запись (голос с телефона, #648): без
+//   микрофона, на устройстве, если macOS умеет язык без сети; итог —
+//   {"text":"…","final":true}, тишина — пустой текст. Запись не удаляет —
+//   ее удаляет окно.
 // --check печатает {"auth":"…","onDevice":…,"available":…} без запроса разрешений.
 import AVFoundation
 import Foundation
@@ -184,6 +188,39 @@ func finishRecording(_ path: String) {
     if !recSpoke { done["silent"] = true }
     emit(done)
     exit(0)
+}
+
+// --- Готовая запись (--file, #648) ------------------------------------------------
+
+// fileTask держит задачу распознавания: без ссылки ее освободили бы до ответа.
+var fileTask: SFSpeechRecognitionTask?
+
+if let path = args.firstIndex(of: "--file").flatMap({ $0 + 1 < args.count ? args[$0 + 1] : nil }) {
+    SFSpeechRecognizer.requestAuthorization { status in
+        guard status == .authorized else {
+            fail("нет разрешения на распознавание речи: Системные настройки → Конфиденциальность и безопасность → Распознавание речи → DVK", 3)
+        }
+        let req = SFSpeechURLRecognitionRequest(url: URL(fileURLWithPath: path))
+        req.shouldReportPartialResults = false
+        // На устройстве — если macOS умеет этот язык без сети: голос не уходит в Apple.
+        if recognizer.supportsOnDeviceRecognition { req.requiresOnDeviceRecognition = true }
+        if #available(macOS 13, *) { req.addsPunctuation = true }
+        fileTask = recognizer.recognitionTask(with: req) { result, error in
+            if let r = result, r.isFinal {
+                emit(["text": r.bestTranscription.formattedString, "final": true]); exit(0)
+            }
+            if let e = error as NSError? {
+                if e.domain == "kAFAssistantErrorDomain" && (e.code == 1110 || e.code == 216) {
+                    emit(["text": "", "final": true]); exit(0)
+                }
+                if e.domain == "kLSRErrorDomain" && e.code == 201 {
+                    fail("macOS не дает распознавать речь: включите Системные настройки → Клавиатура → Диктовка или выберите «Облако» в Чат и модель → Распознавание", 5)
+                }
+                fail("распознавание остановилось: \(e.localizedDescription)", 5)
+            }
+        }
+    }
+    dispatchMain()
 }
 
 if let path = recordPath {

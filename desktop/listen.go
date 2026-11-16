@@ -255,3 +255,10 @@ func (d *dictation) Check() listenStatus {
 	}
 	return st
 }
+
+// TranscribeFile recognizes a ready recording with Apple Speech (kb-listen
+// --file): голос с телефона (#648). Запись — во временный файл и обратно не
+// живет: удаляется при любом исходе.
+func (d *dictation) TranscribeFile(ctx context.Context, wav []byte) (string, error) {
+	return "", errors.New("kb-listen --file: not yet")
+}
