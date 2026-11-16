@@ -6,6 +6,7 @@ package main
 // usecase/mailrelay, здесь адаптеры: ящик, шифр, файл состояния, чат окна.
 
 import (
+	"cmp"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -41,12 +42,13 @@ type askFn func(ctx context.Context, chat, question string) (string, string, err
 type mailWorker struct {
 	settings *folderSettings
 	ask      askFn
-	answer   answerFn          // ход модели с метками «взято»; nil — ask без меток
-	find     mailrelay.Finder  // поиск с телефона; nil — отказ словами
-	dir      string            // где лежат mail-<id>.json
-	changed  func(chat string) // ответ записан в чат окна: странице перечитать список и чат
-	turn     func(phoneTurn)   // ход по вопросу с телефона — странице (#646)
-	memory   mailrelay.Memory  // решения телефона по «Запомнить о Вас?» (#647); nil — отказ словами
+	answer   answerFn           // ход модели с метками «взято»; nil — ask без меток
+	find     mailrelay.Finder   // поиск с телефона; nil — отказ словами
+	dir      string             // где лежат mail-<id>.json
+	changed  func(chat string)  // ответ записан в чат окна: странице перечитать список и чат
+	turn     func(phoneTurn)    // ход по вопросу с телефона — странице (#646)
+	memory   mailrelay.Memory   // решения телефона по «Запомнить о Вас?» (#647); nil — отказ словами
+	desk     mailrelay.DeskInfo // модель и источники окна для телефона (#647); nil — отказ словами
 
 	notesMu sync.Mutex
 	notes   []mailrelay.Note // «Запомнить о Вас?» для телефонов: пишет разбор ответа, забирает круг
@@ -174,11 +176,71 @@ func (w *mailWorker) tickServer(ctx context.Context, id string, notes []mailrela
 		Notifier:  mailNotify{c.client},
 		Notes:     notes,
 		Memory:    w.memory,
+		Desk:      w.desk,
 
 		FindTimeout: phoneFindTimeout,
 	}
 	return relay.Tick(ctx)
 }
+
+// useChat wires the worker to the window's chat: ход модели, поиск,
+// «новое — только в портрете» и состояние окна для телефона. Здесь, а не в
+// app.go: сборка проверяется тестом.
+func (w *mailWorker) useChat(d *chatDesk) {
+	w.answer = chatAnswerer(d)
+	w.find = newPhoneFinder(d.find, d.openFound) // ставит useSources в main до старта окна
+	w.quiet = func() bool { return d.config().MemoryQuiet }
+	w.desk = phoneDesk{settings: d.settings}
+}
+
+// phoneDesk tells the phone the window's state (#647): модель настроек — для
+// чата без ответа, и названия источников — для галочек чата. Телефон только
+// показывает, менять — в окне (решение 16.11): выбор с двух устройств требует
+// явных прав.
+type phoneDesk struct{ settings *folderSettings }
+
+// State lists what the chat searches: включенные источники, которые окно
+// читает, и подключения, которые человек разрешил чату («Чату: разрешить»), —
+// только когда чат их спрашивает (режим инструментов): в режиме «окно ищет»
+// кабинет не спрашивается, и телефон его не называет (ревью #656).
+func (d phoneDesk) State(context.Context) (mailrelay.DeskState, error) {
+	d.settings.mu.Lock()
+	cfg := d.settings.cfg
+	d.settings.mu.Unlock()
+	c := cfg.Chat.WithDefaults()
+	st := mailrelay.DeskState{Model: c.Model, Sources: []mailrelay.DeskSource{}}
+	for _, s := range cfg.WithSources().Sources {
+		if s.Enabled && searched(cfg, s) {
+			st.Sources = append(st.Sources, mailrelay.DeskSource{ID: s.ID, Name: sourceLabel(s)})
+		}
+	}
+	if chatMode(c) != chat.ModeTools {
+		return st, nil
+	}
+	for _, c := range cfg.Connections {
+		if name, ok := chatConnKinds[c.Kind]; ok && c.Enabled && c.Share {
+			st.Sources = append(st.Sources, mailrelay.DeskSource{ID: c.ID, Name: name + " · " + cmp.Or(c.Name, name), Conn: true})
+		}
+	}
+	return st, nil
+}
+
+// searched reports whether the window searches source s: вид, записанный
+// более новой сборкой, хранится и не читается; папка Диска — только с
+// включенным подключением Google.
+func searched(cfg desktopconfig.Config, s desktopconfig.Source) bool {
+	switch s.Kind {
+	case desktopconfig.KindFolder, desktopconfig.KindCatalog, desktopconfig.KindServer:
+		return true
+	case desktopconfig.KindGDrive:
+		g, ok := cfg.Connection(s.Conn)
+		return ok && g.Enabled
+	}
+	return false
+}
+
+// chatConnKinds are the connections a chat can ask (CHAT_CONN в frontend/app.js).
+var chatConnKinds = map[desktopconfig.ConnKind]string{desktopconfig.ConnOzon: "Ozon", desktopconfig.ConnMPStats: "MPStats"}
 
 // phoneFindTimeout bounds one search or open for the phone: работник один на
 // все серверы, подвисший источник или огромный PDF не держат его круг.
@@ -345,7 +407,8 @@ func chatAnswerer(d *chatDesk) answerFn {
 		if err != nil {
 			return mailrelay.Answer{}, err
 		}
-		a := mailrelay.Answer{Chat: rec.ID, Sources: answerSources(rec)}
+		// Источники чата — телефону для показа (#647); пусто — все.
+		a := mailrelay.Answer{Chat: rec.ID, Sources: answerSources(rec), Only: rec.Sources}
 		a.Context = (*mailrelay.ContextFill)(rec.Context) // круг контекста на телефоне (#647); та же форма
 		if n := len(rec.Messages); n > 0 {
 			a.Text = rec.Messages[n-1].Text

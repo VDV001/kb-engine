@@ -75,7 +75,13 @@ var phoneSender = mailcrypt.Sender{1, 2, 3, 4, 5, 6, 7, 8}
 
 func phoneAsks(t *testing.T, srv *httptest.Server, key mailcrypt.Key, chat string, counter uint64, text string) {
 	t.Helper()
-	plain, _ := json.Marshal(mailrelay.Payload{Kind: mailrelay.KindQuestion, Text: text})
+	phoneSends(t, srv, key, chat, counter, mailrelay.Payload{Kind: mailrelay.KindQuestion, Text: text})
+}
+
+// phoneSends posts any request of the phone.
+func phoneSends(t *testing.T, srv *httptest.Server, key mailcrypt.Key, chat string, counter uint64, p mailrelay.Payload) {
+	t.Helper()
+	plain, _ := json.Marshal(p)
 	sealed, err := mailcrypt.Seal(key, mailcrypt.Meta{Chat: chat, From: domain.MailPhone, Sender: phoneSender, Counter: counter}, plain)
 	if err != nil {
 		t.Fatal(err)
@@ -327,5 +333,94 @@ func TestPhoneMemoryDecides(t *testing.T) {
 	calls, fail = nil, errors.New("портрет недоступен")
 	if err := m.Decide(t.Context(), "f3", false, ""); err == nil || len(calls) != 1 {
 		t.Fatalf("failed decide: %v, %v — the page must not drop its card", err, calls)
+	}
+}
+
+// --- модель и источники чата на телефоне (#647): показ, менять — в окне
+
+// Окно отвечает телефону на desk настоящим кругом работника: состояние окна
+// подключено там же, где ход модели (useChat), а не полем, поставленным в тесте.
+func TestMailWorkerAnswersTheDesk(t *testing.T) {
+	s, tok, srv, _ := newWorkerSettings(t)
+	key := mailcrypt.NewKey()
+	tok.m[mailKeyAccount("srv1")] = key.Encode()
+	d, _, _, _ := newTestChatDesk(t)
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	w := newMailWorker(s, chatAsker(d), t.TempDir())
+	w.useChat(d)
+	phoneSends(t, srv, key, "desk-0101", 1, mailrelay.Payload{Kind: mailrelay.KindDesk, Text: "state"})
+	if err := w.tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	got := phoneReads(t, srv, key)
+	if len(got) != 1 || got[0].Kind != mailrelay.KindDesk || got[0].Desk == nil || got[0].Desk.Model != "qwen3" {
+		t.Fatalf("phone got %+v — the desk is not wired into the worker's relay", got)
+	}
+}
+
+// Состояние окна для телефона: модель настроек, включенные источники и
+// подключения, разрешенные чату; закрытое чату телефон не увидит.
+func TestPhoneDeskState(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	if err := s.SetSources(serverList("srv1", "https://kb.example.ru", true), nil, map[string]string{"srv1": srvToken}); err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	s.cfg.Chat = desktopconfig.Chat{URL: "https://ai-gateway.vercel.sh/v1", Model: "qwen3", Mode: desktopconfig.ChatModeTools}
+	s.cfg.Connections = append(s.cfg.Connections,
+		desktopconfig.Connection{ID: "oz1", Kind: desktopconfig.ConnOzon, Name: "Пример", Enabled: true, Share: true},
+		desktopconfig.Connection{ID: "oz2", Kind: desktopconfig.ConnOzon, Name: "Закрытый", Enabled: true})
+	// Вид, записанный более новой сборкой, хранится и не читается: чат в нем не ищет (ревью #656).
+	s.cfg.Sources = append(s.cfg.Sources, desktopconfig.Source{ID: "x1", Kind: "future", Path: "/x", Enabled: true})
+	s.mu.Unlock()
+	names := func() string {
+		st, err := phoneDesk{settings: s}.State(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, x := range st.Sources {
+			out = append(out, fmt.Sprintf("%s|%t", x.Name, x.Conn))
+		}
+		return st.Model + " " + strings.Join(out, ",")
+	}
+	if got := names(); got != "qwen3 notes|false,kb.example.ru|false,Ozon · Пример|true" {
+		t.Errorf("desk %q — закрытое чату подключение и нечитаемый источник телефону не показываются", got)
+	}
+	// Режим «окно ищет»: подключения чат не спрашивает — телефон их не называет (ревью #656).
+	s.mu.Lock()
+	s.cfg.Chat.Mode = desktopconfig.ChatModeContext
+	s.mu.Unlock()
+	if got := names(); got != "qwen3 notes|false,kb.example.ru|false" {
+		t.Errorf("context mode: %q", got)
+	}
+}
+
+// Ход с телефона не стирает источники, выбранные для чата в окне, и говорит
+// телефону модель и источники чата.
+func TestPhoneTurnKeepsTheChatSources(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.settings.SetSources(serverList("srv1", "https://kb.example.ru", true), nil, map[string]string{"srv1": srvToken}); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := d.Ask(askReq{Question: "сроки?", Sources: []string{"srv1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := chatAnswerer(d)(t.Context(), rec.ID, "еще?", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := d.load(rec.ID)
+	if strings.Join(got.Sources, ",") != "srv1" {
+		t.Errorf("chat sources %v after a phone turn, want srv1", got.Sources)
+	}
+	if strings.Join(a.Only, ",") != "srv1" {
+		t.Errorf("the phone is told sources %v", a.Only)
 	}
 }

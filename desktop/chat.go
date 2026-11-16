@@ -325,6 +325,15 @@ type askOut struct {
 	began func(id string)
 }
 
+// turnSources are where a turn searches: ход с телефона источников не
+// выбирает — ищет, где чат окна, и не стирает его выбор (#647).
+func turnSources(r askReq, rec chatRecord, out askOut) []string {
+	if out.worker {
+		return rec.Sources
+	}
+	return r.Sources
+}
+
 // ask runs a turn; ctx — родитель срока хода: закрытие окна прерывает ход работника.
 func (d *chatDesk) ask(parent context.Context, r askReq, out askOut) (chatRecord, error) {
 	show, step := out.show, out.step
@@ -338,6 +347,7 @@ func (d *chatDesk) ask(parent context.Context, r askReq, out askOut) (chatRecord
 			return chatRecord{}, err
 		}
 	}
+	r.Sources = turnSources(r, rec, out)
 	c := d.config()
 	key, err := d.modelKey(c)
 	if err != nil {

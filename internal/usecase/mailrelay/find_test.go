@@ -403,3 +403,56 @@ func TestRelayFirstStepSoonAfterAccepted(t *testing.T) {
 		t.Fatalf("mailbox %v: the first step waited the whole StepEvery", kinds)
 	}
 }
+
+// deskInfo is the window's state for the phone.
+type deskInfo struct{ st mailrelay.DeskState }
+
+func (d deskInfo) State(context.Context) (mailrelay.DeskState, error) { return d.st, nil }
+
+// Телефон спрашивает состояние окна своим служебным чатом: модель и названия
+// источников — без хода модели (#647).
+func TestRelayTellsThePhoneTheDesk(t *testing.T) {
+	b := &box{}
+	b.phone("desk-aa", "A", 1, mailrelay.Payload{Kind: mailrelay.KindDesk, Text: "state"})
+	r := newRelay(b, &asker{}, &store{})
+	want := mailrelay.DeskState{Model: "qwen3", Sources: []mailrelay.DeskSource{{ID: "f-1", Name: "notes"}}}
+	r.Desk = deskInfo{want}
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	got := payloads(t, b)
+	if len(got) != 1 || got[0].Kind != mailrelay.KindDesk || got[0].Desk == nil || got[0].Desk.Model != "qwen3" || len(got[0].Desk.Sources) != 1 {
+		t.Fatalf("desk answer %+v", got)
+	}
+	// Окно без Desk отвечает отказом, а не молчит: телефон не ждет вечно.
+	b2 := &box{}
+	b2.phone("desk-aa", "A", 1, mailrelay.Payload{Kind: mailrelay.KindDesk, Text: "state"})
+	if err := newRelay(b2, &asker{}, &store{}).Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got := payloads(t, b2); len(got) != 1 || got[0].Kind != mailrelay.KindError || got[0].Text != mailrelay.DeskUnsupported {
+		t.Fatalf("no desk: %+v — код, а не слова: слова человеку — у телефона", got)
+	}
+}
+
+// scopedAnswer answers with the chat's sources.
+type scopedAnswer struct{ asker }
+
+func (f *scopedAnswer) AskSourced(ctx context.Context, chat, question string) (mailrelay.Answer, error) {
+	c, text, err := f.Ask(ctx, chat, question)
+	return mailrelay.Answer{Chat: c, Text: text, Only: []string{"f-1"}}, err
+}
+
+// Ответ несет источники чата окна (#647): телефон показывает, где чат ищет.
+func TestRelaySendsTheChatSources(t *testing.T) {
+	b := &box{}
+	b.phone("c-1", "A", 1, q("сроки?"))
+	r := newRelay(b, &asker{}, &store{})
+	r.Asker = &scopedAnswer{}
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got := payloads(t, b); len(got) != 1 || strings.Join(got[0].Only, ",") != "f-1" {
+		t.Fatalf("answer %+v", got)
+	}
+}
