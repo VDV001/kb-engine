@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/ecdh"
 	"crypto/rand"
 	"encoding/base64"
@@ -10,6 +11,9 @@ import (
 	"strings"
 	gosync "sync"
 	"testing"
+
+	"github.com/daniil/kb-engine/internal/adapter/blob"
+	"github.com/daniil/kb-engine/internal/adapter/webpush"
 )
 
 // pushRecorder stands in for the push services: запросы не уходят в сеть.
@@ -146,5 +150,54 @@ func TestMailPushOff(t *testing.T) {
 		if r := do(f.h, c.method, c.path, body, c.token); r.Code != http.StatusNotFound {
 			t.Errorf("%s %s: %d, want 404", c.method, c.path, r.Code)
 		}
+	}
+}
+
+// Неверный KB_PUSH_CONTACT — отказ при старте, а не 503 на каждый вызов потом.
+// Проверка — отдельной функцией: тест отказа не поднимает сервер и не открывает порт.
+func TestPushContactFromEnv(t *testing.T) {
+	for v, ok := range map[string]bool{"": true, "mailto:hi@example.com": true, "admin@example.com": false, "http://example.com": false} {
+		t.Setenv("KB_PUSH_CONTACT", v)
+		c, err := pushContactFromEnv()
+		if (err == nil) != ok || (ok && c != v) {
+			t.Errorf("%q: %q, %v", v, c, err)
+		}
+		if err != nil && !strings.Contains(err.Error(), "KB_PUSH_CONTACT") {
+			t.Errorf("%q: the error does not name the variable: %v", v, err)
+		}
+	}
+}
+
+// countingStore counts reads of the VAPID key.
+type countingStore struct {
+	blob.Store
+	mu    gosync.Mutex
+	vapid int
+}
+
+func (c *countingStore) Get(ctx context.Context, key string) (blob.Object, error) {
+	if key == webpush.VAPIDKey {
+		c.mu.Lock()
+		c.vapid++
+		c.mu.Unlock()
+	}
+	return c.Store.Get(ctx, key)
+}
+
+// Испорченный ключ не перечитывается каждым вызовом подряд (ревью #643).
+func TestMailPush_brokenKeyIsNotReReadByEveryCall(t *testing.T) {
+	f := newTenants(t)
+	if _, err := f.store.Put(t.Context(), webpush.VAPIDKey, []byte(`{"d":"AAAA"}`), ""); err != nil {
+		t.Fatal(err)
+	}
+	cs := &countingStore{Store: f.store}
+	h := tenantsHandler(t.Context(), cs, &strings.Builder{}, withPush("mailto:push@example.com", &pushRecorder{}))
+	for range 3 {
+		if r := do(h, http.MethodGet, "/api/mail/push/key", "", f.tokA); r.Code != http.StatusServiceUnavailable {
+			t.Fatalf("broken key: %d", r.Code)
+		}
+	}
+	if cs.vapid != 1 {
+		t.Fatalf("VAPID key read %d times, want 1", cs.vapid)
 	}
 }

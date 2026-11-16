@@ -139,6 +139,11 @@ want(pv({ supported: false, ios: true }).action === null && /Домой/.test(pv
 want(pv({ supported: false }).action === null && !/Домой/.test(pv({ supported: false }).text), "other browser without push");
 want(pv({ serverOn: false, subscribed: true }).action === null, "server without push: no button even if subscribed");
 
+// 11. Ключ сервера сменился (перепривязка, новый ключ VAPID) — подписка старым
+// ключом мертва, ее надо оформить заново (ревью #643).
+const k1 = new Uint8Array([4, 1, 2, 3]), k2 = new Uint8Array([4, 1, 2, 4]);
+want(s.sameKey(k1.buffer, new Uint8Array([4, 1, 2, 3])) && !s.sameKey(k1.buffer, k2) && !s.sameKey(null, k2), "subscription key compared with the server's");
+
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 

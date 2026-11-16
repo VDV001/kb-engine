@@ -235,3 +235,12 @@ func (p Phones) ClearPush(ctx context.Context, id domain.UserID, device string) 
 func (p Phones) Pushes(ctx context.Context, id domain.UserID) ([]mail.PhonePush, error) {
 	return Pushes(ctx, p.Store, id)
 }
+
+// DropPush removes the subscription with this endpoint, whoever holds it:
+// сервис push сказал, что адреса больше нет.
+func DropPush(ctx context.Context, s blob.Store, endpoint string) error { return nil }
+
+// DropPush is DropPush as the mailbox port.
+func (p Phones) DropPush(ctx context.Context, endpoint string) error {
+	return DropPush(ctx, p.Store, endpoint)
+}

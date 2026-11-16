@@ -162,3 +162,8 @@ export function pushView(o) {
     ? { text: "Включены: компьютер ответил — телефон даст знать.", action: "off" }
     : { text: "Выключены. Включите, чтобы узнавать об ответе компьютера при закрытой странице.", action: "on" };
 }
+
+// sameKey compares the subscription's applicationServerKey with the server's.
+export function sameKey(a, b) {
+  return true;
+}

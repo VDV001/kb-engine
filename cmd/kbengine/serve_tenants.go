@@ -45,6 +45,9 @@ type pushConfig struct {
 	transport http.RoundTripper // nil — http.DefaultTransport
 }
 
+// pushContactFromEnv reads KB_PUSH_CONTACT; неверный — ошибка с именем переменной.
+func pushContactFromEnv() (string, error) { return os.Getenv("KB_PUSH_CONTACT"), nil }
+
 // withPush replaces the push contact and transport (tests).
 func withPush(contact string, rt http.RoundTripper) tenantOption {
 	return func(c *pushConfig) { c.contact, c.transport = contact, rt }

@@ -278,3 +278,11 @@ func TestSender_Status(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckSubject(t *testing.T) {
+	for s, ok := range map[string]bool{"mailto:hi@example.com": true, "https://example.com": true, "": false, "admin@example.com": false, "http://example.com": false, "mailto:": false} {
+		if err := CheckSubject(s); (err == nil) != ok {
+			t.Errorf("CheckSubject(%q) = %v", s, err)
+		}
+	}
+}

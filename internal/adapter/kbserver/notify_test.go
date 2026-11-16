@@ -63,3 +63,15 @@ func TestClient_Notify(t *testing.T) {
 		}
 	}
 }
+
+// Сервер до push (#643) понимает POST /api/mail/notify как отправку в чат
+// «notify» без тела и отвечает 400 — это тоже «push выключен», не ошибка.
+func TestClient_NotifyOldServer(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `body: {"sealed": base64}`, http.StatusBadRequest)
+	}))
+	defer srv.Close()
+	if n, err := (kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}).Notify(context.Background()); n != 0 || err != nil {
+		t.Fatalf("Notify = %d, %v", n, err)
+	}
+}

@@ -48,6 +48,8 @@ type Subscriptions interface {
 	SetPush(ctx context.Context, id domain.UserID, device string, sub domain.PushSubscription) error
 	ClearPush(ctx context.Context, id domain.UserID, device string) error
 	Pushes(ctx context.Context, id domain.UserID) ([]PhonePush, error)
+	// DropPush removes the subscription with endpoint, чья бы она ни была.
+	DropPush(ctx context.Context, endpoint string) error
 }
 
 // Pusher sends one push message; domain.ErrPushGone — подписки больше нет.

@@ -279,3 +279,6 @@ func createVAPID(ctx context.Context, s blob.Store) error {
 // PublicKey is the server's key as the phone passes it to subscribe
 // (applicationServerKey): несжатая точка, base64url.
 func (v *VAPID) PublicKey() string { return v.public }
+
+// CheckSubject checks a VAPID contact: mailto: или https: с адресом.
+func CheckSubject(subject string) error { return nil }

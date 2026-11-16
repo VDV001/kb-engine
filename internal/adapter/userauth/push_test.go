@@ -109,3 +109,64 @@ func TestPushes_skipsRevokedPhoneEvenIfClearFailed(t *testing.T) {
 		t.Fatalf("Pushes = %+v, %v", p, err)
 	}
 }
+
+// Один адрес push — одна подписка: телефон, перепривязанный новым токеном,
+// не получает каждое уведомление дважды (ревью #643).
+func TestSetPush_oneEndpointOneSubscription(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	owner, other := id(t, "owner"), id(t, "other")
+	for _, u := range []domain.UserID{owner, other} {
+		if _, err := userauth.Add(ctx, s, u); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old, _, _ := userauth.AddDevice(ctx, s, owner)
+	fresh, _, _ := userauth.AddDevice(ctx, s, owner)
+	theirs, _, _ := userauth.AddDevice(ctx, s, other)
+	key := append([]byte{4}, bytes.Repeat([]byte{7}, 64)...)
+	sub, _ := domain.NewPushSubscription("https://fcm.googleapis.com/fcm/send/same", key, bytes.Repeat([]byte{9}, 16))
+	for _, d := range []struct {
+		id  domain.UserID
+		dev string
+	}{{owner, old}, {other, theirs}, {owner, fresh}} {
+		if err := userauth.SetPush(ctx, s, d.id, d.dev, sub); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if p, _ := userauth.Pushes(ctx, s, owner); len(p) != 1 || p[0].Device != fresh {
+		t.Fatalf("owner pushes %+v; want only the fresh device", p)
+	}
+	if p, _ := userauth.Pushes(ctx, s, other); len(p) != 0 {
+		t.Fatalf("another person still pushes to the phone: %+v", p)
+	}
+}
+
+// Сервис сказал «адреса нет» — стирается подписка с этим адресом, а не та,
+// что телефон успел положить на ее место (ревью #643).
+func TestDropPush_byEndpoint(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	owner := id(t, "owner")
+	if _, err := userauth.Add(ctx, s, owner); err != nil {
+		t.Fatal(err)
+	}
+	dev, _, _ := userauth.AddDevice(ctx, s, owner)
+	key := append([]byte{4}, bytes.Repeat([]byte{7}, 64)...)
+	sub, _ := domain.NewPushSubscription("https://fcm.googleapis.com/fcm/send/new", key, bytes.Repeat([]byte{9}, 16))
+	if err := userauth.SetPush(ctx, s, owner, dev, sub); err != nil {
+		t.Fatal(err)
+	}
+	if err := userauth.DropPush(ctx, s, "https://fcm.googleapis.com/fcm/send/old"); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := userauth.Pushes(ctx, s, owner); len(p) != 1 {
+		t.Fatalf("the replaced endpoint's 410 wiped the new subscription: %+v", p)
+	}
+	if err := userauth.DropPush(ctx, s, sub.Endpoint()); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := userauth.Pushes(ctx, s, owner); len(p) != 0 {
+		t.Fatalf("gone endpoint kept: %+v", p)
+	}
+}

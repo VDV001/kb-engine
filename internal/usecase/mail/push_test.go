@@ -16,6 +16,8 @@ import (
 type fakeSubs struct {
 	mu   sync.Mutex
 	subs map[string]domain.PushSubscription // device → подписка, один человек
+
+	dropCtxErr []error // ctx.Err() при каждом DropPush
 }
 
 func (f *fakeSubs) SetPush(_ context.Context, _ domain.UserID, device string, sub domain.PushSubscription) error {
@@ -29,6 +31,18 @@ func (f *fakeSubs) ClearPush(_ context.Context, _ domain.UserID, device string) 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.subs, device)
+	return nil
+}
+
+func (f *fakeSubs) DropPush(ctx context.Context, endpoint string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.dropCtxErr = append(f.dropCtxErr, ctx.Err())
+	for d, s := range f.subs {
+		if s.Endpoint() == endpoint {
+			delete(f.subs, d)
+		}
+	}
 	return nil
 }
 
@@ -187,3 +201,33 @@ func TestNotify_NoPhones(t *testing.T) {
 		t.Fatalf("Notify = %d, %v", n, err)
 	}
 }
+
+// Подписку, которую сервис забыл, стирают по адресу и уже не тем сроком, что
+// истек на медленном соседе (ревью #643).
+func TestNotify_GoneIsDroppedByEndpointWithLiveContext(t *testing.T) {
+	const slow, gone = "https://fcm.googleapis.com/fcm/send/slow", "https://web.push.apple.com/gone"
+	subs := &fakeSubs{subs: map[string]domain.PushSubscription{"p-slow": sub(t, slow), "p-gone": sub(t, gone)}}
+	push := slowPusher{slow: slow, gone: gone}
+	if _, err := (mail.Service{Subs: subs, Push: push, Logf: func(string, ...any) {}}).Notify(context.Background(), who, domain.MailDesk); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := subs.subs["p-gone"]; ok {
+		t.Fatal("gone subscription kept")
+	}
+	if len(subs.dropCtxErr) != 1 || subs.dropCtxErr[0] != nil {
+		t.Fatalf("drop ran with ctx err %v", subs.dropCtxErr)
+	}
+}
+
+// slowPusher holds slow until the notify deadline and answers gone at once.
+type slowPusher struct{ slow, gone string }
+
+func (p slowPusher) Send(ctx context.Context, s domain.PushSubscription, _ []byte) error {
+	if s.Endpoint() == p.gone {
+		return domain.ErrPushGone
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (slowPusher) PublicKey(context.Context) (string, error) { return "K", nil }
