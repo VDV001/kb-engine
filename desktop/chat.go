@@ -233,16 +233,17 @@ func (d *chatDesk) config() desktopconfig.Chat {
 }
 
 // turnModel is the chat settings and key of one turn: model — выбор телефона
-// (#647), только из списка окна, иначе телефон взял бы любую модель, в том
-// числе дорогую, за счет ключа человека; пусто — модель настроек.
+// (#647), только из показанного ему (нынешняя и недавние), иначе телефон взял
+// бы любую модель шлюза, в том числе дорогую, за счет ключа человека; пусто —
+// модель настроек.
 func (d *chatDesk) turnModel(model string) (desktopconfig.Chat, string, error) {
 	c := d.config()
 	if model != "" && model != c.Model {
-		m, err := d.Models()
+		m, err := d.recentModels()
 		if err != nil {
 			return c, "", err
 		}
-		if !slices.ContainsFunc(append(m.Recent, m.All...), func(x modelChoice) bool { return x.ID == model }) {
+		if !slices.ContainsFunc(m.Recent, func(x modelChoice) bool { return x.ID == model }) {
 			return c, "", fmt.Errorf("модели «%s» нет в списке окна — выберите из списка", model)
 		}
 		c.Model = model
@@ -347,23 +348,33 @@ type askOut struct {
 	began func(id string)
 }
 
+// turnSources are where a turn searches: телефон не выбирал — где чат окна,
+// а не все (ревью #656); окно присылает свой выбор всегда.
+func turnSources(r askReq, rec chatRecord, out askOut) []string {
+	if out.worker && r.Sources == nil {
+		return rec.Sources
+	}
+	return r.Sources
+}
+
 // ask runs a turn; ctx — родитель срока хода: закрытие окна прерывает ход работника.
 func (d *chatDesk) ask(parent context.Context, r askReq, out askOut) (chatRecord, error) {
 	show, step := out.show, out.step
 	id, question, refs := r.ID, r.Question, r.Refs
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	rec := chatRecord{Created: d.now()}
-	if id != "" {
-		var err error
-		if rec, err = d.load(id); err != nil {
-			return chatRecord{}, err
-		}
-	}
+	// Модель — до замка: журнал читается с диска, вопрос в окне не ждет его.
 	c, key, err := d.turnModel(r.Model)
 	if err != nil {
 		return chatRecord{}, err
 	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	rec := chatRecord{Created: d.now()}
+	if id != "" {
+		if rec, err = d.load(id); err != nil {
+			return chatRecord{}, err
+		}
+	}
+	r.Sources = turnSources(r, rec, out)
 	switch r.Portrait {
 	case "", string(portrait.ContextFull), string(portrait.ContextRelevant):
 	default:

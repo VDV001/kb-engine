@@ -648,11 +648,12 @@ func TestChat_PhoneChoosesModelAndSources(t *testing.T) {
 	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	a, err := chatAnswerer(d)(t.Context(), "", "сроки?", mailrelay.Options{Model: "qwen3", Only: []string{"f-1"}}, nil, nil)
+	folder := phoneSources(d.settings)[0].ID // источник окна: выдуманный id телефон не сузит (ревью #656)
+	a, err := chatAnswerer(d)(t.Context(), "", "сроки?", mailrelay.Options{Model: "qwen3", Only: []string{folder}}, nil, nil)
 	if err != nil || used.Model != "qwen3" {
 		t.Fatalf("listed model: %v, used %q", err, used.Model)
 	}
-	if rec, _ := d.Get(a.Chat); strings.Join(rec.Sources, ",") != "f-1" {
+	if rec, _ := d.Get(a.Chat); strings.Join(rec.Sources, ",") != folder {
 		t.Errorf("chat sources %v", rec.Sources)
 	}
 	if _, err := chatAnswerer(d)(t.Context(), "", "сроки?", mailrelay.Options{Model: "llama-evil"}, nil, nil); err == nil || !strings.Contains(err.Error(), "нет в списке") {

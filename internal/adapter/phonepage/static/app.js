@@ -8,7 +8,7 @@
 // Service worker (sw.js) — только push: «компьютер ответил», когда страница
 // закрыта. Работы без сети нет — страница всегда свежая с сервера.
 import { importKey, seal, open } from "./crypto.js";
-import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted, deciding, hideFact, questionPayload } from "./state.js";
+import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted, deciding, hideFact, questionPayload, deskChat, pickSources, chosen } from "./state.js";
 
 const POLL_MS = 10_000; // решение 15.11: короткий опрос раз в 10 с
 const UNAUTH_MS = 60_000; // 401: реже, но не сдаемся — сервер мог ошибиться ненадолго
@@ -368,9 +368,10 @@ function paintChoice(c) {
   const d = st.desk, m = $("model"), s = $("srcs");
   m.hidden = s.hidden = !d || !c;
   if (!d || !c) { $("pick").hidden = true; return; }
-  m.textContent = (c.model || d.model || "модель") + " ▾";
-  m.setAttribute("aria-label", "Модель: " + (c.model || d.model) + (c.model ? "" : " — как в окне"));
-  const all = d.sources || [], on = Array.isArray(c.only) ? all.filter((x) => c.only.includes(x.id)).length : all.length;
+  const ch = chosen(c, d); // устаревший выбор не показывается и не уходит (ревью #656)
+  m.textContent = (ch.model || d.model || "модель") + " ▾";
+  m.setAttribute("aria-label", "Модель: " + (ch.model || d.model) + (ch.model ? "" : " — как в окне"));
+  const all = d.sources || [], on = ch.only ? ch.only.length : all.length;
   s.textContent = "Источники · " + on + (on === all.length ? "" : " из " + all.length);
   s.hidden = !all.length;
   const p = $("pick");
@@ -384,10 +385,10 @@ function paintChoice(c) {
     return l;
   };
   if (ui.pick === "model") {
-    p.replaceChildren(head("Модель для этого чата"), row("radio", "model", "", "Как в окне · " + d.model, !c.model),
-      ...(d.models || []).filter((x) => x !== d.model || c.model).map((x) => row("radio", "model", x, x, c.model === x)));
+    p.replaceChildren(head("Модель для этого чата"), row("radio", "model", "", "Как в окне · " + d.model, !ch.model),
+      ...(d.models || []).filter((x) => x !== d.model || ch.model).map((x) => row("radio", "model", x, x, ch.model === x)));
   } else {
-    const part = (conn) => all.filter((x) => !!x.conn === conn).map((x) => row("checkbox", "src", x.id, x.name, !Array.isArray(c.only) || c.only.includes(x.id)));
+    const part = (conn) => all.filter((x) => !!x.conn === conn).map((x) => row("checkbox", "src", x.id, x.name, !ch.only || ch.only.includes(x.id)));
     const local = part(false), conns = part(true);
     p.replaceChildren(...(local.length ? [head("Источники"), ...local] : []), ...(conns.length ? [head("Подключения"), ...conns] : []));
   }
@@ -520,7 +521,7 @@ async function send(chat, payload, mark) {
 
 async function ask(text) {
   const c = st.chats[ui.chat];
-  await send(ui.chat, questionPayload(c, text), (counter) => asked(c, text, counter, Date.now()));
+  await send(ui.chat, questionPayload(c, text, st.desk), (counter) => asked(c, text, counter, Date.now()));
 }
 
 // flush posts the outbox in order; неотправленное остается до следующего опроса.
@@ -606,7 +607,7 @@ async function askDesk() {
   const now = Date.now();
   if (now - (st.deskAsked || 0) < DESK_EVERY || (st.desk && now - (st.deskAt || 0) < DESK_EVERY)) return;
   st.deskAsked = now;
-  try { await send(searchChat(st), { kind: "desk", text: "state" }); } catch { /* в исходящих: уйдет со следующим опросом */ }
+  try { await send(deskChat(st), { kind: "desk", text: "state" }); } catch { /* в исходящих: уйдет со следующим опросом */ }
 }
 
 $("new-chat").addEventListener("click", () => {
@@ -672,7 +673,13 @@ $("pick").addEventListener("change", async (e) => { // выбор — этого
     ui.pick = "";
   } else {
     const on = [...$("pick").querySelectorAll('input[name="src"]:checked')].map((x) => x.value);
-    c.only = on.length === (st.desk?.sources || []).length ? undefined : on; // все — как в окне
+    const r = pickSources((st.desk?.sources || []).map((x) => x.id), on);
+    if (!r.ok) { // как в окне: хотя бы один источник
+      e.target.checked = true;
+      note("Хотя бы один источник: иначе чату негде искать.", false);
+      return;
+    }
+    c.only = r.only; // все — как в окне
   }
   await persist();
   show();

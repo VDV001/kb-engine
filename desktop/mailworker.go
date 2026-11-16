@@ -43,12 +43,13 @@ type askFn func(ctx context.Context, chat, question string) (string, string, err
 type mailWorker struct {
 	settings *folderSettings
 	ask      askFn
-	answer   answerFn          // ход модели с метками «взято»; nil — ask без меток
-	find     mailrelay.Finder  // поиск с телефона; nil — отказ словами
-	dir      string            // где лежат mail-<id>.json
-	changed  func(chat string) // ответ записан в чат окна: странице перечитать список и чат
-	turn     func(phoneTurn)   // ход по вопросу с телефона — странице (#646)
-	memory   mailrelay.Memory  // решения телефона по «Запомнить о Вас?» (#647); nil — отказ словами
+	answer   answerFn           // ход модели с метками «взято»; nil — ask без меток
+	find     mailrelay.Finder   // поиск с телефона; nil — отказ словами
+	dir      string             // где лежат mail-<id>.json
+	changed  func(chat string)  // ответ записан в чат окна: странице перечитать список и чат
+	turn     func(phoneTurn)    // ход по вопросу с телефона — странице (#646)
+	memory   mailrelay.Memory   // решения телефона по «Запомнить о Вас?» (#647); nil — отказ словами
+	desk     mailrelay.DeskInfo // модели и источники окна для телефона (#647); nil — отказ словами
 
 	notesMu sync.Mutex
 	notes   []mailrelay.Note // «Запомнить о Вас?» для телефонов: пишет разбор ответа, забирает круг
@@ -176,18 +177,20 @@ func (w *mailWorker) tickServer(ctx context.Context, id string, notes []mailrela
 		Notifier:  mailNotify{c.client},
 		Notes:     notes,
 		Memory:    w.memory,
+		Desk:      w.desk,
 
 		FindTimeout: phoneFindTimeout,
 	}
 	return relay.Tick(ctx)
 }
 
-// useChat wires the worker to the window's chat: ход модели, поиск и
-// «новое — только в портрете». Здесь, а не в app.go: сборка проверяется тестом.
+// useChat wires the worker to the window's chat: ход модели, поиск,
+// «новое — только в портрете» и состояние окна для поля ввода телефона. Здесь, а не в app.go: сборка проверяется тестом.
 func (w *mailWorker) useChat(d *chatDesk) {
 	w.answer = chatAnswerer(d)
 	w.find = newPhoneFinder(d.find, d.openFound) // ставит useSources в main до старта окна
 	w.quiet = func() bool { return d.config().MemoryQuiet }
+	w.desk = phoneDesk{settings: d.settings, models: d.recentModels}
 }
 
 // phoneFindTimeout bounds one search or open for the phone: работник один на
@@ -271,20 +274,44 @@ func (d phoneDesk) State(context.Context) (mailrelay.DeskState, error) {
 			st.Models = append(st.Models, id)
 		}
 	}
-	d.settings.mu.Lock()
-	cfg := d.settings.cfg
-	d.settings.mu.Unlock()
+	st.Sources = phoneSources(d.settings)
+	return st, nil
+}
+
+// phoneSources are the sources and connections the phone may pick for a chat.
+func phoneSources(s *folderSettings) []mailrelay.DeskSource {
+	s.mu.Lock()
+	cfg := s.cfg
+	s.mu.Unlock()
+	out := []mailrelay.DeskSource{}
 	for _, s := range cfg.WithSources().Sources {
 		if s.Enabled {
-			st.Sources = append(st.Sources, mailrelay.DeskSource{ID: s.ID, Name: sourceLabel(s)})
+			out = append(out, mailrelay.DeskSource{ID: s.ID, Name: sourceLabel(s)})
 		}
 	}
 	for _, c := range cfg.Connections {
 		if name, ok := chatConnKinds[c.Kind]; ok && c.Enabled && c.Share {
-			st.Sources = append(st.Sources, mailrelay.DeskSource{ID: c.ID, Name: name + " · " + cmp.Or(c.Name, name), Conn: true})
+			out = append(out, mailrelay.DeskSource{ID: c.ID, Name: name + " · " + cmp.Or(c.Name, name), Conn: true})
 		}
 	}
-	return st, nil
+	return out
+}
+
+// phoneOnly keeps the phone's choice of sources that the window still offers:
+// устаревший или закрытый чату id не сужает поиск до нуля; ничего не
+// осталось — nil, как у чата окна (ревью #656).
+func phoneOnly(s *folderSettings, only []string) []string {
+	if only == nil {
+		return nil
+	}
+	known := phoneSources(s)
+	out := slices.DeleteFunc(slices.Clone(only), func(id string) bool {
+		return !slices.ContainsFunc(known, func(x mailrelay.DeskSource) bool { return x.ID == id })
+	})
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // chatConnKinds are the connections a chat can ask (CHAT_CONN в frontend/app.js).
@@ -396,7 +423,7 @@ func chatAsker(d *chatDesk) askFn {
 func chatAnswerer(d *chatDesk) answerFn {
 	return func(ctx context.Context, chat, question string, opts mailrelay.Options, began func(string), step func(chat.Use)) (mailrelay.Answer, error) {
 		quiet := askOut{worker: true, step: step, began: began}
-		req := askReq{ID: chat, Question: question, Sources: opts.Only, Model: opts.Model}
+		req := askReq{ID: chat, Question: question, Sources: phoneOnly(d.settings, opts.Only), Model: opts.Model}
 		rec, err := d.ask(ctx, req, quiet)
 		if chat != "" && errors.Is(err, fs.ErrNotExist) {
 			req.ID = ""

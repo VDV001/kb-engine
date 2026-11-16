@@ -98,17 +98,35 @@ func usedModels(calls []domain.ModelCall) []string {
 	return out
 }
 
+// recentModels is Models without the gateway's prices: нынешняя и недавние
+// из журнала — то, что видит и может выбрать телефон (#647). Без сети: модель
+// хода телефона проверяется им.
+func (d *chatDesk) recentModels() (modelsView, error) {
+	c := d.config()
+	calls, err := d.usedCalls()
+	if err != nil {
+		return modelsView{}, err
+	}
+	return modelChoices(c.Model, c.URL, calls, nil, nil), nil
+}
+
+// usedCalls reads the model journal; без журнала — пусто.
+func (d *chatDesk) usedCalls() ([]domain.ModelCall, error) {
+	if d.calls == nil {
+		return nil, nil
+	}
+	calls, _, err := d.calls.Load()
+	return calls, err
+}
+
 // Models returns the quick picker list; цены шлюза — из кэша, без них список остается.
 func (d *chatDesk) Models() (modelsView, error) {
 	d.settings.mu.Lock()
 	c, spend := d.settings.cfg.Chat.WithDefaults(), d.settings.cfg.Spend
 	d.settings.mu.Unlock()
-	var calls []domain.ModelCall
-	if d.calls != nil {
-		var err error
-		if calls, _, err = d.calls.Load(); err != nil {
-			return modelsView{}, err
-		}
+	calls, err := d.usedCalls()
+	if err != nil {
+		return modelsView{}, err
 	}
 	own := make(map[string]domain.ModelPrice, len(spend.Prices))
 	for m, p := range spend.Prices {

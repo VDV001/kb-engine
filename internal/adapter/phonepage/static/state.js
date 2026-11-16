@@ -35,6 +35,8 @@ export function take(st, m, o) {
   try { p = JSON.parse(new TextDecoder().decode(o.plain)); } catch { return false; }
   const at = Date.parse(m.at) || Date.now();
   if (m.from === "desk") st.lastDesk = Math.max(st.lastDesk || 0, at);
+  if (m.chat === deskChat(st)) return desked(st, m, p);
+  if (m.chat.startsWith("desk-")) return false; // состояние окна для другого телефона того же ключа
   if (m.chat === searchChat(st)) return found(st, m, p);
   if (m.chat.startsWith("search-")) return false; // поиск другого телефона того же ключа
   if (m.from === "desk" && (p.kind === "remember" || p.kind === "memory")) return remembered(st.chats[m.chat], p);
@@ -154,11 +156,27 @@ export function deciding(c, id) {
 
 // questionPayload is the question of chat c with its choice (#647).
 // Не выбрано — как настроено в окне: поля не уходят вовсе.
-export function questionPayload(c, text) {
-  const p = { kind: "question", text };
-  if (c.model) p.model = c.model;
-  if (Array.isArray(c.only)) p.only = c.only;
+export function questionPayload(c, text, desk) {
+  const p = { kind: "question", text }, ch = chosen(c, desk);
+  if (ch.model) p.model = ch.model;
+  if (ch.only) p.only = ch.only;
   return p;
+}
+
+// chosen is chat c's choice that the window still offers (desk): модель и
+// источники, которых в окне больше нет, отсекаются; ничего не осталось — как
+// в окне (ревью #656). Состояния окна нет — выбор как есть, отсечет окно.
+export function chosen(c, desk) {
+  let model = c.model || undefined, only = Array.isArray(c.only) ? c.only : undefined;
+  if (desk) {
+    if (model && !(desk.models || []).includes(model)) model = undefined;
+    if (only) {
+      const ids = (desk.sources || []).map((x) => x.id);
+      only = only.filter((x) => ids.includes(x));
+      if (!only.length) only = undefined;
+    }
+  }
+  return { model, only };
 }
 
 // searchChat is the mailbox chat of this phone's searches: выдача и документы
@@ -168,14 +186,34 @@ export function searchChat(st) {
   return "search-" + hex(st.sender || []);
 }
 
-// deskChat is the mailbox chat of the window's state for this phone (#647).
+// deskChat is the mailbox chat of the window's state for this phone (#647):
+// свой, а не чат поиска — отказ на desk не становится ошибкой поиска (ревью #656).
 export function deskChat(st) {
-  return searchChat(st);
+  return "desk-" + hex(st.sender || []);
 }
 
-// pickSources turns the checked sources of a chat into its choice.
+// pickSources turns the checked sources of a chat into its choice, как в окне:
+// все — «как в окне» (undefined), ни одного — нельзя, чату негде искать.
 export function pickSources(all, on) {
-  return { ok: true, only: on.length === all.length ? undefined : on };
+  if (!on.length) return { ok: false };
+  return { ok: true, only: all.every((x) => on.includes(x)) ? undefined : on };
+}
+
+// desked applies the window's state or its refusal (#647). Отказ «спросили»
+// не снимает: повтор — через срок askDesk, а не на каждое открытие чата.
+function desked(st, m, p) {
+  if (m.from !== "desk") return false;
+  if (p.kind === "desk") {
+    st.desk = p.desk || null;
+    st.deskAt = Date.now();
+    delete st.deskErr;
+    return true;
+  }
+  if (p.kind === "error") {
+    st.deskErr = p.text;
+    return true;
+  }
+  return false;
 }
 
 // found applies the desk's answer to a search: выдача, документ или отказ.
@@ -183,18 +221,6 @@ export function pickSources(all, on) {
 function found(st, m, p) {
   if (m.from !== "desk") return false; // свой запрос: на экране он уже есть
   const s = (st.search ||= { q: "", hits: [] });
-  if (p.kind === "desk") { // модель и источники окна для поля ввода (#647)
-    st.desk = p.desk || null;
-    st.deskAt = Date.now();
-    st.deskAsked = 0;
-    delete st.deskErr;
-    return true;
-  }
-  if (p.kind === "error" && st.deskAsked && !s.pending && !s.opening) { // отказ на desk, а не на поиск
-    st.deskAsked = 0;
-    st.deskErr = p.text;
-    return true;
-  }
   if (p.kind === "results") {
     if (p.text !== s.q) return false;
     Object.assign(s, { hits: p.hits || [], pending: false, error: "" });
