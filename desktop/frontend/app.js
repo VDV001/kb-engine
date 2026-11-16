@@ -4253,6 +4253,16 @@ function memOffer(chat, facts) {
   n.facts = [...n.facts, ...facts.filter((f) => !n.facts.some((x) => x.id === f.id))];
   chatState.memNew = n;
 }
+// Решено на телефоне (#647): та же карточка в окне снимается, портрет — свежий.
+if (window.runtime) window.runtime.EventsOn("portrait:decided", (ev) => {
+  const n = chatState.memNew;
+  if (n && ev) {
+    n.facts = n.facts.filter((f) => f.id !== ev.id);
+    if (!n.facts.length) chatState.memNew = null;
+  }
+  if (ev && !undoFn) toast(ev.yes ? "Запомнено" : "Не запоминаю", " · решено на телефоне", null, "info");
+  loadPortrait().then(() => { if (!chatState.busy) renderChat(); });
+});
 if (window.runtime) window.runtime.EventsOn("portrait:new", (ev) => {
   if (!(chatState.settings || {}).memoryQuiet && ev && ev.facts && ev.facts.length) memOffer(ev.chat, ev.facts);
   loadPortrait().then(() => { if (!chatState.busy) renderChat(); });

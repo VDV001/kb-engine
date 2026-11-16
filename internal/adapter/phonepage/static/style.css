@@ -208,4 +208,10 @@ body[data-view="chat"] .toast { bottom: calc(124px + env(safe-area-inset-bottom)
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
 
 /* ход модели под «Компьютер отвечает» (#622) */
+/* «Запомнить о Вас?» — как карточка окна (#647). */
+.msgs .mem { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); white-space: normal; }
+.msgs .mem textarea { width: 100%; font: inherit; color: var(--z-ink); background: var(--z-bg); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 6px 8px; }
+.msgs .mem .meta { color: var(--z-muted); font-size: 11px; }
+.msgs .mem .bad { color: var(--z-bad); }
+.mem-acts { display: flex; flex-wrap: wrap; gap: 6px; }
 .wait .step { margin-top: 4px; font-size: 12px; color: var(--z-faint); overflow-wrap: anywhere; }

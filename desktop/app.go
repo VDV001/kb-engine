@@ -530,6 +530,14 @@ func (a *App) startup(ctx context.Context) {
 		w.find = newPhoneFinder(a.chat.find, a.chat.openFound) // ставит useSources в main до старта окна
 		w.changed = func(chat string) { runtime.EventsEmit(ctx, "chats:changed", chat) }
 		w.turn = func(t phoneTurn) { runtime.EventsEmit(ctx, "phone:turn", t) }
+		// «Запомнить о Вас?» и на телефоне (#647): найденное в ответе — и странице,
+		// и в очередь работника; решение телефона — портретом окна.
+		pageNews := a.chat.memoryNew
+		a.chat.memoryNew = func(n portraitNews) { pageNews(n); w.remember(n) }
+		w.memory = phoneMemory{approve: a.chat.PortraitApprove, remove: a.chat.PortraitRemove,
+			decided: func(id string, yes bool) {
+				runtime.EventsEmit(ctx, "portrait:decided", map[string]any{"id": id, "yes": yes})
+			}}
 		go w.run(ctx)
 	}
 }

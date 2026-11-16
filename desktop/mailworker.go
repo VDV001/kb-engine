@@ -90,8 +90,11 @@ func (w *mailWorker) run(ctx context.Context) {
 // tick answers every server with paired phones; сбой одного не держит другие.
 func (w *mailWorker) tick(ctx context.Context) error {
 	var errs []error
+	// Заметки — один раз за круг и каждому ящику целиком: свои чаты берет
+	// каждый, иначе первый сервер съел бы факты чатов второго (#647).
+	notes := givenNotes(w.Take())
 	for _, id := range w.servers() {
-		if err := w.tickServer(ctx, id); err != nil {
+		if err := w.tickServer(ctx, id, notes); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", id, err))
 		}
 	}
@@ -144,7 +147,7 @@ func (w *mailWorker) credsFor(id string) (mailCreds, error) {
 // переводы строк — до 2 байт на знак) не выводят шифротекст за предел ящика.
 const mailMaxText = (mailcrypt.MaxPlain - 64) / 2
 
-func (w *mailWorker) tickServer(ctx context.Context, id string) error {
+func (w *mailWorker) tickServer(ctx context.Context, id string, notes mailrelay.Notes) error {
 	c, err := w.credsFor(id)
 	if err != nil || c.none {
 		return err
@@ -168,6 +171,8 @@ func (w *mailWorker) tickServer(ctx context.Context, id string) error {
 		StepEvery: 3 * time.Second,
 		Logf:      w.logf,
 		Notifier:  mailNotify{c.client},
+		Notes:     notes,
+		Memory:    w.memory,
 
 		FindTimeout: phoneFindTimeout,
 	}
@@ -195,10 +200,32 @@ func (w *mailWorker) askAndTell(ctx context.Context, chat, question string) (str
 }
 
 // remember queues the facts found in a chat's answer for the phone (#647).
-func (w *mailWorker) remember(n portraitNews) {}
+func (w *mailWorker) remember(n portraitNews) {
+	if len(n.Facts) == 0 {
+		return
+	}
+	facts := make([]mailrelay.Fact, 0, len(n.Facts))
+	for _, f := range n.Facts {
+		facts = append(facts, mailrelay.Fact{ID: f.ID, Title: f.Title, Text: f.Text})
+	}
+	w.notesMu.Lock()
+	defer w.notesMu.Unlock()
+	w.notes = append(w.notes, mailrelay.Note{Chat: n.Chat, Payload: mailrelay.Payload{Kind: mailrelay.KindRemember, Facts: facts}})
+}
 
-// Take gives the relay what the window queued for the phones.
-func (w *mailWorker) Take() []mailrelay.Note { return nil }
+// Take gives what the window queued for the phones and empties the queue.
+func (w *mailWorker) Take() []mailrelay.Note {
+	w.notesMu.Lock()
+	defer w.notesMu.Unlock()
+	q := w.notes
+	w.notes = nil
+	return q
+}
+
+// givenNotes is a queue already taken: каждый ящик круга получает его целиком.
+type givenNotes []mailrelay.Note
+
+func (g givenNotes) Take() []mailrelay.Note { return g }
 
 // phoneMemory decides a fact from the phone with the window's portrait (#647):
 // «Да» — одобрить с текстом, «Нет» — убрать; decided — странице снять свою карточку.
@@ -208,7 +235,19 @@ type phoneMemory struct {
 	decided func(id string, yes bool)
 }
 
-func (m phoneMemory) Decide(_ context.Context, id string, yes bool, text string) error { return nil }
+func (m phoneMemory) Decide(_ context.Context, id string, yes bool, text string) error {
+	var err error
+	if yes {
+		err = m.approve(id, text)
+	} else {
+		err = m.remove(id)
+	}
+	if err != nil {
+		return err // карточка окна остается: решение не состоялось
+	}
+	m.decided(id, yes)
+	return nil
+}
 
 // answerFn runs a model turn and tells where the answer came from; step — ход
 // модели по мере ответа (nil — без хода).

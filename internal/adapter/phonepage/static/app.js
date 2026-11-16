@@ -8,7 +8,7 @@
 // Service worker (sw.js) — только push: «компьютер ответил», когда страница
 // закрыта. Работы без сети нет — страница всегда свежая с сервера.
 import { importKey, seal, open } from "./crypto.js";
-import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted } from "./state.js";
+import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted, deciding } from "./state.js";
 
 const POLL_MS = 10_000; // решение 15.11: короткий опрос раз в 10 с
 const UNAUTH_MS = 60_000; // 401: реже, но не сдаемся — сервер мог ошибиться ненадолго
@@ -43,7 +43,7 @@ const save = (k, v) => kv("readwrite", (s) => s.put(v, k));
 const locked = (fn) => (navigator.locks ? navigator.locks.request("dvk-phone-state", fn) : fn());
 
 let st = null; // { pair, sender, counter, after, seen, chats, outbox, lastDesk, search, doc }
-const ui = { tab: "list", view: "", chat: "", kind: "" }; // view: chat | doc | desk | ""
+const ui = { tab: "list", view: "", chat: "", kind: "", memEdit: "" }; // view: chat | doc | desk | ""
 let timer = 0;
 
 // persist writes the state; счетчик — наибольший из своего и записанного
@@ -307,6 +307,48 @@ function chips(sources) {
   return d;
 }
 
+// memCard is «Запомнить о Вас?» of fact f (#647): Да / Нет / Изменить, как в
+// окне; правка — в поле, «Сохранить и запомнить». Решает окно, телефон ждет итог.
+function memCard(f) {
+  const li = document.createElement("li"), head = document.createElement("span"), acts = document.createElement("div");
+  li.className = "mem";
+  head.className = "meta";
+  head.textContent = "Запомнить о Вас?" + (f.title ? " Раздел «" + f.title + "»" : "");
+  let text;
+  if (ui.memEdit === f.id) {
+    text = document.createElement("textarea");
+    text.value = f.text;
+    text.rows = 2;
+    text.dataset.memText = f.id;
+    text.setAttribute("aria-label", "Что запомнить");
+  } else {
+    text = document.createElement("span");
+    text.textContent = f.text;
+  }
+  const btn = (label, act, primary) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "btn" + (primary ? " primary" : "");
+    b.textContent = label;
+    b.dataset.mem = act;
+    b.dataset.fact = f.id;
+    b.disabled = !!f.busy;
+    return b;
+  };
+  acts.className = "mem-acts";
+  acts.append(...(ui.memEdit === f.id
+    ? [btn("Сохранить и запомнить", "yes", true), btn("Отмена", "cancel")]
+    : [btn("Да", "yes", true), btn("Нет", "no"), btn("Изменить", "edit")]));
+  li.append(head, text, acts);
+  if (f.busy || f.err) {
+    const n = document.createElement("span");
+    n.className = "meta" + (f.err ? " bad" : "");
+    n.textContent = f.err || "отправлено окну…";
+    li.append(n);
+  }
+  return li;
+}
+
 // paintCtx draws the context ring of the open chat (#647); числа — только из ctxView.
 function paintCtx(c) {
   const v = ctxView(c?.context, !!c?.msgs.some((m) => m.who === "desk")), b = $("ctx");
@@ -349,6 +391,7 @@ function paintChat(c, follow) {
     }
     return li;
   });
+  for (const f of c.remember || []) items.push(memCard(f)); // «Запомнить о Вас?» — как в окне (#647)
   if (c.pending) {
     const li = document.createElement("li"), sp = document.createElement("span");
     li.className = "wait";
@@ -535,6 +578,23 @@ for (const id of ["desk", "desk-main"]) {
 $("q").addEventListener("input", () => { // поле растет с текстом до 40% экрана
   $("q").style.height = "auto";
   $("q").style.height = $("q").scrollHeight + "px";
+});
+$("msgs").addEventListener("click", async (e) => { // «Запомнить о Вас?» (#647)
+  const b = e.target.closest("[data-mem]");
+  const c = b && st.chats[ui.chat];
+  if (!c) return;
+  const id = b.dataset.fact, act = b.dataset.mem, f = c.remember?.find((x) => x.id === id);
+  if (!f) return;
+  if (act === "edit" || act === "cancel") { ui.memEdit = act === "edit" ? id : ""; return show(); }
+  const edited = act === "yes" && ui.memEdit === id ? document.querySelector(`[data-mem-text="${CSS.escape(id)}"]`)?.value.trim() : "";
+  ui.memEdit = "";
+  deciding(c, id);
+  show();
+  try {
+    await send(ui.chat, { kind: "memory", text: act, facts: [{ id, text: edited || "" }] });
+  } catch (err) { // решение в исходящих: уйдет со следующим опросом, как вопрос
+    note(err.unauth ? "kb-сервер не пускает телефон: решение сохранено и уйдет, когда пустит." : "Пока не отправлено: " + err.message + ". Уйдет со следующим опросом.");
+  }
 });
 $("ctx").addEventListener("click", () => { // нажатие на круг — что значит заполнение
   const c = st.chats[ui.chat], v = ctxView(c?.context, !!c?.msgs.some((m) => m.who === "desk"));

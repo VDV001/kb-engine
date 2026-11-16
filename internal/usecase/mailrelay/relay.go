@@ -28,6 +28,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -272,11 +273,8 @@ type Notifier interface {
 // Tick posts what is waiting, then reads the mailbox to the end and answers
 // every new question.
 func (r Relay) Tick(ctx context.Context) error {
-	st, err := r.load()
+	st, err := r.start(ctx)
 	if err != nil {
-		return err
-	}
-	if err := r.flush(ctx, &st); err != nil {
 		return err
 	}
 	for {
@@ -302,6 +300,18 @@ func (r Relay) Tick(ctx context.Context) error {
 			return nil
 		}
 	}
+}
+
+// start loads the state and posts what waits: заметки окна и исходящие.
+func (r Relay) start(ctx context.Context) (State, error) {
+	st, err := r.load()
+	if err != nil {
+		return st, err
+	}
+	if err := r.offer(&st); err != nil {
+		return st, err
+	}
+	return st, r.flush(ctx, &st)
 }
 
 // startSlack — запас на расхождение часов окна и сервера: вопрос, заданный
@@ -349,7 +359,7 @@ func (r Relay) request(st *State, m Message) (Payload, bool) {
 		return Payload{}, false
 	}
 	switch p.Kind {
-	case KindQuestion, KindSearch, KindOpen:
+	case KindQuestion, KindSearch, KindOpen, KindMemory:
 		return p, true
 	}
 	return Payload{}, false
@@ -370,6 +380,8 @@ func (r Relay) handle(ctx context.Context, st *State, m Message) (bool, error) {
 	switch req.Kind {
 	case KindQuestion:
 		reply = r.ask(ctx, st, m.Chat, req.Text)
+	case KindMemory:
+		reply = r.decide(ctx, st, m.Chat, req)
 	default:
 		reply = r.find(ctx, req)
 	}
@@ -416,6 +428,86 @@ func (r Relay) ask(ctx context.Context, st *State, chat, question string) Payloa
 
 // minPostGap — предел частоты отправки окна в ящик (сервер: раз в секунду).
 const minPostGap = time.Second
+
+// maxOffered bounds the facts remembered as offered per mailbox chat: старые
+// без решения выпадают, телефон по ним получит «не предлагался».
+const maxOffered = 20
+
+// offer queues the window's notes for their phone chats (#647): чат окна →
+// чат ящика по State.Chats; чат, которого телефон не заводил, — мимо.
+func (r Relay) offer(st *State) error {
+	if r.Notes == nil {
+		return nil
+	}
+	queued := false
+	for _, n := range r.Notes.Take() {
+		chat := mailChat(st, n.Chat)
+		if chat == "" {
+			continue
+		}
+		st.DeskCounter++
+		out := Outgoing{Chat: chat, Counter: st.DeskCounter, Payload: n.Payload}
+		var err error
+		if out.Sealed, err = r.sealFitting(&out); err != nil {
+			return err
+		}
+		st.Outbox = append(st.Outbox, out)
+		if st.Offered == nil {
+			st.Offered = map[string][]string{}
+		}
+		for _, f := range n.Payload.Facts {
+			st.Offered[chat] = append(st.Offered[chat], f.ID)
+		}
+		if o := st.Offered[chat]; len(o) > maxOffered {
+			st.Offered[chat] = o[len(o)-maxOffered:]
+		}
+		queued = true
+	}
+	if !queued {
+		return nil
+	}
+	if err := r.Store.Save(*st); err != nil {
+		return fmt.Errorf("mailrelay: state: %w", err)
+	}
+	return nil
+}
+
+// mailChat is the mailbox chat of window chat w; "" — телефон его не заводил.
+func mailChat(st *State, w string) string {
+	for mc, wc := range st.Chats {
+		if wc == w {
+			return mc
+		}
+	}
+	return ""
+}
+
+// decide applies the phone's decision on a fact offered to this chat (#647):
+// только по предложенному и один раз — иначе телефон по id удалил бы чужой или
+// уже одобренный факт портрета.
+func (r Relay) decide(ctx context.Context, st *State, chat string, req Payload) Payload {
+	if len(req.Facts) != 1 || (req.Text != MemoryYes && req.Text != MemoryNo) {
+		return Payload{Kind: KindMemory, Text: "решение по факту не разобрано"}
+	}
+	f := req.Facts[0]
+	reply := Payload{Kind: KindMemory, Facts: []Fact{{ID: f.ID}}}
+	i := slices.Index(st.Offered[chat], f.ID)
+	switch {
+	case i < 0:
+		reply.Text = "этот факт телефону не предлагался или уже решен"
+	case r.Memory == nil:
+		reply.Text = "окно этой версии не запоминает с телефона"
+	default:
+		yes := req.Text == MemoryYes
+		if err := r.Memory.Decide(ctx, f.ID, yes, f.Text); err != nil {
+			reply.Text = err.Error()
+			return reply
+		}
+		st.Offered[chat] = slices.Delete(st.Offered[chat], i, i+1)
+		reply.Text = map[bool]string{true: MemorySaved, false: MemorySkipped}[yes]
+	}
+	return reply
+}
 
 // maxStepText — столько байт подписи шага уходит телефону.
 const maxStepText = 200
