@@ -534,7 +534,8 @@ func (a *App) startup(ctx context.Context) {
 		// и в очередь работника; решение телефона — портретом окна.
 		pageNews := a.chat.memoryNew
 		a.chat.memoryNew = func(n portraitNews) { pageNews(n); w.remember(n) }
-		w.memory = phoneMemory{decide: func(string, bool, string) error { return nil },
+		w.quiet = func() bool { return a.chat.config().MemoryQuiet }
+		w.memory = phoneMemory{decide: a.chat.PortraitDecide,
 			decided: func(id string, yes bool) {
 				runtime.EventsEmit(ctx, "portrait:decided", map[string]any{"id": id, "yes": yes})
 			}}

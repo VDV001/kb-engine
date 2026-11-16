@@ -448,7 +448,10 @@ func (r Relay) offer(st *State) error {
 		out := Outgoing{Chat: chat, Counter: st.DeskCounter, Payload: n.Payload}
 		var err error
 		if out.Sealed, err = r.sealFitting(&out); err != nil {
-			return err
+			// Не влезло (shrink фактов не уменьшает) — мимо этой заметки, круг идет
+			// дальше: вопросы телефона важнее предложения (ревью #655).
+			r.logf("mailrelay: %s: %v", n.Payload.Kind, err)
+			continue
 		}
 		st.Outbox = append(st.Outbox, out)
 		if st.Offered == nil {
@@ -485,25 +488,34 @@ func mailChat(st *State, w string) string {
 // только по предложенному и один раз — иначе телефон по id удалил бы чужой или
 // уже одобренный факт портрета.
 func (r Relay) decide(ctx context.Context, st *State, chat string, req Payload) Payload {
+	reply := Payload{Kind: KindMemory}
+	if len(req.Facts) > 0 { // с id — телефон найдет свою карточку и в отказе
+		reply.Facts = []Fact{{ID: req.Facts[0].ID}}
+	}
 	if len(req.Facts) != 1 || (req.Text != MemoryYes && req.Text != MemoryNo) {
-		return Payload{Kind: KindMemory, Text: "решение по факту не разобрано"}
+		reply.Text = MemoryBad
+		return reply
 	}
 	f := req.Facts[0]
-	reply := Payload{Kind: KindMemory, Facts: []Fact{{ID: f.ID}}}
 	i := slices.Index(st.Offered[chat], f.ID)
 	switch {
 	case i < 0:
-		reply.Text = "этот факт телефону не предлагался или уже решен"
+		reply.Text = MemoryGone
 	case r.Memory == nil:
-		reply.Text = "окно этой версии не запоминает с телефона"
+		reply.Text = MemoryUnsupported
 	default:
 		yes := req.Text == MemoryYes
-		if err := r.Memory.Decide(ctx, f.ID, yes, f.Text); err != nil {
-			reply.Text = err.Error()
+		err := r.Memory.Decide(ctx, f.ID, yes, f.Text)
+		switch {
+		case errors.Is(err, domain.ErrFactDecided), errors.Is(err, domain.ErrFactNotFound): // решен или забыт в окне
+			reply.Text = MemoryGone
+		case err != nil:
+			reply.Text = err.Error() // слова окна о сбое портрета; карточка остается
 			return reply
+		default:
+			reply.Text = map[bool]string{true: MemorySaved, false: MemorySkipped}[yes]
 		}
 		st.Offered[chat] = slices.Delete(st.Offered[chat], i, i+1)
-		reply.Text = map[bool]string{true: MemorySaved, false: MemorySkipped}[yes]
 	}
 	return reply
 }

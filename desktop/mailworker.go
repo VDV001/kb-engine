@@ -205,11 +205,11 @@ func (w *mailWorker) askAndTell(ctx context.Context, chat, question string) (str
 const maxPhoneFacts = 10
 
 func (w *mailWorker) remember(n portraitNews) {
-	if len(n.Facts) == 0 {
+	if len(n.Facts) == 0 || w.quiet != nil && w.quiet() {
 		return
 	}
-	facts := make([]mailrelay.Fact, 0, len(n.Facts))
-	for _, f := range n.Facts {
+	facts := make([]mailrelay.Fact, 0, min(len(n.Facts), maxPhoneFacts))
+	for _, f := range n.Facts[:min(len(n.Facts), maxPhoneFacts)] {
 		facts = append(facts, mailrelay.Fact{ID: f.ID, Title: f.Title, Text: f.Text})
 	}
 	w.notesMu.Lock()
@@ -234,7 +234,7 @@ type phoneMemory struct {
 }
 
 func (m phoneMemory) Decide(_ context.Context, id string, yes bool, text string) error {
-	if err := error(nil); err != nil {
+	if err := m.decide(id, yes, text); err != nil {
 		return err // карточка окна остается: решение не состоялось
 	}
 	m.decided(id, yes)

@@ -201,6 +201,19 @@ func (p Portrait) index(id string) (int, error) {
 	return i, nil
 }
 
+// Waiting checks that fact id still waits for approval: решение «запомнить или
+// нет» принимается только по нему — одобренный ErrFactDecided.
+func (p Portrait) Waiting(id string) error {
+	i, err := p.index(id)
+	if err != nil {
+		return err
+	}
+	if p.facts[i].Approved() {
+		return fmt.Errorf("%w: %q", ErrFactDecided, id)
+	}
+	return nil
+}
+
 // Approve returns the portrait with the fact approved by the person.
 func (p Portrait) Approve(id string) (Portrait, error) {
 	i, err := p.index(id)

@@ -135,14 +135,16 @@ function remembered(c, p) {
   }
   const f = c.remember?.find((x) => x.id === facts[0]?.id);
   if (!f) return false;
-  if (p.text === "saved" || p.text === "skipped") c.remember = c.remember.filter((x) => x !== f);
+  if (p.text === "saved" || p.text === "skipped" || p.text === "gone") c.remember = c.remember.filter((x) => x !== f); // gone — решено или забыто в окне
   else Object.assign(f, { busy: false, err: p.text || "окно не приняло решение" });
   return true;
 }
 
 // hideFact drops the card of fact id on the phone: окно отказало, а карточка
 // не нужна (ревью #655).
-export function hideFact(c, id) {}
+export function hideFact(c, id) {
+  if (c.remember) c.remember = c.remember.filter((x) => x.id !== id);
+}
 
 // deciding marks fact id of chat c sent for a decision (#647).
 export function deciding(c, id) {

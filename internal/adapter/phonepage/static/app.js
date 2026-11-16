@@ -8,7 +8,7 @@
 // Service worker (sw.js) — только push: «компьютер ответил», когда страница
 // закрыта. Работы без сети нет — страница всегда свежая с сервера.
 import { importKey, seal, open } from "./crypto.js";
-import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted, deciding } from "./state.js";
+import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted, deciding, hideFact } from "./state.js";
 
 const POLL_MS = 10_000; // решение 15.11: короткий опрос раз в 10 с
 const UNAUTH_MS = 60_000; // 401: реже, но не сдаемся — сервер мог ошибиться ненадолго
@@ -43,7 +43,7 @@ const save = (k, v) => kv("readwrite", (s) => s.put(v, k));
 const locked = (fn) => (navigator.locks ? navigator.locks.request("dvk-phone-state", fn) : fn());
 
 let st = null; // { pair, sender, counter, after, seen, chats, outbox, lastDesk, search, doc }
-const ui = { tab: "list", view: "", chat: "", kind: "", memEdit: "" }; // view: chat | doc | desk | ""
+const ui = { tab: "list", view: "", chat: "", kind: "", memEdit: "", memDraft: null }; // view: chat | doc | desk | ""
 let timer = 0;
 
 // persist writes the state; счетчик — наибольший из своего и записанного
@@ -307,6 +307,12 @@ function chips(sources) {
   return d;
 }
 
+// MEM_ERR words the window's refusal codes (слова — здесь, ящик шлет коды).
+const MEM_ERR = {
+  bad: "Окно не разобрало решение — решите в окне DVK или скройте карточку.",
+  unsupported: "Окно DVK на компьютере старой версии — решите там или обновите его.",
+};
+
 // memCard is «Запомнить о Вас?» of fact f (#647): Да / Нет / Изменить, как в
 // окне; правка — в поле, «Сохранить и запомнить». Решает окно, телефон ждет итог.
 function memCard(f) {
@@ -317,7 +323,7 @@ function memCard(f) {
   let text;
   if (ui.memEdit === f.id) {
     text = document.createElement("textarea");
-    text.value = f.text;
+    text.value = ui.memDraft ?? f.text;
     text.rows = 2;
     text.dataset.memText = f.id;
     text.setAttribute("aria-label", "Что запомнить");
@@ -339,11 +345,12 @@ function memCard(f) {
   acts.append(...(ui.memEdit === f.id
     ? [btn("Сохранить и запомнить", "yes", true), btn("Отмена", "cancel")]
     : [btn("Да", "yes", true), btn("Нет", "no"), btn("Изменить", "edit")]));
+  if (f.err) acts.append(btn("Скрыть", "hide")); // окно отказало — карточку можно убрать (ревью #655)
   li.append(head, text, acts);
   if (f.busy || f.err) {
     const n = document.createElement("span");
     n.className = "meta" + (f.err ? " bad" : "");
-    n.textContent = f.err || "отправлено окну…";
+    n.textContent = f.err ? MEM_ERR[f.err] || f.err : "отправлено окну…";
     li.append(n);
   }
   return li;
@@ -371,6 +378,9 @@ function ctxNote(v) {
 
 function paintChat(c, follow) {
   paintCtx(c);
+  // Человек правит факт: опрос раз в 10 с не перестраивает чат под пальцами —
+  // поле, фокус и клавиатура остаются (ревью #655).
+  if (document.activeElement?.dataset?.memText) return;
   const box = $("chat");
   const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
   const items = c.msgs.map((m) => {
@@ -579,15 +589,17 @@ $("q").addEventListener("input", () => { // поле растет с текст�
   $("q").style.height = "auto";
   $("q").style.height = $("q").scrollHeight + "px";
 });
+$("msgs").addEventListener("input", (e) => { if (e.target.dataset?.memText) ui.memDraft = e.target.value; });
 $("msgs").addEventListener("click", async (e) => { // «Запомнить о Вас?» (#647)
   const b = e.target.closest("[data-mem]");
   const c = b && st.chats[ui.chat];
   if (!c) return;
   const id = b.dataset.fact, act = b.dataset.mem, f = c.remember?.find((x) => x.id === id);
   if (!f) return;
-  if (act === "edit" || act === "cancel") { ui.memEdit = act === "edit" ? id : ""; return show(); }
+  if (act === "edit" || act === "cancel") { Object.assign(ui, { memEdit: act === "edit" ? id : "", memDraft: null }); return show(); }
+  if (act === "hide") { hideFact(c, id); await persist(); return show(); }
   const edited = act === "yes" && ui.memEdit === id ? document.querySelector(`[data-mem-text="${CSS.escape(id)}"]`)?.value.trim() : "";
-  ui.memEdit = "";
+  Object.assign(ui, { memEdit: "", memDraft: null });
   deciding(c, id);
   show();
   try {
