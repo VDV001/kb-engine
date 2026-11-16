@@ -169,3 +169,15 @@ export function sameKey(a, b) {
   const x = new Uint8Array(a), y = new Uint8Array(b);
   return x.length === y.length && x.every((v, i) => v === y[i]);
 }
+
+// nextTheme is the theme after t on a tap: как кнопка окна на Маке.
+const THEME_ORDER = ["system", "light", "dark"];
+export function nextTheme(t) {
+  return THEME_ORDER[(Math.max(0, THEME_ORDER.indexOf(t)) + 1) % THEME_ORDER.length];
+}
+
+// themeColor is the status bar color for theme t (system — по prefers-color-scheme).
+export function themeColor(t, systemDark) {
+  const dark = t === "dark" || (t !== "light" && systemDark);
+  return dark ? "#0b0b0c" : "#ffffff";
+}

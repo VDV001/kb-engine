@@ -19,8 +19,12 @@
             android:exported="true"
             android:label="DVK">
             <meta-data android:name="android.support.customtabs.trusted.DEFAULT_URL" android:value="${defaultUrl}" />
-            <meta-data android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR" android:resource="@color/dvk_bg" />
-            <meta-data android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR" android:resource="@color/dvk_bg" />
+            <!-- Полосы — по теме системы (*_DARK — в темной). Выбор темы на самой
+                 странице до них не доходит: TWA берет цвета отсюда (ревью #644). -->
+            <meta-data android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR" android:resource="@color/dvk_bg_light" />
+            <meta-data android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR_DARK" android:resource="@color/dvk_bg" />
+            <meta-data android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR" android:resource="@color/dvk_bg_light" />
+            <meta-data android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR_DARK" android:resource="@color/dvk_bg" />
             <meta-data android:name="android.support.customtabs.trusted.SPLASH_SCREEN_BACKGROUND_COLOR" android:resource="@color/dvk_bg" />
             <meta-data android:name="android.support.customtabs.trusted.DISPLAY_MODE" android:value="default" />
 

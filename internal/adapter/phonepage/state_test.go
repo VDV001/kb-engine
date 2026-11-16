@@ -144,6 +144,20 @@ want(pv({ serverOn: false, subscribed: true }).action === null, "server without 
 const k1 = new Uint8Array([4, 1, 2, 3]), k2 = new Uint8Array([4, 1, 2, 4]);
 want(s.sameKey(k1.buffer, new Uint8Array([4, 1, 2, 3])) && !s.sameKey(k1.buffer, k2) && !s.sameKey(null, k2), "subscription key compared with the server's");
 
+// 12. Тема как в окне на Маке: как в системе → светлая → темная по кругу.
+want(s.nextTheme("system") === "light" && s.nextTheme("light") === "dark" && s.nextTheme("dark") === "system", "theme cycles like the Mac window");
+want(s.nextTheme("purple") === "light", "unknown theme counts as system");
+// Полоса состояния — цвет фона выбранной темы, а «как в системе» — по системе.
+want(s.themeColor("light", true) === "#ffffff" && s.themeColor("dark", false) === "#0b0b0c", "explicit theme wins over the system");
+want(s.themeColor("system", true) === "#0b0b0c" && s.themeColor("system", false) === "#ffffff", "system theme follows the system");
+
+// 13. Цвет полосы состояния — тот же --z-bg, что у страницы (ревью #644).
+const css = (await import("node:fs")).readFileSync(new URL("style.css", process.argv[1]), "utf8");
+const bgs = [...css.matchAll(/--z-bg:\s*(#[0-9a-fA-F]+)/g)].map((m) => m[1].toLowerCase().replace(/^#(.)(.)(.)$/, "#$1$1$2$2$3$3"));
+const themeJs = (await import("node:fs")).readFileSync(new URL("theme.js", process.argv[1]), "utf8");
+want(themeJs.includes('"' + s.themeColor("dark", true) + '"') && themeJs.includes('"' + s.themeColor("light", false) + '"'), "theme.js paints the same status bar colors");
+want(bgs.length >= 2 && bgs[0] === s.themeColor("dark", true) && bgs.slice(1).every((c) => c === s.themeColor("light", false)), "status bar color equals --z-bg of style.css: " + bgs.join(","));
+
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 

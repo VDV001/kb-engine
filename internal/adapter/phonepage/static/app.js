@@ -8,7 +8,7 @@
 // Service worker (sw.js) — только push: «компьютер ответил», когда страница
 // закрыта. Работы без сети нет — страница всегда свежая с сервера.
 import { importKey, seal, open } from "./crypto.js";
-import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey } from "./state.js";
+import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor } from "./state.js";
 
 const POLL_MS = 10_000; // решение 15.11: короткий опрос раз в 10 с
 const UNAUTH_MS = 60_000; // 401: реже, но не сдаемся — сервер мог ошибиться ненадолго
@@ -593,6 +593,46 @@ $("unpair").addEventListener("click", async () => {
   location.reload();
 });
 wide.addEventListener("change", () => show(false));
+
+// --- тема: как в системе → светлая → темная, как кнопка окна на Маке. Выбор —
+// удобство этого телефона (localStorage); theme.js применяет его до отрисовки.
+const THEMES = { system: "как в системе", light: "светлая", dark: "темная" };
+const systemDark = matchMedia("(prefers-color-scheme: dark)");
+const currentTheme = () => document.documentElement.dataset.theme || "system";
+function paintTheme() {
+  const t = currentTheme();
+  document.querySelectorAll("[data-theme-icon]").forEach((svg) => svg.toggleAttribute("hidden", svg.dataset.themeIcon !== t));
+  document.querySelectorAll("[data-theme-btn]").forEach((b) => b.setAttribute("aria-label", "Тема: " + THEMES[t]));
+  // Полоса состояния и строка адреса — цветом выбранной темы, а не системы.
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => {
+    m.content = themeColor(t, m.media.includes("dark")); // явная тема media не смотрит
+  });
+}
+// Ключ kbengine-theme — витрины kb-сервера на том же адресе, как rememberTheme
+// окна: в одном браузере не живут две темы (ревью #644).
+const FRAME_THEME_KEY = "kbengine-theme";
+function setTheme(t) {
+  if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+  else delete document.documentElement.dataset.theme;
+  try {
+    for (const k of ["theme", FRAME_THEME_KEY]) {
+      if (t === "light" || t === "dark") localStorage.setItem(k, t);
+      else localStorage.removeItem(k);
+    }
+  } catch { /* только на сеанс */ }
+  paintTheme();
+}
+// Без всплывающей подписи, как в окне: она затерла бы ошибку отправки.
+document.querySelectorAll("[data-theme-btn]").forEach((b) => b.addEventListener("click", () => setTheme(nextTheme(currentTheme()))));
+// Тему сменили в другой вкладке /m/ — эта берет ее же.
+addEventListener("storage", (e) => {
+  if (e.key !== "theme") return;
+  if (e.newValue === "light" || e.newValue === "dark") document.documentElement.dataset.theme = e.newValue;
+  else delete document.documentElement.dataset.theme;
+  paintTheme();
+});
+systemDark.addEventListener("change", paintTheme);
+paintTheme();
 // ponytail: «пишет только вкладка на экране» — две вкладки рядом (планшет,
 // два окна) все еще затирают друг другу чаты. Путь: слияние чатов и
 // исходящих при persist, как счетчика.
