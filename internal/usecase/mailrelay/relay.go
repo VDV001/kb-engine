@@ -79,6 +79,29 @@ type Payload struct {
 	Only []string `json:"only,omitempty"`
 	// Desk — состояние окна для телефона (#647), ответ на desk.
 	Desk *DeskState `json:"desk,omitempty"`
+	// File — запись телефона в файлах ящика (#648, KindVoice).
+	File *FileRef `json:"file,omitempty"`
+	// Heard — что окно расслышало в голосовом вопросе (#648, ответ на KindVoice).
+	Heard string `json:"heard,omitempty"`
+}
+
+// FileRef names a piece in the mailbox files (#658): id выдал сервер, sha256 —
+// запечатанного куска, сообщение аутентично — сервер кусок не подменит.
+type FileRef struct {
+	ID     string `json:"id"`
+	SHA256 string `json:"sha256"`
+	Size   int    `json:"size"`
+}
+
+// VoiceFiles reads and removes the phone's recordings in the mailbox files.
+type VoiceFiles interface {
+	Get(ctx context.Context, id string) ([]byte, error)
+	Delete(ctx context.Context, id string) error
+}
+
+// Hearer opens a sealed recording and turns it into text.
+type Hearer interface {
+	Hear(ctx context.Context, sealed []byte) (string, error)
 }
 
 // DeskState is what the phone shows by its input: модель настроек окна и
@@ -126,6 +149,15 @@ const (
 	// DeskUnsupported — код отказа на desk (Text у KindError): окно собрано без
 	// Desk. Слова человеку — у телефона.
 	DeskUnsupported = "unsupported"
+	// KindVoice — голос телефона (#648): File — запись, Text — VoiceDictate или VoiceAsk.
+	KindVoice = "voice"
+	// KindHeard — ответ на диктовку: Text — расслышанное (пусто — тишина).
+	KindHeard = "heard"
+	// VoiceDictate — текст в поле ввода; VoiceAsk — вопрос голосом, ответ модели.
+	VoiceDictate = "dictate"
+	VoiceAsk     = "ask"
+	// VoiceMismatch — код отказа: запись не та, что назвало сообщение (хеш).
+	VoiceMismatch = "mismatch"
 	// KindRemember — окно предлагает запомнить факты о человеке (#647, Facts).
 	KindRemember = "remember"
 	// KindMemory — решение телефона по факту (Text yes/no, Facts[0]) и ответ окна
@@ -303,6 +335,9 @@ type Relay struct {
 	Memory Memory
 	// Desk — состояние окна для телефона (nil — отказ словами).
 	Desk DeskInfo
+	// Files и Hear — голос телефона (#648); nil — отказ DeskUnsupported.
+	Files VoiceFiles
+	Hear  Hearer
 }
 
 // Notifier tells the phones an answer is waiting (kb-сервер, /api/mail/notify).
