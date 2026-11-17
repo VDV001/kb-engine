@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -88,7 +89,11 @@ func ReviewsPrompt(rs []Review) (prompt string, n int) {
 		if rr := []rune(text); len(rr) > MaxReviewRunes {
 			text = string(rr[:MaxReviewRunes]) + "…"
 		}
-		fmt.Fprintf(&b, "%d. [%d из 5, %s] %s\n", i+1, r.Rating, r.Day.Format("02.01.2006"), text)
+		mark := "без оценки" // как в сводке: вне шкалы — не «0 из 5» (ревью #674)
+		if r.Rating >= 1 && r.Rating <= 5 {
+			mark = fmt.Sprintf("%d из 5", r.Rating)
+		}
+		fmt.Fprintf(&b, "%d. [%s, %s] %s\n", i+1, mark, r.Day.Format("02.01.2006"), text)
 	}
 	b.WriteString("\nОтвет — JSON: " + `{"praise":[{"point":"что хвалят","reviews":[номера]}],"complaints":[{"point":"на что жалуются","reviews":[номера]}]}`)
 	return b.String(), len(with)
@@ -105,25 +110,30 @@ type ReviewFindings struct{ Praise, Complaints []ReviewPoint }
 
 type reviewPointJSON struct {
 	Point   string `json:"point"`
-	Reviews []int  `json:"reviews"`
+	Reviews []any  `json:"reviews"` // числа или строки с числом: модель пишет по-разному
 }
 
 // ParseReviewFindings reads the model's answer for n numbered reviews. Число
 // подтверждений — разные номера из 1..n, которые назвала модель; ее собственное
 // «count» не читается: проверить его нечем, а номера — можно.
 func ParseReviewFindings(text string, n int) (ReviewFindings, error) {
-	start, end := strings.Index(text, "{"), strings.LastIndex(text, "}")
-	if start < 0 || end <= start {
-		return ReviewFindings{}, fmt.Errorf("%w: в ответе нет JSON", ErrModelReviews)
+	// Первый объект с praise или complaints, с какой бы «{» он ни начинался:
+	// модель пишет и пояснения со скобками вокруг (ревью #674).
+	for i := strings.Index(text, "{"); i >= 0; {
+		var raw struct {
+			Praise     []reviewPointJSON `json:"praise"`
+			Complaints []reviewPointJSON `json:"complaints"`
+		}
+		if json.NewDecoder(strings.NewReader(text[i:])).Decode(&raw) == nil && (raw.Praise != nil || raw.Complaints != nil) {
+			return ReviewFindings{Praise: reviewPoints(raw.Praise, n), Complaints: reviewPoints(raw.Complaints, n)}, nil
+		}
+		next := strings.Index(text[i+1:], "{")
+		if next < 0 {
+			break
+		}
+		i += 1 + next
 	}
-	var raw struct {
-		Praise     []reviewPointJSON `json:"praise"`
-		Complaints []reviewPointJSON `json:"complaints"`
-	}
-	if err := json.Unmarshal([]byte(text[start:end+1]), &raw); err != nil {
-		return ReviewFindings{}, fmt.Errorf("%w: %w", ErrModelReviews, err)
-	}
-	return ReviewFindings{Praise: reviewPoints(raw.Praise, n), Complaints: reviewPoints(raw.Complaints, n)}, nil
+	return ReviewFindings{}, fmt.Errorf("%w: в ответе нет JSON с praise и complaints", ErrModelReviews)
 }
 
 // reviewPoints keeps the points backed by at least one real review number.
@@ -131,8 +141,8 @@ func reviewPoints(ps []reviewPointJSON, n int) []ReviewPoint {
 	out := []ReviewPoint{} // не nil: в JSON — [], а не null
 	for _, p := range ps {
 		seen := map[int]bool{}
-		for _, i := range p.Reviews {
-			if i >= 1 && i <= n {
+		for _, v := range p.Reviews {
+			if i := reviewNumber(v); i >= 1 && i <= n {
 				seen[i] = true
 			}
 		}
@@ -142,4 +152,19 @@ func reviewPoints(ps []reviewPointJSON, n int) []ReviewPoint {
 	}
 	slices.SortStableFunc(out, func(a, b ReviewPoint) int { return cmp.Compare(b.Count, a.Count) })
 	return out
+}
+
+// reviewNumber reads a review number given as 3 or "3"; иное — 0.
+func reviewNumber(v any) int {
+	switch x := v.(type) {
+	case float64:
+		if x == math.Trunc(x) {
+			return int(x)
+		}
+	case string:
+		if i, err := strconv.Atoi(strings.TrimSpace(x)); err == nil {
+			return i
+		}
+	}
+	return 0
 }

@@ -63,9 +63,6 @@ func (a *App) MarketsReviews(sku string, fresh bool) (reviewsView, error) {
 // MarketsReviewFindings asks the chat model what buyers praise and complain
 // about; consent — человек согласился отдать тексты отзывов провайдеру модели.
 func (a *App) MarketsReviewFindings(sku string, consent bool) (reviewFindingsView, error) {
-	if !consent {
-		return reviewFindingsView{}, errNoReviewsConsent
-	}
 	if err := a.chat.modelReady(); err != nil { // без ключа модели в MPStats не ходим
 		return reviewFindingsView{}, err
 	}
@@ -75,31 +72,51 @@ func (a *App) MarketsReviewFindings(sku string, consent bool) (reviewFindingsVie
 }
 
 // readReviews reads the card's reviews: память на 10 минут или один отчет
-// comments; calls — запросов тарифа. Отзывов нет — пустой список, не сбой.
-func (f *folderSettings) readReviews(ctx context.Context, hc *http.Client, sku string, fresh bool, now time.Time) ([]markets.Review, int, error) {
+// comments; calls — запросов тарифа; shared — подключение, из которого
+// читали, разрешено чату (тот же снимок настроек, ревью #674).
+// ponytail: calls не считает повторы MCP при сбое MPStats (mpstats.MCP.call);
+// потолок — подпись «1 запрос» при 2-3 настоящих; путь — call отдает число попыток.
+func (f *folderSettings) readReviews(ctx context.Context, hc *http.Client, sku string, fresh bool, now time.Time) (rs []markets.Review, calls int, shared bool, err error) {
 	id, err := strconv.ParseInt(strings.TrimSpace(sku), 10, 64)
 	if err != nil || id <= 0 {
-		return nil, 0, errors.New("отзывы читаются у товара Ozon с числовым SKU")
+		return nil, 0, false, errors.New("отзывы читаются у товара Ozon с числовым SKU")
 	}
-	cl, connID, err := f.mpstatsFirst(hc)
+	conn, ok := f.firstMPStats()
+	if !ok {
+		return nil, 0, false, errors.New("подключения MPStats нет — добавьте ключ в Настройках → Подключения → + MPStats")
+	}
+	cl, err := f.mpstatsByID(conn.ID, hc)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, false, err
 	}
-	key := connID + "|" + strconv.FormatInt(id, 10)
+	key := conn.ID + "|" + strconv.FormatInt(id, 10)
 	if rs, ok := f.reviewParts.get(key, now); ok && !fresh {
-		return rs, 0, nil
+		return rs, 0, conn.Share, nil
 	}
-	rs, err := mpstats.MCP{URL: f.mcpBase(), Token: cl.Token, HTTP: hc}.Comments(ctx, id)
-	if err != nil && !errors.Is(err, mpstats.ErrNotFound) {
-		return nil, 1, errors.New("отзывы не прочитаны — " + mpstatsMessage(err))
+	rs, err = mpstats.MCP{URL: f.mcpBase(), Token: cl.Token, HTTP: hc}.Comments(ctx, id)
+	if errors.Is(err, mpstats.ErrNotFound) { // пустой ответ — товар не известен, а не «отзывов нет» (ревью #674)
+		return nil, 1, conn.Share, errors.New("MPStats не знает этого товара: новый или еще не продавался — отзывов взять неоткуда")
+	}
+	if err != nil {
+		return nil, 1, conn.Share, errors.New("отзывы не прочитаны — " + mpstatsMessage(err))
 	}
 	f.reviewParts.put(key, rs, now)
-	return rs, 1, nil
+	return rs, 1, conn.Share, nil
+}
+
+// firstMPStats is the first enabled MPStats connection — та же, что у mpstatsFirst.
+func (f *folderSettings) firstMPStats() (desktopconfig.Connection, bool) {
+	for _, c := range f.snapshot().cfg.Connections {
+		if c.Kind == desktopconfig.ConnMPStats && c.Enabled {
+			return c, true
+		}
+	}
+	return desktopconfig.Connection{}, false
 }
 
 // reviewsCheck summarizes the card's reviews without the model.
 func (f *folderSettings) reviewsCheck(ctx context.Context, hc *http.Client, sku string, fresh bool, now time.Time) (reviewsView, error) {
-	rs, calls, err := f.readReviews(ctx, hc, sku, fresh, now)
+	rs, calls, _, err := f.readReviews(ctx, hc, sku, fresh, now)
 	if err != nil {
 		return reviewsView{}, err
 	}
@@ -140,29 +157,27 @@ func (d *chatDesk) modelReviews(rs []markets.Review, consent bool) (reviewFindin
 	return reviewFindingsView{Praise: rows(f.Praise), Complaints: rows(f.Complaints), Used: n, Model: reply.Model}, nil
 }
 
-// reviewFindings reads the reviews and asks the model; без разрешения чату у
-// подключения MPStats — отказ до вызова модели.
+// reviewFindings reads the reviews and asks the model; без согласия и без
+// разрешения чату у подключения MPStats — отказ до чтения и вызова модели.
+// Calls — если память истекла и отзывы прочитаны заново (ревью #674).
 func (f *folderSettings) reviewFindings(ctx context.Context, hc *http.Client, cd *chatDesk, sku string, consent bool, now time.Time) (reviewFindingsView, error) {
 	if !consent {
 		return reviewFindingsView{}, errNoReviewsConsent
 	}
-	if !f.mpstatsShared() {
+	if conn, ok := f.firstMPStats(); ok && !conn.Share {
 		return reviewFindingsView{}, errReviewsNotShared
 	}
-	rs, _, err := f.readReviews(ctx, hc, sku, false, now)
+	rs, calls, shared, err := f.readReviews(ctx, hc, sku, false, now)
 	if err != nil {
 		return reviewFindingsView{}, err
 	}
-	return cd.modelReviews(rs, consent)
-}
-
-// mpstatsShared reports whether the first enabled MPStats connection — та, из
-// которой читаются отзывы (mpstatsFirst), — разрешена чату.
-func (f *folderSettings) mpstatsShared() bool {
-	for _, c := range f.snapshot().cfg.Connections {
-		if c.Kind == desktopconfig.ConnMPStats && c.Enabled {
-			return c.Share
-		}
+	if !shared { // подключение сменилось между снимками — тексты не уходят
+		return reviewFindingsView{}, errReviewsNotShared
 	}
-	return false
+	v, err := cd.modelReviews(rs, true)
+	if err != nil {
+		return reviewFindingsView{}, err
+	}
+	v.Total, v.Calls = len(rs), calls
+	return v, nil
 }

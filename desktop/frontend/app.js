@@ -6723,6 +6723,7 @@ function shSourceLine(v) {
 // кнопки — от последнего дня назад; «90 дн.» — когда история длиннее.
 const SH_PRESETS = [["all", "всё"], [90, "90 дн."], [30, "30 дн."], [7, "7 дн."], [1, "вчера"]];
 const shDay = (iso) => iso.split("-").reverse().slice(0, 2).join(".");
+const shDate = (iso) => (iso ? iso.split("-").reverse().join(".") : "—"); // с годом: отзывы бывают за несколько лет
 // shYesterday: «вчера» — только если загружено сегодня; иначе последний день — датой (ревью #604).
 const shYesterday = (v) => { const d = new Date(); d.setDate(d.getDate() - 1); return isoDay(d) === v.windowTo; };
 const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -7226,12 +7227,12 @@ const shReviews = new Map(); // кабинет|SKU → { busy, v, err, fBusy, f,
 function shReviewsCard(p) {
   if (!shOzon() || !/^\d+$/.test(p.sku || "")) return "";
   const t = shReviews.get(shTagsKey(p)) || {}, btn = `<button class="btn" type="button" data-sh-reviews="${esc(p.sku)}"${t.busy ? " disabled" : ""}${mkTip("Отзывы", "отзывы о товаре — отчет comments MPStats: 1 запрос тарифа, второй раз за 10 минут — из памяти")}>${t.busy ? "Читаю MPStats…" : t.v ? "Прочитать еще раз" : "Прочитать отзывы"}</button>`;
-  let body = t.err ? `<div class="note">${esc(t.err)}</div>` : "";
+  let body = "";
   const v = t.v;
   if (v && !v.total) body = `<div class="note">У товара нет отзывов в MPStats.</div>`;
   if (v && v.total) {
     const stars = v.ratings.map((n, i) => `${i + 1}★ ${fmt(n)}`).reverse().join(" · ");
-    body = `<div class="note">${fmt(v.total)} ${plural(v.total, "отзыв", "отзыва", "отзывов")} за ${esc(v.from.split("-").reverse().join("."))} – ${esc(v.to.split("-").reverse().join("."))}, с текстом ${fmt(v.withText)}; средняя оценка ${String(v.avg).replace(".", ",")}. ${stars}</div>` +
+    body = `<div class="note">${fmt(v.total)} ${plural(v.total, "отзыв", "отзыва", "отзывов")} за ${esc(shDate(v.from))} – ${esc(shDate(v.to))}, с текстом ${fmt(v.withText)}; средняя оценка ${String(v.avg).replace(".", ",")}. ${stars}</div>` +
       `<div class="note">${esc(v.source)} · ${v.calls ? "1 запрос тарифа" : "из памяти, без запросов тарифа"}</div>`;
     if (v.withText) body += `<button class="btn" type="button" data-sh-findings="${esc(p.sku)}"${t.fBusy ? " disabled" : ""}${mkTip("Хвалят и жалуются", `пишет модель окна из «Чат и модель»: тексты ${fmt(Math.min(v.withText, 150))} последних отзывов уйдут ее провайдеру; нужно «Чату: разрешить» у MPStats; расход — в «Статистике»`)}>${t.fBusy ? "Модель читает…" : t.f ? "Выводы еще раз" : "Хвалят и жалуются — моделью окна"}</button>`;
     if (t.fErr) body += `<div class="note">${esc(t.fErr)}</div>`;
@@ -7240,9 +7241,10 @@ function shReviewsCard(p) {
       body += (t.f.praise.length ? `<div class="sh-title-h">Хвалят</div><ul>${t.f.praise.map(li).join("")}</ul>` : "") +
         (t.f.complaints.length ? `<div class="sh-title-h">Жалуются</div><ul>${t.f.complaints.map(li).join("")}</ul>` : "") +
         (!t.f.praise.length && !t.f.complaints.length ? `<div class="note">Модель не нашла в текстах ни похвал, ни жалоб.</div>` : "") +
-        `<div class="note">По ${fmt(t.f.used)} ${plural(t.f.used, "отзыву", "отзывам", "отзывам")} с текстом; выводы написала модель ${esc(t.f.model)}, число — сколько отзывов это сказали.</div>`;
+        `<div class="note">По ${fmt(t.f.used)} ${plural(t.f.used, "отзыву", "отзывам", "отзывам")} с текстом из ${fmt(t.f.total)}; выводы написала модель ${esc(t.f.model)}, число — сколько отзывов это сказали.${t.f.calls ? " Память отзывов истекла — прочитаны заново: 1 запрос тарифа MPStats." : ""}</div>`;
     }
   }
+  if (t.err) body = `<div class="note">${esc(t.err)}</div>` + body;
   return `<h4 class="sh-money-h">Отзывы</h4>${btn}${body}`;
 }
 document.addEventListener("click", async (e) => {
@@ -7261,8 +7263,10 @@ document.addEventListener("click", async (e) => {
   } else {
     if (t.fBusy) return; // пока модель читает, перечитывание не стирает оплаченные выводы
     const fresh = !!t.v;
-    shReviews.set(key, { busy: true }); shCard();
-    try { shReviews.set(key, { v: await native().MarketsReviews(sku, fresh) }); } catch (err) { shReviews.set(key, { err: "Отзывы не прочитаны: " + errText(err) }); }
+    // Перечитывание не стирает оплаченные выводы и прежнюю сводку при сбое (ревью #674).
+    shReviews.set(key, { ...t, busy: true, err: "" }); shCard();
+    try { shReviews.set(key, { ...shReviews.get(key), busy: false, v: await native().MarketsReviews(sku, fresh) }); }
+    catch (err) { shReviews.set(key, { ...shReviews.get(key), busy: false, err: "Отзывы не прочитаны: " + errText(err) }); }
   }
   if (sh.v && sh.v.products[sh.sel] && sh.v.products[sh.sel].sku === sku) shCard();
 });
