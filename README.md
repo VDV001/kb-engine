@@ -90,7 +90,19 @@ Built with TDD + DDD + Clean Architecture. Design notes:
   **Статистика** shows the model calls the window made — a feed, an activity
   map and money at the gateway's own prices, with a spend limit you set and the
   month's spend by chat (the dearest chats and their share; a chat opens its
-  Journal, and a costly one offers to open it and compress). When a
+  Journal, and a costly one offers to open it and compress; image calls of
+  your own model are a line of their own). **Chat models:** a main and a second
+  model — a hint line above the field advises one by rules (no model call),
+  every answer is signed with the model that wrote it; Settings → Чат и модель
+  also connects **your own image model** (a gateway address, a model name, the
+  key in the Keychain; you top the balance up yourself) that draws the card
+  infographic in Маркеты. The **phone** (the PWA over the mailbox, an Android
+  app, a Windows window) shows the window's chats and lets you pick the model
+  and the sources for its turns. The window **updates itself**: it checks a
+  release signed with the owner's ed25519 key (a manifest with an expiry, the
+  file's sha256) at start and daily, offers «обновить до …», and installs on
+  your click — `just window-release <tag>` publishes it, `just window-renew`
+  extends the manifest without a rebuild. When a
   button in the
   window stays silent, `just desktop-inspect` builds `bin/kb-inspect.app` with
   the WebKit inspector (right-click in any input → Inspect Element); the
