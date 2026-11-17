@@ -8,6 +8,8 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+## [0.41.3] — 2026-11-17
+
 ### Fixed
 - **Обновление окна больше не «закрывается и все».** Перезапуск после
   обновления шел помощником-потомком, а launchd убивает всех потомков окна
