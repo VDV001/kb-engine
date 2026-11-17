@@ -30,6 +30,7 @@ type fileChecker interface {
 // App is bound into the window: its exported methods are callable from the
 // page as window.go.main.App.<Method>.
 type App struct {
+	update    *updateDesk // обновление окна по нажатию (update.go, #651)
 	ctx       context.Context
 	files     fileChecker
 	settings  *folderSettings

@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/usecase/selfupdate"
 )
@@ -119,5 +121,76 @@ func TestUpdateDeskDevAndNothing(t *testing.T) {
 func TestReleaseKeyEmbedded(t *testing.T) {
 	if k := releasePublicKey(); len(k) != ed25519.PublicKeySize {
 		t.Errorf("key %d bytes", len(k))
+	}
+}
+
+func recvState(t *testing.T, c <-chan updateState) updateState {
+	t.Helper()
+	select {
+	case s := <-c:
+		return s
+	case <-time.After(2 * time.Second):
+		t.Fatal("the page was not told")
+		return updateState{}
+	}
+}
+
+// Окно проверяет выпуск при запуске и по сроку, и каждый итог отдает странице;
+// закрытие окна останавливает проверку (#651).
+func TestWatchUpdates(t *testing.T) {
+	pub, src := signedRelease(t, "v0.41.0", []byte("x"))
+	d := newUpdateDesk("v0.40.0", src, pub, "darwin-arm64", nil)
+	tick := make(chan time.Time)
+	emitted := make(chan updateState)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { watchUpdates(ctx, d, tick, func(s updateState) { emitted <- s }); close(done) }()
+	if st := recvState(t, emitted); !st.Available || st.Version != "v0.41.0" {
+		t.Fatalf("first check %+v", st)
+	}
+	delete(src, "download/dvk-latest/dvk-manifest.json") // выпуск пропал: ошибка — словами, окно живет
+	tick <- time.Now()
+	if st := recvState(t, emitted); st.Error == "" {
+		t.Errorf("second check %+v — the failure is shown in words", st)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("the watch outlived the window")
+	}
+}
+
+// Пока установка не научилась ставить сама, проверенная сборка кладется в
+// «Загрузки» под понятным именем (#651).
+func TestSaveForManualInstall(t *testing.T) {
+	home := t.TempDir()
+	src := filepath.Join(t.TempDir(), "dvk-1.zip")
+	if err := os.WriteFile(src, []byte("build"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := saveForManual(home, src, "v0.41.0")
+	if err != nil || filepath.Dir(got) != filepath.Join(home, "Downloads") || filepath.Base(got) != "DVK-v0.41.0.zip" {
+		t.Fatalf("saved %q, %v", got, err)
+	}
+	if b, _ := os.ReadFile(got); string(b) != "build" {
+		t.Errorf("content %q", b)
+	}
+}
+
+// Страница берет состояние и ставит по нажатию через App.
+func TestAppUpdateMethods(t *testing.T) {
+	pub, src := signedRelease(t, "v0.41.0", []byte("x"))
+	var applied bool
+	d := newUpdateDesk("v0.40.0", src, pub, "darwin-arm64", func(context.Context, string, string) error { applied = true; return nil })
+	a := &App{update: d, ctx: context.Background()}
+	if st := a.UpdateCheck(); !st.Available {
+		t.Fatalf("%+v", st)
+	}
+	if err := a.UpdateInstall(); err != nil || !applied {
+		t.Errorf("install %v, applied %v", err, applied)
+	}
+	if st := a.UpdateState(); st.Current != "v0.40.0" {
+		t.Errorf("%+v", st)
 	}
 }

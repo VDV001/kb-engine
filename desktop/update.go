@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/selfupdate"
@@ -112,3 +113,11 @@ func (d *updateDesk) Install(ctx context.Context) error {
 	_ = os.Remove(path) // установка уже взяла свое; подмененный файл — не нужен
 	return err
 }
+
+func watchUpdates(context.Context, *updateDesk, <-chan time.Time, func(updateState)) {}
+
+func saveForManual(string, string, string) (string, error) { return "", nil }
+
+func (a *App) UpdateState() updateState { return updateState{} }
+func (a *App) UpdateCheck() updateState { return updateState{} }
+func (a *App) UpdateInstall() error     { return nil }
