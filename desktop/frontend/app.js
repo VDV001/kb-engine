@@ -3046,7 +3046,7 @@ function renderChatSources() {
   };
   const connChip = (s) => {
     const on = chatSrcOn(s.id);
-    return `<button type="button" class="chat-src conn" data-chat-src="${esc(s.id)}" aria-pressed="${on}"
+    return `<button type="button" class="chat-src conn" style="--c:var(--z-accent)" data-chat-src="${esc(s.id)}" aria-pressed="${on}"
       data-tip="${esc(connLabel(s.conn))}" data-tip-b="${esc((on ? "подключение: внешний сервис по Вашему ключу, чат спрашивает его, его данные уходят провайдеру модели · щелчок — убрать из этого чата" : "этот чат его не спрашивает · щелчок — вернуть"))}"><i></i><span class="t">${esc(connLabel(s.conn))}</span></button>`;
   };
   const lockChip = (c) => tools
@@ -3075,7 +3075,7 @@ function renderChatSources() {
     row.innerHTML = (list.length ? `<span class="lbl">ищет в</span>` : "") +
       shown.map((it, i) => (i === firstConn ? `<span class="lbl">спрашивает</span>` : "") + it.html).join("") +
       (rest.length ? `<button type="button" class="chat-src more" data-chat-more aria-expanded="${chatState.moreOpen}" data-tip="Все источники и подключения" data-tip-b="в ряд не влезли еще ${rest.length}${chatState.only ? `, из них включено ${restOn}` : ""} · щелчок — окошко со всеми, там включить или выключить">еще ${rest.length}</button>` : "") +
-      (chatState.only ? `<button type="button" class="chat-srcs-reset" data-chat-src-all>все</button>` : "") +
+      (chatState.only ? `<button type="button" class="chat-srcs-reset" data-chat-src-all data-tip="Включить все" data-tip-b="для этого чата часть источников и подключений выключена · щелчок — включить все обратно">включить все</button>` : "") +
       (chatState.moreOpen && rest.length ? `<div class="chat-srcs-more" role="group" aria-label="Где ищет этот чат">` +
         (list.length ? `<div class="hd">Источники</div>` + items.filter((it) => !it.conn).map(popRow).join("") : "") +
         (items.some((it) => it.conn) ? `<div class="hd">Подключения</div>` + items.filter((it) => it.conn).map(popRow).join("") : "") + `</div>` : "");
