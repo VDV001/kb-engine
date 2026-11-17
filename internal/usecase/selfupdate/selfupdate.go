@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
 )
@@ -43,7 +44,8 @@ type Updater struct {
 	Source    Source
 	PublicKey ed25519.PublicKey // вшит в окно; без него не верим ничему
 	Current   domain.ReleaseVersion
-	Platform  string // darwin-arm64, windows-amd64
+	Platform  string           // darwin-arm64, windows-amd64
+	Now       func() time.Time // nil — time.Now; срок годности манифеста сверяется с ним
 }
 
 // Offer is a newer release whose manifest passed the signature. Поля закрыты:
@@ -90,6 +92,13 @@ func (u Updater) Check(ctx context.Context) (Offer, error) {
 	m, err := domain.ParseReleaseManifest(manifest)
 	if err != nil {
 		return Offer{}, err
+	}
+	now := time.Now
+	if u.Now != nil {
+		now = u.Now
+	}
+	if m.Expired(now()) { // подпись верна, но манифест устарел: подсунуть старый нельзя
+		return Offer{}, domain.ErrReleaseExpired
 	}
 	if !m.Version().Newer(u.Current) {
 		return Offer{}, nil

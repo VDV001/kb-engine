@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/keychain"
 	"github.com/daniil/kb-engine/internal/domain"
@@ -39,6 +40,13 @@ func runRelease(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stderr, releaseUsage)
 	return 2
 }
+
+// defaultValidDays — срок годности подписи манифеста; maxValidDays — потолок:
+// долгий срок возвращал бы «заморозку» (ревью #679).
+const (
+	defaultValidDays = 90
+	maxValidDays     = 365
+)
 
 const releaseUsage = `usage: kbengine release key
        kbengine release sign --version vX.Y.Z --out <dir> darwin-arm64=<file> windows-amd64=<file>
@@ -105,6 +113,7 @@ func releaseSign(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	version := fs.String("version", "", "release tag, vX.Y.Z")
 	out := fs.String("out", "", "directory for dvk-manifest.json and dvk-manifest.json.sig")
+	validDays := fs.Int("valid-days", defaultValidDays, "days the manifest is believed; потом — kbengine release renew")
 	if code, stop := parseFlags(fs, args); stop {
 		return code
 	}
@@ -116,7 +125,11 @@ func releaseSign(args []string, stdout, stderr io.Writer) int {
 	if assets == nil {
 		return code
 	}
-	m, err := domain.NewReleaseManifest(*version, assets...)
+	if *validDays < 1 || *validDays > maxValidDays {
+		fmt.Fprintf(stderr, "release sign: --valid-days от 1 до %d\n", maxValidDays)
+		return 2
+	}
+	m, err := domain.NewReleaseManifest(*version, time.Now().AddDate(0, 0, *validDays), assets...)
 	if err != nil {
 		fmt.Fprintln(stderr, "release sign:", err)
 		return 2
