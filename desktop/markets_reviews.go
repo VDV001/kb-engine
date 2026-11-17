@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
@@ -74,8 +75,7 @@ func (a *App) MarketsReviewFindings(sku string, consent bool) (reviewFindingsVie
 // readReviews reads the card's reviews: память на 10 минут или один отчет
 // comments; calls — запросов тарифа; shared — подключение, из которого
 // читали, разрешено чату (тот же снимок настроек, ревью #674).
-// ponytail: calls не считает повторы MCP при сбое MPStats (mpstats.MCP.call);
-// потолок — подпись «1 запрос» при 2-3 настоящих; путь — call отдает число попыток.
+// calls считает и повтор после сбоя MPStats (mpstats.MCP.Tries, ревью #674).
 func (f *folderSettings) readReviews(ctx context.Context, hc *http.Client, sku string, fresh bool, now time.Time) (rs []markets.Review, calls int, shared bool, err error) {
 	id, err := strconv.ParseInt(strings.TrimSpace(sku), 10, 64)
 	if err != nil || id <= 0 {
@@ -93,15 +93,17 @@ func (f *folderSettings) readReviews(ctx context.Context, hc *http.Client, sku s
 	if rs, ok := f.reviewParts.get(key, now); ok && !fresh {
 		return rs, 0, conn.Share, nil
 	}
-	rs, err = mpstats.MCP{URL: f.mcpBase(), Token: cl.Token, HTTP: hc}.Comments(ctx, id)
+	var tries atomic.Int64
+	rs, err = mpstats.MCP{URL: f.mcpBase(), Token: cl.Token, HTTP: hc, Tries: &tries}.Comments(ctx, id)
+	calls = int(tries.Load())
 	if errors.Is(err, mpstats.ErrNotFound) { // пустой ответ — товар не известен, а не «отзывов нет» (ревью #674)
-		return nil, 1, conn.Share, errors.New("MPStats не знает этого товара: новый или еще не продавался — отзывов взять неоткуда")
+		return nil, calls, conn.Share, errors.New("MPStats не знает этого товара: новый или еще не продавался — отзывов взять неоткуда")
 	}
 	if err != nil {
-		return nil, 1, conn.Share, errors.New("отзывы не прочитаны — " + mpstatsMessage(err))
+		return nil, calls, conn.Share, errors.New("отзывы не прочитаны — " + mpstatsMessage(err))
 	}
 	f.reviewParts.put(key, rs, now)
-	return rs, 1, conn.Share, nil
+	return rs, calls, conn.Share, nil
 }
 
 // firstMPStats is the first enabled MPStats connection — та же, что у mpstatsFirst.
