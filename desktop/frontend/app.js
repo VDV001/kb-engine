@@ -3516,6 +3516,9 @@ function paintUpdate(st) {
 }
 if (window.runtime) window.runtime.EventsOn("update:state", paintUpdate);
 $("#update-btn")?.addEventListener("click", async () => {
+  const btn = $("#update-btn");
+  btn.disabled = true; // второе нажатие во время скачивания получило бы «нового выпуска нет»
+  $("#update-label").textContent = "скачиваю…";
   try {
     await native().UpdateInstall();
     const st = await native().UpdateState();
@@ -3523,6 +3526,7 @@ $("#update-btn")?.addEventListener("click", async () => {
     toast("Новая сборка скачана и проверена", " · лежит в «Загрузки»: " + (st.saved || "") + ". Закройте окно и поставьте ее поверх.", null, "info");
   } catch (e) {
     toast("Обновление не поставилось", " · " + (e?.message || e), null, "bad");
+    native().UpdateState().then(paintUpdate).catch(() => {});
   }
 });
 native()?.UpdateState().then(paintUpdate).catch(() => {});
