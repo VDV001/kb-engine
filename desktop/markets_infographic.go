@@ -305,6 +305,11 @@ func fetchImageVia(hc *http.Client, hosts []string, limit int64, ok func(string,
 
 // modelText asks the chat model with system and user text (описание, задание на картинку).
 func (d *chatDesk) modelText(system, user string) (descriptionDraft, error) {
+	return d.modelTextFor(domain.CallCardText, system, user)
+}
+
+// modelTextFor is modelText under its own purpose in the usage log.
+func (d *chatDesk) modelTextFor(purpose domain.CallPurpose, system, user string) (descriptionDraft, error) {
 	cfg := d.config()
 	key, err := d.modelKey(cfg)
 	if err != nil {
@@ -312,7 +317,7 @@ func (d *chatDesk) modelText(system, user string) (descriptionDraft, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), askTimeout)
 	defer cancel()
-	model := d.metered(d.model(cfg, key), cfg, usage.Fixed(domain.CallCardText), "")
+	model := d.metered(d.model(cfg, key), cfg, usage.Fixed(purpose), "")
 	reply, err := model.Complete(ctx, []chat.ModelMessage{{Role: chat.RoleSystem, Content: system}, {Role: chat.RoleUser, Content: user}}, nil)
 	if err != nil {
 		return descriptionDraft{}, errors.New(chatError(err))

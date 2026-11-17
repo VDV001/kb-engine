@@ -395,4 +395,25 @@ func clip(s string, n int) string {
 	return string(r[:n]) + "…"
 }
 
-func (m MCP) Comments(context.Context, int64) ([]markets.Review, error) { return nil, nil }
+// Comments reads sku's reviews (ozon_sku report=comments, замер 17.11:
+// [{date, valuation, likes, text}], текст бывает пустым). Период MPStats
+// не ограничивает — отдается все, что есть.
+func (m MCP) Comments(ctx context.Context, sku int64) ([]markets.Review, error) {
+	var rows []struct {
+		Date      string  `json:"date"`
+		Valuation float64 `json:"valuation"`
+		Text      string  `json:"text"`
+	}
+	if err := m.call(ctx, "ozon_sku", map[string]any{"sku": sku, "report": "comments"}, &rows); err != nil {
+		return nil, err
+	}
+	out := make([]markets.Review, 0, len(rows))
+	for _, r := range rows {
+		d, err := time.Parse(time.DateOnly, r.Date)
+		if err != nil {
+			return nil, fmt.Errorf("MPStats: дата отзыва %q не ГГГГ-ММ-ДД", clip(r.Date, 20))
+		}
+		out = append(out, markets.Review{Day: d, Rating: int(math.Round(r.Valuation)), Text: r.Text})
+	}
+	return out, nil
+}
