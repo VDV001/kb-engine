@@ -9,6 +9,7 @@ import (
 // ModelRole is which of the two chat models a question goes to (#678).
 type ModelRole string
 
+// Роли: главная — для сложного, вторая — для короткого и простого.
 const (
 	RoleMain   ModelRole = "main"
 	RoleSecond ModelRole = "second"
@@ -18,6 +19,7 @@ const (
 // у окна.
 type HintReason string
 
+// Причины совета.
 const (
 	ReasonShort    HintReason = "short"
 	ReasonLong     HintReason = "long"

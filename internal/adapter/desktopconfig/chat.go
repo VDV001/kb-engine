@@ -105,6 +105,14 @@ func (c Chat) checkMemory() error {
 	return nil
 }
 
+// checkSecondModel: вторая модель (#678) — пусто или имя без управляющих символов.
+func (c Chat) checkSecondModel() error {
+	if utf8.RuneCountInString(c.SecondModel) > 200 || strings.IndexFunc(c.SecondModel, unicode.IsControl) >= 0 {
+		return fmt.Errorf("%w: вторая модель %q", ErrChatSettings, c.SecondModel)
+	}
+	return nil
+}
+
 // checkContextWindow: 0 — не задан, иначе в границах.
 func (c Chat) checkContextWindow() error {
 	if c.ContextWindow != 0 && (c.ContextWindow < MinContextWindow || c.ContextWindow > MaxContextWindow) {
@@ -129,8 +137,8 @@ func (c Chat) Check() error {
 		strings.IndexFunc(c.Voice, unicode.IsControl) >= 0 {
 		return fmt.Errorf("%w: голос %q", ErrChatSettings, c.Voice)
 	}
-	if utf8.RuneCountInString(c.SecondModel) > 200 || strings.IndexFunc(c.SecondModel, unicode.IsControl) >= 0 {
-		return fmt.Errorf("%w: вторая модель %q", ErrChatSettings, c.SecondModel)
+	if err := c.checkSecondModel(); err != nil {
+		return err
 	}
 	if err := c.checkMemory(); err != nil {
 		return err
