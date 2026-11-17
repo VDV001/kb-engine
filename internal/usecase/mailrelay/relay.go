@@ -793,7 +793,7 @@ func (r Relay) ask(ctx context.Context, st *State, chat, question string, files 
 		touchShared(st, chat)
 	}
 	r.pendingTitle(ctx, st, chat)
-	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources, Context: a.Context, Only: a.Only, Pick: a.Pick}
+	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources, Context: a.Context, Only: a.Only, Pick: a.Pick, Model: a.Model}
 }
 
 // minPostGap — предел частоты отправки окна в ящик (сервер: раз в секунду).
