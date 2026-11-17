@@ -41,6 +41,7 @@ type placesView struct {
 	Rows   []placeRow  `json:"rows"`
 	Stats  *placeStats `json:"stats"`
 	Calls  int         `json:"calls"` // запросов тарифа MPStats на эту проверку
+	Note   string      `json:"note"`
 	Source string      `json:"source"`
 }
 

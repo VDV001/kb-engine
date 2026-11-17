@@ -42,3 +42,24 @@ func TestSearchPlaces(t *testing.T) {
 		t.Error("nil rows — окно ждет пустой список, а не null")
 	}
 }
+
+// Ревью #673: место 0 — «нет данных», а не выше всех; дни не по длине периода
+// — без дат.
+func TestSearchPlacesNoData(t *testing.T) {
+	from := time.Date(2026, 10, 17, 0, 0, 0, 0, time.UTC)
+	own := []markets.OwnQuery{
+		{Text: "без места", Count: 900, Position: 0, Days: make([]int, 31)},
+		{Text: "место 5", Count: 900, Position: 5, Days: append(make([]int, 30), 5)},
+		{Text: "короткий", Count: 10, Position: 3, Days: []int{3, 4}},
+	}
+	got := markets.SearchPlaces(own, from, 0)
+	if got[0].Query != "место 5" || got[1].Query != "без места" {
+		t.Fatalf("order %+v", got)
+	}
+	if !got[0].LastDay.Equal(from.AddDate(0, 0, 30)) {
+		t.Errorf("last day %v", got[0].LastDay)
+	}
+	if c := got[2]; c.Last != 4 || !c.LastDay.IsZero() || c.Seen != 2 {
+		t.Errorf("short days %+v — длина не 31: место есть, даты нет", c)
+	}
+}

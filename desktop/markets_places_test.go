@@ -85,3 +85,52 @@ func TestPlacesView(t *testing.T) {
 		t.Errorf("bad sku: %v", err)
 	}
 }
+
+// Ревью #673: один кэш своих запросов для «Места», «Названия» и «Хештегов» —
+// в обе стороны; ошибка search_stats видна, а не проглочена.
+func TestPlacesShareOwnQueries(t *testing.T) {
+	var keywords atomic.Int32
+	s, _, _ := newServerSettings(t)
+	srv := titleMCP(t, func(name string, a map[string]any) (string, bool) {
+		switch {
+		case name == "ozon_sku" && a["report"] == "full":
+			return titleCard, false
+		case name == "ozon_sku" && a["report"] == "keywords" && a["sku"] == float64(1234567):
+			keywords.Add(1)
+			return `[{"query":"футболка женская","count":900,"avg_position":30,"positions":[25]}]`, false
+		case name == "ozon_sku" && a["report"] == "keywords":
+			return "", false
+		case name == "ozon_sku" && a["report"] == "search_stats":
+			return "Ошибка: лимит тарифа исчерпан", true
+		case name == "ozon_category":
+			return titleNicheJSON, false
+		}
+		return "wrong call", true
+	})
+	s.mpstatsURL, s.mcpURL = srv.URL, srv.URL+"/mcp"
+	ctx := context.Background()
+	if _, err := s.addMPStats(ctx, checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1", false); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if _, err := s.placesCheck(ctx, srv.Client(), "1234567", false, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.titleCheck(ctx, srv.Client(), "1234567", "Футболка женская", false); err != nil {
+		t.Fatal(err)
+	}
+	if n := keywords.Load(); n != 1 {
+		t.Errorf("keywords asked %d times for places then title, want 1", n)
+	}
+	// Свежее чтение «Места» видят и следующие проверки, а не старая запись.
+	if _, err := s.placesCheck(ctx, srv.Client(), "1234567", true, now); err != nil {
+		t.Fatal(err)
+	}
+	if v, err := s.placesCheck(ctx, srv.Client(), "1234567", false, now); err != nil || v.Calls != 0 || keywords.Load() != 2 {
+		t.Errorf("after fresh: calls %d, keywords %d, %v", v.Calls, keywords.Load(), err)
+	}
+	e, err := s.placesCheck(ctx, srv.Client(), "7654321", false, now)
+	if err != nil || e.Stats != nil || !strings.Contains(e.Note, "лимит") {
+		t.Errorf("search_stats error: %+v %v — причина должна дойти до окна", e, err)
+	}
+}

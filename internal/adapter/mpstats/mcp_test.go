@@ -111,7 +111,7 @@ func TestMCP_queries(t *testing.T) {
 			if a["report"] != "keywords" || a["d1"] != "2026-10-17" || a["d2"] != "2026-11-16" {
 				return "wrong arguments", true
 			}
-			return `[{"query":"сиреневая футболка женская","count":49,"total":0,"avg_position":7,"positions":[7,null,3]}]`, false
+			return `[{"query":"сиреневая футболка женская","count":49,"total":0,"avg_position":6.6,"positions":[7,null,3]}]`, false
 		},
 	})
 	m := mpstats.MCP{URL: srv.URL, Token: "t-1", HTTP: srv.Client()}
@@ -249,13 +249,13 @@ func TestMCP_searchStats(t *testing.T) {
 			if a["report"] != "search_stats" || a["d1"] != "2026-10-17" {
 				return "wrong arguments", true
 			}
-			return `{"search_words_count":0,"search_words_count_previous":237,"search_position_avg":null,"search_position_avg_previous":17.4,` +
+			return `{"search_words_count":0,"search_words_count_previous":237,"search_position_avg":null,"search_position_avg_previous":17.6,` +
 				`"search_visibility":0,"search_visibility_previous":1520,"oz_count":0,"oz_count_previous":12}`, false
 		},
 	})
 	m := mpstats.MCP{URL: srv.URL, Token: "t-1", HTTP: srv.Client()}
 	st, err := m.SearchStats(context.Background(), 1234567, time.Date(2026, 10, 17, 0, 0, 0, 0, time.UTC), time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC))
-	if err != nil || st.Words != 0 || st.WordsBefore != 237 || st.Avg != 0 || st.AvgBefore != 17 {
+	if err != nil || st.Words != 0 || st.WordsBefore != 237 || st.Avg != 0 || st.AvgBefore != 18 { // округление, а не отбрасывание (ревью #673)
 		t.Fatalf("%+v, %v", st, err)
 	}
 }
