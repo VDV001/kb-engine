@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/selfupdate"
@@ -59,8 +60,8 @@ var setup = []byte("windows setup v0.41.0")
 
 func manifest(version string, body []byte) []byte {
 	s := sha256.Sum256(body)
-	return fmt.Appendf(nil, `{"version":%q,"assets":[{"platform":"windows-amd64","name":"DVK-Setup.exe","sha256":%q,"size":%d}]}`,
-		version, hex.EncodeToString(s[:]), len(body))
+	return fmt.Appendf(nil, `{"version":%q,"expires":%q,"assets":[{"platform":"windows-amd64","name":"DVK-Setup.exe","sha256":%q,"size":%d}]}`,
+		version, time.Now().AddDate(0, 0, 60).UTC().Format(time.RFC3339), hex.EncodeToString(s[:]), len(body))
 }
 
 func key(t *testing.T) (ed25519.PublicKey, ed25519.PrivateKey) {
@@ -207,5 +208,43 @@ func TestCheckSourceDown(t *testing.T) {
 	src := &fakeReleases{err: boom}
 	if offer, err := updater(t, src, pub, "v0.40.0").Check(t.Context()); !errors.Is(err, boom) || offer.Available() {
 		t.Errorf("available %v, %v", offer.Available(), err)
+	}
+}
+
+// Просроченный манифест не верится, даже с верной подписью: старый подписанный
+// манифест не «замораживает» окно на прежнем выпуске (ревью #679, п.6).
+func TestCheckRefusesExpiredManifest(t *testing.T) {
+	pub, priv := key(t)
+	m := manifestExpiring("v0.41.0", setup, "2026-11-20T00:00:00Z")
+	u := updater(t, release(m, selfupdate.SignManifest(priv, m)), pub, "v0.40.0")
+	u.Now = func() time.Time { return time.Date(2026, 11, 19, 23, 59, 0, 0, time.UTC) }
+	if o, err := u.Check(t.Context()); err != nil || !o.Available() {
+		t.Fatalf("before the expiry: %v %v", o.Available(), err)
+	}
+	u.Now = func() time.Time { return time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC) }
+	if _, err := u.Check(t.Context()); !errors.Is(err, domain.ErrReleaseExpired) {
+		t.Errorf("at the expiry: %v", err)
+	}
+}
+
+func manifestExpiring(version string, body []byte, expires string) []byte {
+	s := sha256.Sum256(body)
+	return fmt.Appendf(nil, `{"version":%q,"expires":%q,"assets":[{"platform":"windows-amd64","name":"DVK-Setup.exe","sha256":%q,"size":%d}]}`,
+		version, expires, hex.EncodeToString(s[:]), len(body))
+}
+
+// Срок дальше года окно не верит: подпись с датой в 9999 годе сводила бы защиту
+// от заморозки на нет (ревью безопасности #681, п.2).
+func TestCheckRefusesAbsurdExpiry(t *testing.T) {
+	pub, priv := key(t)
+	m := manifestExpiring("v0.41.0", setup, "9999-01-01T00:00:00Z")
+	u := updater(t, release(m, selfupdate.SignManifest(priv, m)), pub, "v0.40.0")
+	if _, err := u.Check(t.Context()); !errors.Is(err, domain.ErrBadReleaseManifest) {
+		t.Errorf("%v", err)
+	}
+	ok := manifestExpiring("v0.41.0", setup, time.Now().AddDate(0, 0, 300).UTC().Format(time.RFC3339))
+	u = updater(t, release(ok, selfupdate.SignManifest(priv, ok)), pub, "v0.40.0")
+	if o, err := u.Check(t.Context()); err != nil || !o.Available() {
+		t.Errorf("300 days: %v %v", o.Available(), err)
 	}
 }

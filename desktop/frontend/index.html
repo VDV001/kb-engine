@@ -57,6 +57,13 @@
         <span class="tab-ink"></span>
       </nav>
       <div class="cell status-cell"><span class="pulse"></span><span id="indexed">—</span></div>
+      <div class="cell" id="update-cell" hidden>
+        <!-- Плашка обновления (#651): появляется, когда kb-сервер выпусков знает сборку новее; без нажатия ничего не ставится. -->
+        <button class="gear" id="update-btn" aria-label="Обновить окно" data-tip="Обновить" data-tip-b="Скачать и проверить подпись новой сборки">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg>
+          <span id="update-label">обновить</span>
+        </button>
+      </div>
       <div class="cell">
         <button class="gear" id="open-settings" data-tip="Источники" data-tip-k="⌘ ," data-tip-b="Папки, базы и kb-серверы, по которым идет поиск" aria-label="Источники">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h5l2 2h11v10H3z"/></svg>
@@ -336,6 +343,7 @@
             <div class="chat-offer" id="chat-offer" role="status" hidden></div>
             <div class="chat-ctx-pop" id="chat-ctx-pop" role="dialog" aria-label="Заполнение контекста" hidden></div>
             <div class="chat-mdl-pop" id="chat-mdl-pop" role="dialog" aria-label="Модель чата" hidden></div>
+            <div class="chat-hint" id="chat-hint" role="status" hidden></div>
             <textarea id="chat-q" rows="1" placeholder="Спросите о своих документах…" aria-label="Вопрос"></textarea>
             <div class="chat-box-row">
               <button class="chat-tool" type="button" id="chat-attach" aria-label="Приложить к вопросу" aria-haspopup="menu" aria-expanded="false" data-tip="Приложить к вопросу" data-tip-b="файл с диска, найденное или ссылку"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M3 8h10"/></svg></button>

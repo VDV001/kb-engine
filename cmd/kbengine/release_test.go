@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/keychain"
 	"github.com/daniil/kb-engine/internal/domain"
@@ -173,5 +174,81 @@ func TestNoKeyStoreRefusesInWords(t *testing.T) {
 	releaseKeys = func() releaseKeyStore { return noKeyStore{} }
 	if code := run([]string{"release", "key"}, &bytes.Buffer{}, &errb); code == 0 || !strings.Contains(errb.String(), "macOS") {
 		t.Errorf("code %d: %s", code, errb.String())
+	}
+}
+
+// release renew продлевает срок манифеста без пересборки: тот же выпуск и
+// файлы, новая подпись, окно верит ему (ревью #679, п.6).
+func TestReleaseRenew(t *testing.T) {
+	withKeys(t, fakeKeys{})
+	var keyOut bytes.Buffer
+	if code := run([]string{"release", "key"}, &keyOut, &bytes.Buffer{}); code != 0 {
+		t.Fatal("key")
+	}
+	pub, _ := hex.DecodeString(strings.TrimSpace(keyOut.String()))
+	dir := t.TempDir()
+	win := filepath.Join(dir, "DVK-Setup.exe")
+	_ = os.WriteFile(win, []byte("windows setup"), 0o600)
+	out := filepath.Join(dir, "out")
+	var errb bytes.Buffer
+	if code := run([]string{"release", "sign", "--version", "v0.41.0", "--valid-days", "1", "--out", out, "windows-amd64=" + win}, &bytes.Buffer{}, &errb); code != 0 {
+		t.Fatalf("sign %d: %s", code, errb.String())
+	}
+	cur, _ := domain.NewReleaseVersion("v0.40.0")
+	src := dirReleases{"download/dvk-latest/dvk-manifest.json": filepath.Join(out, "dvk-manifest.json"),
+		"download/dvk-latest/dvk-manifest.json.sig": filepath.Join(out, "dvk-manifest.json.sig"),
+		"download/v0.41.0/DVK-Setup.exe":            win}
+	u := selfupdate.Updater{Source: src, PublicKey: pub, Current: cur, Platform: "windows-amd64",
+		Now: func() time.Time { return time.Now().AddDate(0, 0, 30) }}
+	if _, err := u.Check(t.Context()); !errors.Is(err, domain.ErrReleaseExpired) {
+		t.Fatalf("a day-long manifest at day 30: %v", err)
+	}
+	if code := run([]string{"release", "renew", "--dir", out, "--valid-days", "90"}, &bytes.Buffer{}, &errb); code != 0 {
+		t.Fatalf("renew %d: %s", code, errb.String())
+	}
+	if o, err := u.Check(t.Context()); err != nil || !o.Available() || o.Version().String() != "v0.41.0" {
+		t.Errorf("after renew: %v %v", o.Available(), err)
+	}
+	if code := run([]string{"release", "renew", "--dir", t.TempDir()}, &bytes.Buffer{}, &bytes.Buffer{}); code == 0 {
+		t.Error("renew without a manifest accepted")
+	}
+	if code := run([]string{"release", "sign", "--version", "v0.41.0", "--valid-days", "9999", "--out", out, "windows-amd64=" + win}, &bytes.Buffer{}, &bytes.Buffer{}); code != 2 {
+		t.Errorf("an absurd validity accepted: %d", code)
+	}
+}
+
+// renew не подписывает чужое: прежний манифест обязан нести подпись ключа
+// владельца (ревью безопасности #681, п.1).
+func TestReleaseRenewChecksTheOldSignature(t *testing.T) {
+	withKeys(t, fakeKeys{})
+	if code := run([]string{"release", "key"}, &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
+		t.Fatal("key")
+	}
+	dir := t.TempDir()
+	win := filepath.Join(dir, "DVK-Setup.exe")
+	_ = os.WriteFile(win, []byte("windows setup"), 0o600)
+	out := filepath.Join(dir, "out")
+	if code := run([]string{"release", "sign", "--version", "v0.41.0", "--out", out, "windows-amd64=" + win}, &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
+		t.Fatal("sign")
+	}
+	manifest := filepath.Join(out, "dvk-manifest.json")
+	raw, _ := os.ReadFile(manifest)
+	forged := bytes.Replace(raw, []byte(`"size": 13`), []byte(`"size": 14`), 1)
+	if bytes.Equal(forged, raw) {
+		t.Fatalf("the test did not forge anything: %s", raw)
+	}
+	if err := os.WriteFile(manifest, forged, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var errb bytes.Buffer
+	if code := run([]string{"release", "renew", "--dir", out}, &bytes.Buffer{}, &errb); code == 0 {
+		t.Fatal("a manifest with a foreign signature was re-signed")
+	}
+	if got, _ := os.ReadFile(manifest); !bytes.Equal(got, forged) {
+		t.Error("renew rewrote the files although the signature did not match")
+	}
+	_ = os.Remove(filepath.Join(out, "dvk-manifest.json.sig"))
+	if code := run([]string{"release", "renew", "--dir", out}, &bytes.Buffer{}, &bytes.Buffer{}); code == 0 {
+		t.Error("renew without a signature file accepted")
 	}
 }

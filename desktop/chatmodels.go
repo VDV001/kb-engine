@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"maps"
 	"net/url"
 	"slices"
@@ -33,6 +32,8 @@ type modelsView struct {
 	Recent    []modelChoice `json:"recent"`
 	All       []modelChoice `json:"all"`
 	PriceNote string        `json:"priceNote"`
+	Phone     []string      `json:"phone"`  // «Телефону: разрешить» (#657)
+	Second    string        `json:"second"` // вторая, второстепенная модель чата (#678)
 }
 
 // isGateway reports whether the chat address is the Vercel AI Gateway, чьи
@@ -127,7 +128,7 @@ func (d *chatDesk) Models() (modelsView, error) {
 		cancel()
 	}
 	v := modelChoices(c.Model, c.URL, calls, gw, own)
-	v.PriceNote = note
+	v.PriceNote, v.Phone, v.Second = note, append([]string{}, c.PhoneModels...), c.SecondModel
 	return v, nil
 }
 
@@ -135,11 +136,35 @@ func (d *chatDesk) Models() (modelsView, error) {
 func (d *chatDesk) SetModel(model string) error {
 	model = strings.TrimSpace(model)
 	if model == "" {
-		return errors.New("модель не выбрана")
+		return domain.ErrNoChatModel
 	}
+	d.phoneMu.Lock() // чтение-запись настроек: смена главной не теряет соседнее переключение
+	defer d.phoneMu.Unlock()
 	d.settings.mu.Lock()
 	c := d.settings.cfg.Chat
 	d.settings.mu.Unlock()
 	c.Model = model
+	if c.SecondModel == model { // вторая, ставшая главной, — уже не вторая
+		c.SecondModel = ""
+	}
+	return d.SetSettings(c, "")
+}
+
+// SetPhoneModel allows or forbids the phone model (#657, «Телефону: разрешить»):
+// меняется только список разрешенного, модель окна — нет.
+func (d *chatDesk) SetPhoneModel(model string, allow bool) error {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return domain.ErrNoChatModel
+	}
+	d.phoneMu.Lock() // чтение-запись списка: два переключателя разом не теряют друг друга
+	defer d.phoneMu.Unlock()
+	d.settings.mu.Lock()
+	c := d.settings.cfg.Chat
+	d.settings.mu.Unlock()
+	c.PhoneModels = slices.DeleteFunc(slices.Clone(c.PhoneModels), func(m string) bool { return m == model })
+	if allow {
+		c.PhoneModels = append(c.PhoneModels, model)
+	}
 	return d.SetSettings(c, "")
 }
