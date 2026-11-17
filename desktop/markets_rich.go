@@ -26,7 +26,7 @@ import (
 type richBlockView struct {
 	Title string `json:"title"`
 	Text  string `json:"text"`
-	Photo string `json:"photo"`
+	Photo int    `json:"photo"` // номер фото карточки, с 1
 }
 
 // richVariantView — вариант рич-контента (#671) и его «Rich-контент JSON» для Ozon.
@@ -52,7 +52,7 @@ func (a *App) MarketsRich(cab, sku string, praise, complaints []string, consent 
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, 4*time.Minute)
 	defer cancel()
-	return a.settings.richVariants(ctx, nil, a.chat, ozon.DefaultURL, cab, sku, praise, complaints, consent)
+	return a.settings.richVariants(ctx, nil, a.chat, ozon.DefaultURL, cab, sku, praise, complaints, consent, fetchImage(ozonImageHosts, maxStudioImage))
 }
 
 // MarketsRichSave saves a variant's JSON for «Rich-контент JSON» in the cabinet.
@@ -82,7 +82,7 @@ func checkRichJSON(doc string) error {
 
 // richVariants reads the card from the cabinet, asks the model and builds
 // Ozon's JSON with the real sizes of the card's photos.
-func (f *folderSettings) richVariants(ctx context.Context, hc *http.Client, cd *chatDesk, base, cab, sku string, praise, complaints []string, consent bool) (richView, error) {
+func (f *folderSettings) richVariants(ctx context.Context, hc *http.Client, cd *chatDesk, base, cab, sku string, praise, complaints []string, consent bool, fetch func(context.Context, string) ([]byte, error)) (richView, error) {
 	if !consent {
 		return richView{}, errNoRichConsent
 	}
@@ -118,7 +118,7 @@ func (f *folderSettings) richVariants(ctx context.Context, hc *http.Client, cd *
 		}
 		out := richVariantView{Name: rv.Name, JSON: string(doc)}
 		for _, b := range rv.Blocks {
-			out.Blocks = append(out.Blocks, richBlockView{Title: b.Title, Text: b.Text, Photo: card.Photos[b.Photo-1]})
+			out.Blocks = append(out.Blocks, richBlockView{Title: b.Title, Text: b.Text, Photo: b.Photo})
 		}
 		v.Variants = append(v.Variants, out)
 	}
@@ -175,3 +175,5 @@ func imageSize(ctx context.Context, hc *http.Client, u string) (int, int, error)
 	}
 	return cfg.Width, cfg.Height, nil
 }
+
+func richFileName(sku, name string) string { return name }

@@ -36,6 +36,8 @@ type RichBlock struct {
 type RichVariant struct {
 	Name   string
 	Blocks []RichBlock
+	// PhotosFixed — модель назвала фото, которого у карточки нет: окно взяло другое.
+	PhotosFixed bool
 }
 
 // RichPhoto — фото карточки с размером: Ozon просит widthMobile и heightMobile.

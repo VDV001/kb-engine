@@ -91,3 +91,25 @@ func TestRichJSON(t *testing.T) {
 		t.Error("a photo without size accepted — Ozon просит widthMobile и heightMobile")
 	}
 }
+
+// Ревью #676: номер фото вне карточки — первое незанятое и пометка; не больше
+// трех вариантов; пустой текст — «br», как у живых карточек.
+func TestParseRichVariantsFixes(t *testing.T) {
+	text := `{"variants":[{"name":"a","blocks":[{"title":"t1","text":"x","photo":1},{"title":"t2","text":"","photo":7},{"title":"t3","text":"y","photo":8}]},` +
+		`{"name":"b","blocks":[{"title":"t","photo":1}]},{"name":"c","blocks":[{"title":"t","photo":1}]},{"name":"d","blocks":[{"title":"t","photo":1}]}]}`
+	vs, err := markets.ParseRichVariants(text, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(vs) != 3 {
+		t.Errorf("%d variants, want 3", len(vs))
+	}
+	b := vs[0].Blocks
+	if b[0].Photo != 1 || b[1].Photo != 2 || b[2].Photo != 3 || !vs[0].PhotosFixed || vs[1].PhotosFixed {
+		t.Errorf("photos %+v fixed %v %v", b, vs[0].PhotosFixed, vs[1].PhotosFixed)
+	}
+	raw, err := markets.RichJSON(vs[0], []markets.RichPhoto{{URL: "https://a/1.jpg", Width: 1, Height: 1}, {URL: "https://a/2.jpg", Width: 1, Height: 1}, {URL: "https://a/3.jpg", Width: 1, Height: 1}})
+	if err != nil || !strings.Contains(string(raw), `"type": "br"`) || strings.Count(string(raw), `"type": "text"`) != 5 {
+		t.Errorf("empty text block: %s %v", raw, err)
+	}
+}

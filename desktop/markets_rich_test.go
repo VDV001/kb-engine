@@ -52,15 +52,17 @@ func TestRichVariantsView(t *testing.T) {
 	}
 	cd, m := localChat(t)
 	ctx := context.Background()
-	if _, err := s.richVariants(ctx, oz.Client(), cd, oz.URL, row.ID, "1234567", nil, nil, false); err == nil || m.n != 0 {
+	// В тесте фото — на http-сервере теста: пускаем его, как в проде пускают ozone.ru.
+	fetch := fetchImageVia(oz.Client(), []string{"127.0.0.1"}, maxStudioImage, func(u string, _ []string) bool { return strings.HasPrefix(u, oz.URL) })
+	if _, err := s.richVariants(ctx, oz.Client(), cd, oz.URL, row.ID, "1234567", nil, nil, false, fetch); err == nil || m.n != 0 {
 		t.Fatalf("без согласия: %v, вызовов %d", err, m.n)
 	}
 	m.reply = `{"variants":[{"name":"Про ткань","blocks":[{"title":"Плотный хлопок","text":"Не садится","photo":2},{"title":"Крой","text":"Свободный","photo":1}]}]}`
-	v, err := s.richVariants(ctx, oz.Client(), cd, oz.URL, row.ID, "1234567", []string{"плотная ткань"}, []string{"маломерит"}, true)
+	v, err := s.richVariants(ctx, oz.Client(), cd, oz.URL, row.ID, "1234567", []string{"плотная ткань"}, []string{"маломерит"}, true, fetch)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(v.Variants) != 1 || len(v.Variants[0].Blocks) != 2 || v.Variants[0].Blocks[0].Photo != oz.URL+"/img/b.png" || v.Model == "" {
+	if len(v.Variants) != 1 || len(v.Variants[0].Blocks) != 2 || v.Variants[0].Blocks[0].Photo != 2 || v.Model == "" {
 		t.Fatalf("%+v", v)
 	}
 	var doc struct {
@@ -93,5 +95,27 @@ func TestRichSaveRefusesBrokenJSON(t *testing.T) {
 		if checkRichJSON(bad) == nil {
 			t.Errorf("%q accepted", bad)
 		}
+	}
+}
+
+// Ревью #676: фото — только с ozone.ru по https, как у инфографики (#629).
+func TestRichPhotosOnlyFromOzon(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	oz := fakeOzonRich(t)
+	row, err := s.AddOzon("Магазин", "42", "k-1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cd, m := localChat(t)
+	m.reply = `{"variants":[{"name":"в","blocks":[{"title":"т","text":"х","photo":1}]}]}`
+	_, err = s.richVariants(context.Background(), oz.Client(), cd, oz.URL, row.ID, "1234567", nil, nil, true, fetchImage(ozonImageHosts, maxStudioImage))
+	if err == nil || !strings.Contains(err.Error(), "ozone.ru") {
+		t.Errorf("photo from a test host: %v", err)
+	}
+}
+
+func TestRichFileName(t *testing.T) {
+	if got := richFileName("123", `Ткань/крой: "главное"`); strings.ContainsAny(got, `/:"\`) || !strings.HasSuffix(got, ".json") || !strings.Contains(got, "123") {
+		t.Errorf("%q", got)
 	}
 }
