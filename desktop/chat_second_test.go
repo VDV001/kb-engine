@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"sync"
 	"testing"
 )
 
@@ -60,5 +61,40 @@ func TestSecondModelIsChecked(t *testing.T) {
 	d, _, _, _ := pickDesk(t)
 	if err := d.SetSecondModel("a\nb"); err == nil {
 		t.Error("control characters accepted")
+	}
+}
+
+// Смена главной и выбор второй не теряют друг друга (ревью #682, п.4).
+func TestSetModelAndSecondModelDoNotLoseEachOther(t *testing.T) {
+	d, _, _, _ := pickDesk(t)
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		if err := d.SetModel("m-main"); err != nil {
+			t.Error(err)
+		}
+	})
+	wg.Go(func() {
+		if err := d.SetSecondModel("m-second"); err != nil {
+			t.Error(err)
+		}
+	})
+	wg.Wait()
+	if c := d.config(); c.Model != "m-main" || c.SecondModel != "m-second" {
+		t.Errorf("model %q second %q", c.Model, c.SecondModel)
+	}
+}
+
+// Вторая модель, ставшая главной, перестает быть второй: выбирать не из чего
+// (ревью #682, п.7).
+func TestSetModelClearsTheSameSecond(t *testing.T) {
+	d, _, _, _ := pickDesk(t)
+	if err := d.SetSecondModel("llama-phone"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetModel("llama-phone"); err != nil {
+		t.Fatal(err)
+	}
+	if c := d.config(); c.Model != "llama-phone" || c.SecondModel != "" {
+		t.Errorf("model %q second %q", c.Model, c.SecondModel)
 	}
 }

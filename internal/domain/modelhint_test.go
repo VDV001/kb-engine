@@ -26,6 +26,9 @@ func TestSuggestModelRole(t *testing.T) {
 		{"analysis case", "ПРОАНАЛИЗИРУЙ продажи", 0, domain.RoleMain, domain.ReasonAnalysis},
 		{"files", "что тут?", 1, domain.RoleMain, domain.ReasonFiles},
 		{"long beats short", strings.Repeat("а", 401), 0, domain.RoleMain, domain.ReasonLong},
+		{"short edge", strings.Repeat("а", 150), 0, domain.RoleSecond, domain.ReasonShort},
+		{"medium without keywords has no advice", strings.Repeat("а", 151), 0, "", ""},
+		{"long edge", strings.Repeat("а", 400), 0, "", ""},
 	}
 	for _, c := range cases {
 		got := domain.SuggestModelRole(c.question, c.files)
