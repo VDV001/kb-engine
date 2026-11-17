@@ -75,3 +75,20 @@ func TestParseReviewFindings(t *testing.T) {
 		t.Errorf("empty: %+v %v", f, err)
 	}
 }
+
+// Ревью #674: отзыв без оценки — «без оценки», а не «0 из 5»; скобки вокруг
+// JSON и номера строками ответ не роняют.
+func TestReviewsPromptUnrated(t *testing.T) {
+	p, _ := markets.ReviewsPrompt([]markets.Review{{Day: day("2026-09-01"), Text: "Пришло быстро"}})
+	if strings.Contains(p, "0 из 5") || !strings.Contains(p, "1. [без оценки, 01.09.2026] Пришло быстро") {
+		t.Errorf("prompt:\n%s", p)
+	}
+}
+
+func TestParseReviewFindingsTolerant(t *testing.T) {
+	text := `Формат {как просили}. Ответ: {"praise":[{"point":"ткань","reviews":["1","2",3]}],"complaints":[]} — {готово}`
+	f, err := markets.ParseReviewFindings(text, 3)
+	if err != nil || len(f.Praise) != 1 || f.Praise[0].Count != 3 {
+		t.Fatalf("%+v %v", f, err)
+	}
+}

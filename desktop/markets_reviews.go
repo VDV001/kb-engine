@@ -41,6 +41,8 @@ type reviewFindingsView struct {
 	Complaints []reviewPointRow `json:"complaints"`
 	Used       int              `json:"used"`
 	Model      string           `json:"model"`
+	Total      int              `json:"total"` // отзывов в прочитанном
+	Calls      int              `json:"calls"` // запросов тарифа MPStats ради выводов: 0 — из памяти
 }
 
 var (

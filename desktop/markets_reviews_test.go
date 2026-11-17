@@ -21,7 +21,7 @@ func TestReviewsView(t *testing.T) {
 			return `[{"date":"2026-09-10","valuation":2,"likes":0,"text":"Маломерит"},{"date":"2026-03-01","valuation":5,"likes":0,"text":""},` +
 				`{"date":"2026-07-15","valuation":5,"likes":1,"text":"Ткань плотная"}]`, false
 		case name == "ozon_sku" && a["report"] == "comments":
-			return "", false // отзывов нет
+			return "[]", false // отзывов нет (пустой ответ — «не знает товара», ревью #674)
 		}
 		return "wrong call", true
 	})
@@ -103,5 +103,45 @@ func TestReviewFindingsNeedShare(t *testing.T) {
 		if share && (err != nil || len(f.Praise) != 1) {
 			t.Errorf("share: %+v %v", f, err)
 		}
+	}
+}
+
+// Ревью #674: «не знает товар» — не «отзывов нет» и не в память; выводы после
+// истекшей памяти говорят, что прочитали заново; разрешение и подключение — из
+// одного снимка настроек.
+func TestReviewsNotFoundAndCalls(t *testing.T) {
+	var calls atomic.Int32
+	s, _, _ := newServerSettings(t)
+	srv := titleMCP(t, func(name string, a map[string]any) (string, bool) {
+		calls.Add(1)
+		if a["sku"] == float64(1234567) {
+			return `[{"date":"2026-07-15","valuation":5,"likes":0,"text":"Ткань плотная"}]`, false
+		}
+		return "", false // MPStats не знает товара
+	})
+	s.mpstatsURL, s.mcpURL = srv.URL, srv.URL+"/mcp"
+	ctx := context.Background()
+	if _, err := s.addMPStats(ctx, checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1", true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.reviewsCheck(ctx, srv.Client(), "7654321", false, time.Now()); err == nil || !strings.Contains(err.Error(), "не знает") {
+		t.Errorf("unknown sku: %v", err)
+	}
+	before := calls.Load()
+	_, _ = s.reviewsCheck(ctx, srv.Client(), "7654321", false, time.Now())
+	if calls.Load() == before {
+		t.Error("«не знает» лег в память — повтор не спросил MPStats")
+	}
+	cd, m := localChat(t)
+	m.reply = `{"praise":[{"point":"ткань","reviews":[1]}],"complaints":[]}`
+	if _, err := s.reviewsCheck(ctx, srv.Client(), "1234567", false, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	f, err := s.reviewFindings(ctx, srv.Client(), cd, "1234567", true, time.Now().Add(11*time.Minute))
+	if err != nil || f.Calls != 1 || f.Total != 1 {
+		t.Errorf("after the memory expired: %+v %v — сказать, что отзывы прочитаны заново", f, err)
+	}
+	if f, err := s.reviewFindings(ctx, srv.Client(), cd, "1234567", true, time.Now().Add(11*time.Minute)); err != nil || f.Calls != 0 {
+		t.Errorf("from memory: %+v %v", f, err)
 	}
 }
