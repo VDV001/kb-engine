@@ -735,6 +735,9 @@ func (f *mailStateFile) Save(st mailrelay.State) error {
 
 // windowTurn is the chat as the phones get it (#669): вопросы и ответы по
 // порядку; последний ход — только что сделанный.
+// ponytail: копия всей истории на каждом ходе, хотя связанному чату нужен
+// последний обмен (ревью #675); потолок — чат в сотни сообщений; путь — в очередь
+// id и последний обмен, историю читать, только когда ящик заводит новый чат.
 func windowTurn(rec chatRecord) mailrelay.WindowTurn {
 	t := mailrelay.WindowTurn{Chat: rec.ID, Title: rec.Title, New: rec.Phone}
 	for i := 0; i+1 < len(rec.Messages); i += 2 {

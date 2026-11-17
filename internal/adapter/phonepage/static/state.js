@@ -55,6 +55,9 @@ export function take(st, m, o) {
   if (st.gone?.[m.chat]) return false; // удаленный чат: поздний ответ или отказ его не возвращают (ревью #662)
   if (m.from === "desk" && (p.kind === "rename" || p.kind === "delete" || p.kind === "edited")) { // один чат в двух местах (#649)
     if (p.kind === "edited" || !st.chats[m.chat]) return false; // подтверждение — правка уже на телефоне
+    // Чат окна выпал из 50 (#669): с неотправленным вопросом он остается — окно
+    // ответит на него новым чатом, написанное не пропадет (ревью #675).
+    if (p.kind === "delete" && p.text === "evicted" && st.chats[m.chat].msgs.some((x) => x.who === "me" && x.sent === false)) return false;
     if (p.kind === "delete") forget(st, m.chat);
     else st.chats[m.chat].title = p.text;
     return true;
@@ -63,6 +66,16 @@ export function take(st, m, o) {
     const c = (st.chats[m.chat] ||= { title: (p.title || "Чат").slice(0, 60), msgs: [], updated: 0 });
     c.msgs.push({ who: "me", text: p.text || "", at, sent: true, window: true });
     c.pending = true; // ответ окна идет следом
+    c.windowTurn = true; // его ответ без источников и счетчика — свои не сбрасывать (ревью #675)
+    c.updated = Date.now();
+    return true;
+  }
+  if (m.from === "desk" && p.kind === "history") { // история чата окна пачкой (#669, ревью #675)
+    const c = (st.chats[m.chat] ||= { title: (p.title || "Чат").slice(0, 60), msgs: [], updated: 0 });
+    for (const x of p.history || []) {
+      c.msgs.push({ who: "me", text: x.q || "", at, sent: true, window: true });
+      c.msgs.push({ who: "desk", text: x.a || "", at, sources: [] });
+    }
     c.updated = Date.now();
     return true;
   }
@@ -93,9 +106,12 @@ export function take(st, m, o) {
     }
     // Читать вслух — пока свежий: по времени сообщения, а не приема (повторное ревью #660).
     if (p.heard && p.kind === "answer") c.say = { text: p.text, at };
-    if (p.context?.used > 0) c.context = { used: p.context.used, window: p.context.window || 0 };
-    else if (p.kind === "answer") delete c.context;
-    if (p.kind === "answer") c.only = p.only?.length ? p.only : undefined; // источники чата — от окна (#647); нет — все
+    if (c.windowTurn) delete c.windowTurn; // ход окна: источники и счетчик чата — прежние
+    else {
+      if (p.context?.used > 0) c.context = { used: p.context.used, window: p.context.window || 0 };
+      else if (p.kind === "answer") delete c.context;
+      if (p.kind === "answer") c.only = p.only?.length ? p.only : undefined; // источники чата — от окна (#647); нет — все
+    }
   } else {
     const mine = who === hex(st.sender);
     const sent = mine && c.msgs.find((x) => x.who === "me" && x.counter === o.counter.toString());
