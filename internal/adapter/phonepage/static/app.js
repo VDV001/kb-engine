@@ -8,7 +8,7 @@
 // Service worker (sw.js) — только push: «компьютер ответил», когда страница
 // закрыта. Работы без сети нет — страница всегда свежая с сервера.
 import { importKey, seal, open, sealFile, MAX_FILE_PLAIN } from "./crypto.js";
-import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted, deciding, hideFact, deskChat, choiceView , wavOf, voiceLimit, hearNote, attachRefusal, pieceBounds, forget } from "./state.js";
+import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted, deciding, hideFact, deskChat, choiceView, setPick, pickToSend, wavOf, voiceLimit, hearNote, attachRefusal, pieceBounds, forget } from "./state.js";
 
 const POLL_MS = 10_000; // решение 15.11: короткий опрос раз в 10 с
 const UNAUTH_MS = 60_000; // 401: реже, но не сдаемся — сервер мог ошибиться ненадолго
@@ -364,16 +364,36 @@ function memCard(f) {
   return li;
 }
 
-// paintChoice shows chat c's model and sources (#647): только показ — менять
-// их в окне (решение 16.11); нажатие объясняет это.
+// paintChoice shows chat c's model and sources (#647) и выбор телефона (#657):
+// нажатие открывает ряд выбора; выбор ждет окна, пока ответ его не подтвердит.
 function paintChoice(c) {
   const v = c && choiceView(c, st.desk), m = $("model"), s = $("srcs");
   m.hidden = s.hidden = !v;
-  if (!v) return;
-  m.textContent = v.model || "модель";
-  s.textContent = "Источники · " + v.on + (v.on === v.total ? "" : " из " + v.total);
+  if (!v) { $("pick").hidden = true; return; }
+  const wait = v.pending ? " · ждет окна" : "";
+  m.textContent = (v.model || "модель") + wait;
+  s.textContent = "Источники · " + v.on + (v.on === v.total ? "" : " из " + v.total) + (v.pending ? " · ждет окна" : "");
   s.hidden = !v.total;
+  paintPick(c, v);
 }
+
+// paintPick draws the choice row (#657): модели — окна и разрешенные телефону,
+// источники — те, что окно дает чату. Выбирать можно в чате, который окно уже
+// знает: в новом — из настроек окна.
+function paintPick(c, v) {
+  const box = $("pick");
+  if (box.hidden) return;
+  if (!c.msgs.some((x) => x.who === "desk")) {
+    box.innerHTML = '<p class="meta">Модель и источники выбираются после первого ответа: новый чат начинается с настроек окна.</p>';
+    return;
+  }
+  const opt = (attr, id, label, on) => `<button type="button" class="opt" ${attr}="${esc(id)}" aria-pressed="${on}">${esc(label)}</button>`;
+  box.innerHTML = `<p class="meta">Модель для вопросов с телефона</p><div class="opts">${v.models.map((id, i) => opt("data-pick-model", i ? id : "", id + (i ? "" : " · как в окне"), (i ? id : "") === (v.model === v.models[0] ? "" : v.model))).join("")}</div>` +
+    (v.choices.length ? `<p class="meta">Где искать</p><div class="opts">${v.choices.map((x) => opt("data-pick-src", x.id, x.name, x.on)).join("")}</div>` : "") +
+    (v.pending ? '<p class="meta">Выбор уйдет окну со следующим вопросом.</p>' : "");
+}
+
+function esc(t) { return String(t).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]); }
 
 // paintCtx draws the context ring of the open chat (#647); числа — только из ctxView.
 function paintCtx(c) {
@@ -509,6 +529,8 @@ async function send(chat, payload, mark) {
 
 async function ask(text) {
   const chat = ui.chat, c = st.chats[chat], p = { kind: "question", text };
+  const pk = c && c.msgs.some((x) => x.who === "desk") ? pickToSend(c) : null; // выбор (#657) — только измененный и в чате, который окно знает
+  if (pk) p.pick = { model: pk.model, only: pk.only };
   const att = ui.attach?.chat === chat ? ui.attach : null; // файл — того чата, где его приложили (ревью #661)
   if (att) { // «+» (#650): файл — кусками в файлах ящика, вопрос называет их по порядку
     ui.attach = null;
@@ -876,13 +898,29 @@ $("msgs").addEventListener("click", async (e) => { // «Запомнить о В
     note(err.unauth ? "kb-сервер не пускает телефон: решение сохранено и уйдет, когда пустит." : "Пока не отправлено: " + err.message + ". Уйдет со следующим опросом.");
   }
 });
-$("model").addEventListener("click", () => {
-  const v = choiceView(st.chats[ui.chat] || {}, st.desk);
-  if (v) note("Модель: " + v.model + ". Сменить ее можно в окне DVK на компьютере.", false);
+// Модель и источники (#657): нажатие открывает ряд выбора, второе — закрывает.
+for (const id of ["model", "srcs"]) $(id).addEventListener("click", () => {
+  const c = st.chats[ui.chat];
+  if (!c) return;
+  $("pick").hidden = !$("pick").hidden;
+  paintChoice(c);
 });
-$("srcs").addEventListener("click", () => {
-  const v = choiceView(st.chats[ui.chat] || {}, st.desk);
-  if (v) note("Чат ищет: " + (v.names.join(", ") || "нигде из нынешних источников") + ". Сменить источники можно в окне DVK на компьютере.", false);
+$("pick").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-pick-model], [data-pick-src]"), c = st.chats[ui.chat];
+  if (!b || !c) return;
+  const v = choiceView(c, st.desk);
+  if (!v) return;
+  const cur = { model: v.model === v.models[0] ? "" : v.model, only: v.choices.filter((x) => x.on).map((x) => x.id) };
+  if (b.dataset.pickModel !== undefined) cur.model = b.dataset.pickModel;
+  else {
+    const id = b.dataset.pickSrc, on = cur.only.includes(id);
+    if (on && cur.only.length === 1) return note("Хотя бы один источник остается: без источников чату негде искать.", false);
+    cur.only = on ? cur.only.filter((x) => x !== id) : [...cur.only, id];
+  }
+  if (cur.only.length === v.choices.length) cur.only = []; // все, что дает окно, — «как в окне»
+  setPick(c, cur);
+  await save("state", { ...st, counter: st.counter.toString() });
+  paintChoice(c);
 });
 $("ctx").addEventListener("click", () => { // нажатие на круг — что значит заполнение
   const c = st.chats[ui.chat], v = ctxView(c?.context, !!c?.msgs.some((m) => m.who === "desk"));
