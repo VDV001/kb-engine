@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"maps"
 	"net/url"
 	"slices"
@@ -136,7 +135,7 @@ func (d *chatDesk) Models() (modelsView, error) {
 func (d *chatDesk) SetModel(model string) error {
 	model = strings.TrimSpace(model)
 	if model == "" {
-		return errors.New("модель не выбрана")
+		return domain.ErrNoChatModel
 	}
 	d.settings.mu.Lock()
 	c := d.settings.cfg.Chat
@@ -150,8 +149,10 @@ func (d *chatDesk) SetModel(model string) error {
 func (d *chatDesk) SetPhoneModel(model string, allow bool) error {
 	model = strings.TrimSpace(model)
 	if model == "" {
-		return errors.New("модель не выбрана")
+		return domain.ErrNoChatModel
 	}
+	d.phoneMu.Lock() // чтение-запись списка: два переключателя разом не теряют друг друга
+	defer d.phoneMu.Unlock()
 	d.settings.mu.Lock()
 	c := d.settings.cfg.Chat
 	d.settings.mu.Unlock()

@@ -201,7 +201,8 @@ func TestPhoneTurnKeepsWindowModelAndContext(t *testing.T) {
 // телефон видит (ревью #677, п.9).
 func TestPhonePickAllSourcesIsAsInWindow(t *testing.T) {
 	d, _, _, id := pickDesk(t)
-	if err := d.SetPhonePick(id, "", []string{"src-a", "src-b"}, false); err != nil {
+	rec, _ := d.load(id)
+	if err := d.SetPhonePick(id, "", d.phoneAllowed(rec), false); err != nil {
 		t.Fatal(err)
 	}
 	if rec, _ := d.load(id); rec.PhoneOnly != nil {

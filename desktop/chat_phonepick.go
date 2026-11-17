@@ -17,7 +17,7 @@ func (d *chatDesk) SetPhonePick(id, model string, only []string, all bool) error
 	if err != nil {
 		return err
 	}
-	if model != "" && !slices.Contains(d.config().PhoneModels, model) {
+	if model != "" && !phoneModelAllowed(d.config(), model) {
 		return domain.ErrModelNotForPhone
 	}
 	rec.PhonePick, rec.PhoneOnly = model, nil
@@ -26,7 +26,9 @@ func (d *chatDesk) SetPhonePick(id, model string, only []string, all bool) error
 		if len(keep) == 0 {
 			return domain.ErrNoChatSources
 		}
-		rec.PhoneOnly = keep
+		if len(keep) < len(d.phoneAllowed(rec)) { // «все источники окна» — это «как в окне»: новые телефон увидит
+			rec.PhoneOnly = keep
+		}
 	}
 	return d.saveLive(rec, true)
 }
@@ -47,7 +49,7 @@ func (d *chatDesk) turnConfig(out askOut, rec chatRecord, sources []string) (des
 func (d *chatDesk) phoneTurn(c desktopconfig.Chat, rec chatRecord) (desktopconfig.Chat, []string, error) {
 	sources := rec.Sources
 	if rec.PhonePick != "" {
-		if !slices.Contains(c.PhoneModels, rec.PhonePick) {
+		if !phoneModelAllowed(c, rec.PhonePick) {
 			return c, nil, domain.ErrModelNotForPhone
 		}
 		c.Model = rec.PhonePick
@@ -58,6 +60,12 @@ func (d *chatDesk) phoneTurn(c desktopconfig.Chat, rec chatRecord) (desktopconfi
 		}
 	}
 	return c, sources, nil
+}
+
+// phoneModelAllowed reports whether the phone may use model: разрешенную
+// «Телефону: разрешить» и модель окна — телефон показывает ее первой.
+func phoneModelAllowed(c desktopconfig.Chat, model string) bool {
+	return model == c.Model || slices.Contains(c.PhoneModels, model)
 }
 
 // phoneAllowed is what the phone may pick for chat rec: то, что окно ищет и

@@ -156,6 +156,7 @@ type chatDesk struct {
 	// безопасности #636) — только находку Диска его подключением.
 	openFound func(ctx context.Context, doc chat.Doc) (chat.Doc, error)
 	model     func(c desktopconfig.Chat, key string) chat.Model
+	phoneMu   sync.Mutex // переключатели «телефону» (#657): чтение-запись списка моделей
 	now       func() time.Time
 	// show shows the answer while the model writes it (событие chat:delta);
 	// nil — без показа. Вопрос один за раз, поэтому текст без id чата.
@@ -427,8 +428,13 @@ func (d *chatDesk) ask(parent context.Context, r askReq, out askOut) (chatRecord
 	rec.Messages = append(rec.Messages,
 		chatMessage{Role: string(chat.RoleUser), Text: strings.TrimSpace(question), From: phoneFrom(out)},
 		chatMessage{Role: string(chat.RoleAssistant), Text: turn.Answer, Docs: used, Uses: append(web, turn.Uses...)})
-	rec.Model, rec.Updated, rec.Sources = c.Model, d.now(), windowSources
-	rec.ContextUsed = turn.PromptTokens // 0 — провайдер не прислал счет: старое число не показываем
+	rec.Updated, rec.Sources = d.now(), windowSources
+	// Ход телефона на другой модели не пишет ни модель чата, ни счет токенов: окно
+	// заполнения считается по модели окна. 0 — провайдер не прислал счет: старое число не показываем.
+	rec.ContextUsed = 0
+	if c.Model == d.config().Model {
+		rec.Model, rec.ContextUsed = c.Model, turn.PromptTokens
+	}
 	if err := d.saveLive(rec, id != ""); err != nil {
 		return chatRecord{}, err
 	}
