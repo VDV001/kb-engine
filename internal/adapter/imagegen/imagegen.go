@@ -105,12 +105,12 @@ func (c Client) Generate(ctx context.Context, prompt string, refs [][]byte) (Ima
 
 // statusError turns the gateway's code into words for the person.
 func statusError(code int) error {
-	switch {
-	case code == http.StatusOK:
+	switch code {
+	case http.StatusOK:
 		return nil
-	case code == http.StatusPaymentRequired:
+	case http.StatusPaymentRequired:
 		return ErrNoCredit
-	case code == http.StatusUnauthorized || code == http.StatusForbidden:
+	case http.StatusUnauthorized, http.StatusForbidden:
 		return ErrKeyRefused
 	}
 	return fmt.Errorf("шлюз ответил кодом %d", code)
