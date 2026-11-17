@@ -739,15 +739,7 @@ func (f *mailStateFile) Save(st mailrelay.State) error {
 // последний обмен (ревью #675); потолок — чат в сотни сообщений; путь — в очередь
 // id и последний обмен, историю читать, только когда ящик заводит новый чат.
 func windowTurn(rec chatRecord) mailrelay.WindowTurn {
-	t := mailrelay.WindowTurn{Chat: rec.ID, Title: rec.Title, New: rec.Phone}
-	for i := 0; i+1 < len(rec.Messages); i += 2 {
-		q, a := rec.Messages[i], rec.Messages[i+1]
-		if q.Role != string(chat.RoleUser) || a.Role != string(chat.RoleAssistant) {
-			continue
-		}
-		t.History = append(t.History, mailrelay.Exchange{Question: q.Text, Answer: a.Text})
-	}
-	return t
+	return mailrelay.WindowTurn{Chat: rec.ID, Title: rec.Title, New: rec.Phone}
 }
 
 // shareTurn queues the window's turn for the next round (#669).
@@ -765,3 +757,9 @@ func (w *mailWorker) takeTurns() []mailrelay.WindowTurn {
 	w.turns = nil
 	return q
 }
+
+func chatHistory(*chatDesk) func(string) ([]mailrelay.Exchange, error) { return nil }
+
+func (w *mailWorker) turnsFor(string, []mailrelay.WindowTurn) []mailrelay.WindowTurn { return nil }
+
+func (w *mailWorker) keepTurns(string, []mailrelay.WindowTurn) {}

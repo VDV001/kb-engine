@@ -394,15 +394,15 @@ type Exchange struct {
 }
 
 // WindowTurn is a turn the person made in the window (#669): Chat — чат окна,
-// History — все ходы чата, последний — только что сделанный. New — чат заведен
-// окном после выкатки #669: без связи с ящиком он заводится в ящике целиком.
-// Старые чаты окна (New = false) на телефон не уходят (решение владельца 17.11).
+// Last — только что сделанный обмен. New — чат заведен окном после выкатки
+// #669: без связи с ящиком он заводится в ящике целиком (историю дает
+// Relay.HistoryOf). Старые чаты окна (New = false) на телефон не уходят
+// (решение владельца 17.11).
 type WindowTurn struct {
-	Chat    string
-	Title   string
-	New     bool
-	History []Exchange
-	Last    Exchange
+	Chat  string
+	Title string
+	New   bool
+	Last  Exchange
 }
 
 // maxTitles bounds State.Titles: названия чатов, которых окно еще не знает.
@@ -455,9 +455,13 @@ type Relay struct {
 	// Chats — переименование и удаление чатов окна с телефона (#649); nil — отказ.
 	Chats ChatEditor
 	// Turns — ходы человека в окне для телефонов (#669).
-	Turns     []WindowTurn
+	Turns []WindowTurn
+	// HistoryOf reads a window chat's exchanges when the mailbox opens it
+	// (ревью #675: в очереди — только последний обмен); nil или сбой — Last.
 	HistoryOf func(chat string) ([]Exchange, error)
-	Shared    func()
+	// Shared — ходы Turns легли в сохраненные исходящие: до этой отметки круг
+	// их не взял, и работник отдаст их следующему кругу (ревью #675).
+	Shared func()
 }
 
 // Notifier tells the phones an answer is waiting (kb-сервер, /api/mail/notify).
@@ -787,15 +791,13 @@ func (r Relay) offer(st *State) error {
 // (предел отправки сервера — раз в секунду, ревью #675). Чатов окна в ящике —
 // MaxSharedChats последних: самый старый уходит с телефонов delete «evicted»,
 // в окне остается. Удаление и переименование того же круга (Notes) — в силе.
-// ponytail: ходы, взятые кругом, при его сбое теряются, как и заметки; потолок —
-// дыра в истории связанного чата; путь — возвращать очередь при сбое круга.
 func (r Relay) share(st *State) error {
 	if len(r.Turns) == 0 {
 		return nil
 	}
 	gone, titles := sameRoundEdits(r.Notes)
 	for _, t := range r.Turns {
-		if len(t.History) == 0 || gone[t.Chat] {
+		if gone[t.Chat] {
 			continue
 		}
 		if nt, ok := titles[t.Chat]; ok {
@@ -807,7 +809,25 @@ func (r Relay) share(st *State) error {
 	if err := r.Store.Save(*st); err != nil {
 		return fmt.Errorf("mailrelay: state: %w", err)
 	}
+	if r.Shared != nil {
+		r.Shared()
+	}
 	return nil
+}
+
+// history is window chat t's exchanges for a new mailbox chat: HistoryOf или,
+// если ее нет или чат не прочитан, — хотя бы последний обмен.
+func (r Relay) history(t WindowTurn) []Exchange {
+	if r.HistoryOf != nil {
+		h, err := r.HistoryOf(t.Chat)
+		if err == nil && len(h) > 0 {
+			return h
+		}
+		if err != nil {
+			r.logf("mailrelay: history %s: %v", t.Chat, err)
+		}
+	}
+	return []Exchange{t.Last}
 }
 
 // sameRoundEdits are the window's deletes and renames of this round by chat.
@@ -836,11 +856,11 @@ func (r Relay) shareTurn(st *State, t WindowTurn) {
 			st.Chats = map[string]string{}
 		}
 		st.Chats[chat] = t.Chat
-		for _, pack := range r.historyPacks(t.History) {
+		for _, pack := range r.historyPacks(r.history(t)) {
 			r.queueDesk(st, chat, Payload{Kind: KindHistory, Title: t.Title, History: pack})
 		}
 	} else {
-		x := t.History[len(t.History)-1]
+		x := t.Last
 		r.queueDesk(st, chat, Payload{Kind: KindAsked, Text: x.Question, Title: t.Title})
 		r.queueDesk(st, chat, Payload{Kind: KindAnswer, Text: trim(x.Answer, r.MaxText)})
 	}

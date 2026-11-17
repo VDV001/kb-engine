@@ -119,7 +119,7 @@ func TestRelayKeepsTheLast50WindowChats(t *testing.T) {
 	hist := histories{}
 	r.HistoryOf = hist.of
 	for i := range mailrelay.MaxSharedChats + 1 {
-		r.Turns = []mailrelay.WindowTurn{{Chat: fmt.Sprintf("w-%d", i), Title: "т", New: true, History: exchanges(1)}}
+		r.Turns = []mailrelay.WindowTurn{hist.turn(fmt.Sprintf("w-%d", i), "т", true, exchanges(1))}
 		if err := r.Tick(t.Context()); err != nil {
 			t.Fatal(err)
 		}
@@ -217,7 +217,7 @@ func TestRelayPhoneKeepsSharedChatFresh(t *testing.T) {
 	}
 	first := s.st.Shared[0]
 	for i := range mailrelay.MaxSharedChats - 1 {
-		r.Turns = []mailrelay.WindowTurn{{Chat: fmt.Sprintf("w-%d", i), Title: "т", New: true, History: exchanges(1)}}
+		r.Turns = []mailrelay.WindowTurn{hist.turn(fmt.Sprintf("w-%d", i), "т", true, exchanges(1))}
 		if err := r.Tick(t.Context()); err != nil {
 			t.Fatal(err)
 		}
