@@ -90,6 +90,18 @@ type Payload struct {
 	// Attach — файл к вопросу телефона (#650): куски в файлах ящика по порядку.
 	Attach  *Attachment `json:"attach,omitempty"`
 	History []Exchange  `json:"history,omitempty"`
+	Pick    *Pick       `json:"pick,omitempty"`
+}
+
+// Pick is the phone's choice for its turns in a chat (#657).
+type Pick struct {
+	Model string   `json:"model,omitempty"`
+	Only  []string `json:"only,omitempty"`
+}
+
+// Picker applies the phone's choice to a window chat.
+type Picker interface {
+	SetPick(ctx context.Context, chat string, p Pick) error
 }
 
 // Attachment is a file the phone attached to a question: имя, тип, длина
@@ -453,7 +465,8 @@ type Relay struct {
 	// Open — расшифровка кусков файлов (#650); nil — отказ DeskUnsupported.
 	Open FileOpener
 	// Chats — переименование и удаление чатов окна с телефона (#649); nil — отказ.
-	Chats ChatEditor
+	Chats  ChatEditor
+	Picker Picker
 	// Turns — ходы человека в окне для телефонов (#669).
 	Turns []WindowTurn
 	// HistoryOf reads a window chat's exchanges when the mailbox opens it
