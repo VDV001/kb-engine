@@ -67,8 +67,9 @@ type folderSettings struct {
 	shopLoads     shopLoadCache                  // последний загруженный «Магазин» кабинета — для выбранных дней
 	mpstatsURL    string                         // API MPStats; "" — настоящий (markets_mpstats.go)
 	mcpURL        string                         // MCP MPStats; "" — настоящий (markets_title.go)
-	cardParts     ttlMap[cardPart]               // карточка товара MPStats и свои запросы на 10 минут (markets_title.go)
+	cardParts     ttlMap[cardPart]               // карточка товара MPStats на 10 минут (markets_title.go)
 	nicheParts    ttlMap[nichePart]              // запросы и бренды ниши MPStats на 10 минут (markets_title.go)
+	ownParts      ttlMap[ownPart]                // свои запросы товара на 10 минут: «Название», «Хештеги», «Место в выдаче»
 	nicheProducts ttlMap[[]markets.NicheProduct] // товары ниши MPStats на 10 минут (markets_photos.go)
 	mpstatsNiche  nicheCache                     // ряды ниш MPStats на 10 минут (markets_mpstats.go)
 	mpstatsTop    topCache                       // верхние категории MPStats на 10 минут (markets_mpstats.go)
