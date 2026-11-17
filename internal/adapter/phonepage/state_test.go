@@ -354,6 +354,17 @@ if (typeof s.forget === "function") {
   s.take(st26, { seq: 3, chat: "k", from: "desk" }, dk14(3, { kind: "delete", text: "chat" }));
   want(!st26.chats.k && s.take(st26, { seq: 4, chat: "k", from: "desk" }, dk14(4, { kind: "answer", text: "поздно" })) === false && !st26.chats.k, "the window's delete forgets the chat too");
 }
+// 27. Чат окна на телефоне (#669): «asked» заводит чат с названием окна, вопрос
+// помечен «в окне» и ждет ответа; ответ ложится как обычно; удаленный — мимо.
+const st27 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: {}, gone: { old: 1 } };
+want(s.take(st27, { seq: 1, chat: "w", from: "desk", at: "2026-11-17T10:00:00Z" }, dk14(1, { kind: "asked", text: "сроки?", title: "Поставки" })) === true, "asked changes the state");
+const c27 = () => st27.chats.w || { msgs: [] };
+want(c27().title === "Поставки" && c27().msgs.length === 1 && c27().msgs[0].who === "me" && c27().msgs[0].window === true && c27().msgs[0].text === "сроки?" && c27().pending, "asked opens the window's chat on the phone");
+s.take(st27, { seq: 2, chat: "w", from: "desk", at: "2026-11-17T10:00:01Z" }, dk14(2, { kind: "answer", text: "до пятницы" }));
+want(c27().msgs.length === 2 && c27().msgs[1]?.who === "desk" && !c27().pending, "the window's answer follows its question");
+s.take(st27, { seq: 3, chat: "w", from: "desk" }, dk14(3, { kind: "asked", text: "еще?", title: "Новое имя" }));
+want(c27().title === "Поставки" && c27().msgs.length === 3, "a later asked keeps the phone's title");
+want(s.take(st27, { seq: 4, chat: "old", from: "desk" }, dk14(4, { kind: "asked", text: "x", title: "y" })) === false && !st27.chats.old, "a deleted chat does not come back by asked");
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 
