@@ -723,6 +723,9 @@ func (r Relay) ask(ctx context.Context, st *State, chat, question string, files 
 		return Payload{Kind: KindError, Text: err.Error()}
 	}
 	st.Chats[chat] = a.Chat
+	if slices.Contains(st.Shared, chat) { // работа с телефона освежает место чата окна (ревью #675)
+		touchShared(st, chat)
+	}
 	r.pendingTitle(ctx, st, chat)
 	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources, Context: a.Context, Only: a.Only}
 }
@@ -777,45 +780,110 @@ func (r Relay) offer(st *State) error {
 }
 
 // share queues the window's turns for the phones (#669): связанный чат — только
-// новый ход; новый чат окна без связи — заводится в ящике со всей историей. Чатов
-// окна в ящике — MaxSharedChats последних: самый старый уходит с телефонов
-// удалением, в окне остается.
+// новый ход; новый чат окна без связи — заводится в ящике историей пачками
+// (предел отправки сервера — раз в секунду, ревью #675). Чатов окна в ящике —
+// MaxSharedChats последних: самый старый уходит с телефонов delete «evicted»,
+// в окне остается. Удаление и переименование того же круга (Notes) — в силе.
+// ponytail: ходы, взятые кругом, при его сбое теряются, как и заметки; потолок —
+// дыра в истории связанного чата; путь — возвращать очередь при сбое круга.
 func (r Relay) share(st *State) error {
 	if len(r.Turns) == 0 {
 		return nil
 	}
+	gone, titles := sameRoundEdits(r.Notes)
 	for _, t := range r.Turns {
-		if len(t.History) == 0 {
+		if len(t.History) == 0 || gone[t.Chat] {
 			continue
 		}
-		chat, send := mailChat(st, t.Chat), t.History[len(t.History)-1:]
-		if chat == "" {
-			if !t.New {
-				continue
-			}
-			chat, send = newShareChat(), t.History
-			if st.Chats == nil {
-				st.Chats = map[string]string{}
-			}
-			st.Chats[chat] = t.Chat
-			st.Shared = append(st.Shared, chat)
-		} else if i := slices.Index(st.Shared, chat); i >= 0 { // чат окна — свежий, в конец
-			st.Shared = append(slices.Delete(st.Shared, i, i+1), chat)
+		if nt, ok := titles[t.Chat]; ok {
+			t.Title = nt
 		}
-		for _, x := range send {
-			r.queueDesk(st, chat, Payload{Kind: KindAsked, Text: x.Question, Title: t.Title})
-			r.queueDesk(st, chat, Payload{Kind: KindAnswer, Text: x.Answer})
-		}
-		for len(st.Shared) > MaxSharedChats {
-			old := st.Shared[0]
-			r.queueDesk(st, old, Payload{Kind: KindDelete, Text: "chat"})
-			forgetChat(st, old)
-		}
+		r.shareTurn(st, t)
+		r.evict(st)
 	}
 	if err := r.Store.Save(*st); err != nil {
 		return fmt.Errorf("mailrelay: state: %w", err)
 	}
 	return nil
+}
+
+// sameRoundEdits are the window's deletes and renames of this round by chat.
+func sameRoundEdits(notes []Note) (gone map[string]bool, titles map[string]string) {
+	gone, titles = map[string]bool{}, map[string]string{}
+	for _, n := range notes {
+		switch n.Payload.Kind {
+		case KindDelete:
+			gone[n.Chat] = true
+		case KindRename:
+			titles[n.Chat] = n.Payload.Text
+		}
+	}
+	return gone, titles
+}
+
+// shareTurn queues one window turn: связанный — новый ход, новый — история.
+func (r Relay) shareTurn(st *State, t WindowTurn) {
+	chat := mailChat(st, t.Chat)
+	if chat == "" {
+		if !t.New {
+			return
+		}
+		chat = newShareChat()
+		if st.Chats == nil {
+			st.Chats = map[string]string{}
+		}
+		st.Chats[chat] = t.Chat
+		for _, pack := range r.historyPacks(t.History) {
+			r.queueDesk(st, chat, Payload{Kind: KindHistory, Title: t.Title, History: pack})
+		}
+	} else {
+		x := t.History[len(t.History)-1]
+		r.queueDesk(st, chat, Payload{Kind: KindAsked, Text: x.Question, Title: t.Title})
+		r.queueDesk(st, chat, Payload{Kind: KindAnswer, Text: trim(x.Answer, r.MaxText)})
+	}
+	if t.New || slices.Contains(st.Shared, chat) {
+		touchShared(st, chat)
+	}
+}
+
+// touchShared moves a window chat to the fresh end of State.Shared.
+func touchShared(st *State, chat string) {
+	st.Shared = append(slices.DeleteFunc(st.Shared, func(c string) bool { return c == chat }), chat)
+}
+
+// evict keeps MaxSharedChats window chats: самый старый — delete «evicted» на
+// телефоны и без связи, но не «удален»: вопрос телефона, ушедший до
+// вытеснения, получит ответ новым чатом окна, а не пропадет (ревью #675).
+func (r Relay) evict(st *State) {
+	for len(st.Shared) > MaxSharedChats {
+		old := st.Shared[0]
+		st.Shared = st.Shared[1:]
+		r.queueDesk(st, old, Payload{Kind: KindDelete, Text: DeleteEvicted})
+		delete(st.Chats, old)
+		delete(st.Offered, old)
+		delete(st.Titles, old)
+	}
+}
+
+// historyPacks splits the history into packs whose JSON fits MaxText; ответ,
+// не влезающий и в пустую пачку, укорочен (MaxText 0 — одна пачка).
+func (r Relay) historyPacks(h []Exchange) [][]Exchange {
+	if r.MaxText <= 0 {
+		return [][]Exchange{h}
+	}
+	size := func(xs []Exchange) int { b, _ := json.Marshal(xs); return len(b) }
+	var packs [][]Exchange
+	var cur []Exchange
+	for _, x := range h {
+		for size([]Exchange{x}) > r.MaxText && len(x.Answer) > len(trimNote) {
+			x.Answer = trim(x.Answer, max(len(x.Answer)/2, len(trimNote)))
+		}
+		if len(cur) > 0 && size(append(slices.Clone(cur), x)) > r.MaxText {
+			packs, cur = append(packs, cur), nil
+		}
+		cur = append(cur, x)
+	}
+	return append(packs, cur)
 }
 
 // newShareChat is a mailbox chat for a window chat: 16 hex, как у телефона.
