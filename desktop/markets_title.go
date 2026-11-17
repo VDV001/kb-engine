@@ -148,12 +148,28 @@ func (c *ttlMap[V]) put(k string, v V, now time.Time) {
 	c.m[k] = ttlEntry[V]{at: now, v: v}
 }
 
-// cardPart — карточка товара в MPStats и свои запросы: по «подключение|SKU».
+// cardPart — карточка товара в MPStats: по «подключение|SKU».
 type cardPart struct {
-	card   mpstats.Card
-	own    []markets.OwnQuery
-	from   time.Time // первый день мест own по дням (#670)
-	ownErr error
+	card mpstats.Card
+}
+
+// ownPart — свои запросы товара за период: по «подключение|SKU», один кэш для
+// «Названия», «Хештегов» и «Места в выдаче» (ревью #673).
+type ownPart struct {
+	own      []markets.OwnQuery
+	from, to time.Time
+	err      error
+}
+
+// readOwn reads the card's own queries in the period of now; пусто — товар не
+// находят ни по одному запросу, это не сбой.
+func readOwn(ctx context.Context, m mpstats.MCP, id int64, now time.Time) ownPart {
+	from, to := searchPeriod(now)
+	own, err := m.CardQueries(ctx, id, from, to)
+	if errors.Is(err, mpstats.ErrNotFound) {
+		own, err = nil, nil
+	}
+	return ownPart{own: own, from: from, to: to, err: err}
 }
 
 // nichePart — запросы, словоформы и бренды ниши: по «подключение|путь», общие
@@ -185,18 +201,23 @@ func (f *folderSettings) readCardNiche(ctx context.Context, hc *http.Client, con
 	if !haveNiche || fresh {
 		np = nichePart{}
 	}
-	if err := readParts(ctx, m, id, &cp, &np, !haveCard || fresh, !haveNiche || fresh); err != nil {
+	op, haveOwn := f.ownParts.get(ck, now)
+	readOwnNow := !haveOwn || fresh
+	if err := readParts(ctx, m, id, cp.card.Niche, &op, &np, readOwnNow, !haveNiche || fresh, now); err != nil {
 		return cardNiche{}, err
 	}
-	f.keepParts(ck, nk, cp, np, !haveCard || fresh, !haveNiche || fresh, now)
-	return cardNiche{card: cp.card, qs: np.qs, ws: np.ws, own: cp.own, brands: np.brands, ownErr: cp.ownErr, brandErr: np.brandErr}, nil
+	f.keepParts(ck, nk, cp, op, np, !haveCard || fresh, readOwnNow, !haveNiche || fresh, now)
+	return cardNiche{card: cp.card, qs: np.qs, ws: np.ws, own: op.own, brands: np.brands, ownErr: op.err, brandErr: np.brandErr}, nil
 }
 
 // keepParts puts what was really read: чтение из памяти срок не продлевает
 // (ревью #627), прочитанное с пропуском не хранится — в следующий раз дочитается.
-func (f *folderSettings) keepParts(ck, nk string, cp cardPart, np nichePart, readCard, readNiche bool, now time.Time) {
-	if readCard && cp.ownErr == nil {
+func (f *folderSettings) keepParts(ck, nk string, cp cardPart, op ownPart, np nichePart, readCard, readOwnNow, readNiche bool, now time.Time) {
+	if readCard {
 		f.cardParts.put(ck, cp, now)
+	}
+	if readOwnNow && op.err == nil {
+		f.ownParts.put(ck, op, now)
 	}
 	if readNiche && np.brandErr == nil {
 		f.nicheParts.put(nk, np, now)
@@ -205,36 +226,31 @@ func (f *folderSettings) keepParts(ck, nk string, cp cardPart, np nichePart, rea
 
 // readParts reads at once what is missing: свои запросы товара (own) и
 // запросы с брендами ниши (niche). Пустой ответ — не сбой: «брендов нет».
-func readParts(ctx context.Context, m mpstats.MCP, id int64, cp *cardPart, np *nichePart, own, niche bool) error {
+func readParts(ctx context.Context, m mpstats.MCP, id int64, niche string, op *ownPart, np *nichePart, own, readNiche bool, now time.Time) error {
 	var nicheErr error
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var wg sync.WaitGroup
 	if own {
-		from, to := searchPeriod(time.Now())
-		cp.from = from
-		wg.Go(func() { cp.own, cp.ownErr = m.CardQueries(ctx, id, from, to) })
+		wg.Go(func() { *op = readOwn(ctx, m, id, now) })
 	}
-	if niche {
+	if readNiche {
 		wg.Go(func() {
-			if np.qs, np.ws, nicheErr = m.NicheQueries(ctx, cp.card.Niche); stopsAll(nicheErr) {
+			if np.qs, np.ws, nicheErr = m.NicheQueries(ctx, niche); stopsAll(nicheErr) {
 				cancel()
 			}
 		})
 		wg.Go(func() { // бренды — не главное: свой срок, чтобы занятый отчет не держал проверку (ревью #624)
 			bctx, bcancel := context.WithTimeout(ctx, titleBrandsWait)
 			defer bcancel()
-			if np.brands, np.brandErr = m.NicheBrands(bctx, cp.card.Niche); stopsAll(np.brandErr) {
+			if np.brands, np.brandErr = m.NicheBrands(bctx, niche); stopsAll(np.brandErr) {
 				cancel()
 			}
 		})
 	}
 	wg.Wait()
 	if nicheErr != nil {
-		return errors.New("запросы ниши «" + cp.card.Niche + "» не прочитаны — " + mpstatsMessage(nicheErr))
-	}
-	if errors.Is(cp.ownErr, mpstats.ErrNotFound) {
-		cp.own, cp.ownErr = nil, nil // товар не находят ни по одному запросу
+		return errors.New("запросы ниши «" + niche + "» не прочитаны — " + mpstatsMessage(nicheErr))
 	}
 	if errors.Is(np.brandErr, mpstats.ErrNotFound) {
 		np.brands, np.brandErr = nil, nil // у ниши нет брендов

@@ -41,6 +41,7 @@ type placesView struct {
 	Rows   []placeRow  `json:"rows"`
 	Stats  *placeStats `json:"stats"`
 	Calls  int         `json:"calls"` // запросов тарифа MPStats на эту проверку
+	Note   string      `json:"note"`
 	Source string      `json:"source"`
 }
 
@@ -50,11 +51,12 @@ const placesShown = 30
 // moscow — сутки MPStats: «вчера» — по Москве.
 var moscow = time.FixedZone("MSK", 3*60*60)
 
-// searchPeriod is MPStats's default span: вчера по Москве и 30 дней до него.
+// searchPeriod is MPStats's default span: вчера по Москве и 30 дней до него
+// (markets.SearchDays всего).
 func searchPeriod(now time.Time) (from, to time.Time) {
 	d := now.In(moscow)
 	to = time.Date(d.Year(), d.Month(), d.Day()-1, 0, 0, 0, 0, moscow)
-	return to.AddDate(0, 0, -30), to
+	return to.AddDate(0, 0, 1-markets.SearchDays), to
 }
 
 // MarketsPlaces shows where card sku is in Ozon search; fresh — мимо памяти.
@@ -64,25 +66,20 @@ func (a *App) MarketsPlaces(sku string, fresh bool) (placesView, error) {
 	return a.settings.placesCheck(ctx, nil, sku, fresh, time.Now())
 }
 
-// ownQueries reads the card's own queries: память «Названия», своя память или
-// отчет keywords (calls — 1). Пусто — товар не находят ни по одному запросу.
-func (f *folderSettings) ownQueries(ctx context.Context, m mpstats.MCP, ck string, id int64, fresh bool, now time.Time) (cardPart, int, error) {
+// ownQueries reads the card's own queries through the shared cache (ownParts,
+// общий с «Названием» и «Хештегами»); calls — запросов тарифа: 0 или 1.
+func (f *folderSettings) ownQueries(ctx context.Context, m mpstats.MCP, ck string, id int64, fresh bool, now time.Time) (ownPart, int, error) {
 	if !fresh {
-		if cp, ok := f.cardParts.get(ck, now); ok {
-			return cp, 0, nil
-		}
-		if cp, ok := f.ownParts.get(ck, now); ok {
-			return cp, 0, nil
+		if op, ok := f.ownParts.get(ck, now); ok {
+			return op, 0, nil
 		}
 	}
-	from, to := searchPeriod(now)
-	own, err := m.CardQueries(ctx, id, from, to)
-	if err != nil && !errors.Is(err, mpstats.ErrNotFound) {
-		return cardPart{}, 1, errors.New("запросы товара не прочитаны — " + mpstatsMessage(err))
+	op := readOwn(ctx, m, id, now)
+	if op.err != nil {
+		return ownPart{}, 1, errors.New("запросы товара не прочитаны — " + mpstatsMessage(op.err))
 	}
-	cp := cardPart{own: own, from: from}
-	f.ownParts.put(ck, cp, now)
-	return cp, 1, nil
+	f.ownParts.put(ck, op, now)
+	return op, 1, nil
 }
 
 // placesCheck reads the card's own queries: из памяти «Названия» и
@@ -100,14 +97,14 @@ func (f *folderSettings) placesCheck(ctx context.Context, hc *http.Client, sku s
 	m := mpstats.MCP{URL: f.mcpBase(), Token: cl.Token, HTTP: hc}
 	ck := connID + "|" + strconv.FormatInt(id, 10)
 	v := placesView{SKU: strconv.FormatInt(id, 10), Rows: []placeRow{}, Source: "MPStats, отчет ozon_sku keywords"}
-	cp, calls, err := f.ownQueries(ctx, m, ck, id, fresh, now)
+	op, calls, err := f.ownQueries(ctx, m, ck, id, fresh, now)
 	if err != nil {
 		return placesView{}, err
 	}
 	v.Calls += calls
-	v.From, v.To = cp.from.Format(time.DateOnly), cp.from.AddDate(0, 0, 30).Format(time.DateOnly)
-	v.Total = len(cp.own)
-	for _, p := range markets.SearchPlaces(cp.own, cp.from, placesShown) {
+	v.From, v.To = op.from.Format(time.DateOnly), op.to.Format(time.DateOnly)
+	v.Total = len(op.own)
+	for _, p := range markets.SearchPlaces(op.own, op.from, placesShown) {
 		r := placeRow{Query: p.Query, Count: p.Count, Avg: p.Avg, Last: p.Last, Seen: p.Seen, Days: p.Days}
 		if !p.LastDay.IsZero() {
 			r.LastDay = p.LastDay.Format(time.DateOnly)
@@ -117,10 +114,11 @@ func (f *folderSettings) placesCheck(ctx context.Context, hc *http.Client, sku s
 	if v.Total > 0 {
 		return v, nil
 	}
-	st, err := m.SearchStats(ctx, id, cp.from, cp.from.AddDate(0, 0, 30))
+	st, err := m.SearchStats(ctx, id, op.from, op.to)
 	v.Calls++
-	if err != nil {
-		return v, nil // запросов нет и так; сравнения с прошлым не будет
+	if err != nil { // запросов нет и так; почему нет сравнения — словами (ревью #673)
+		v.Note = "сравнение с прошлыми 30 днями не прочитано — " + mpstatsMessage(err)
+		return v, nil
 	}
 	v.Stats = &placeStats{Words: st.Words, WordsBefore: st.WordsBefore, Avg: st.Avg, AvgBefore: st.AvgBefore}
 	v.Source += " и search_stats"

@@ -7210,9 +7210,9 @@ function shPlacesCard(p) {
     const src = `<div class="note">${esc(v.source)} · ${v.calls ? `${fmt(v.calls)} ${plural(v.calls, "запрос", "запроса", "запросов")} тарифа` : "из памяти, без запросов тарифа"}</div>`;
     if (!v.rows.length) {
       const st = v.stats;
-      body = `<div class="note">За ${per} товар не находят в поиске Ozon ни по одному запросу.${st && st.wordsBefore ? ` 30 днями раньше — по ${fmt(st.wordsBefore)} ${plural(st.wordsBefore, "запросу", "запросам", "запросам")}${st.avgBefore ? `, среднее место ${fmt(st.avgBefore)}` : ""}.` : ""}</div>` + src;
+      body = `<div class="note">За ${per} товар не находят в поиске Ozon ни по одному запросу.${st && st.wordsBefore ? ` 30 днями раньше — по ${fmt(st.wordsBefore)} ${plural(st.wordsBefore, "запросу", "запросам", "запросам")}${st.avgBefore ? `, среднее место ${fmt(st.avgBefore)}` : ""}.` : ""}</div>` + (v.note ? `<div class="note">${esc(v.note)}</div>` : "") + src;
     } else {
-      const row = (r) => `<tr><td>${esc(r.query)}</td><td class="n">${fmt(r.count)}</td><td class="n">${fmt(r.avg)}</td><td class="n">${r.last ? `${fmt(r.last)} <span class="muted">${esc(shDay(r.lastDay))}</span>` : "—"}</td><td class="n">${fmt(r.seen)} из ${fmt(r.days)}</td></tr>`;
+      const row = (r) => `<tr><td>${esc(r.query)}</td><td class="n">${fmt(r.count)}</td><td class="n">${r.avg ? fmt(r.avg) : "—"}</td><td class="n">${r.last ? `${fmt(r.last)}${r.lastDay ? ` <span class="muted">${esc(shDay(r.lastDay))}</span>` : ""}` : "—"}</td><td class="n">${fmt(r.seen)} из ${fmt(r.days)}</td></tr>`;
       body = `<div class="note">За ${per}: ${fmt(v.total)} ${plural(v.total, "запрос", "запроса", "запросов")}, по которым товар в выдаче${v.total > v.rows.length ? `; показаны ${fmt(v.rows.length)} самых частых` : ""}. Место — номер в выдаче, меньше — выше.</div>` +
         `<div style="overflow-x:auto"><table class="st-table"><thead><tr><th>Запрос</th><th class="n">Запросов</th><th class="n">Среднее место</th><th class="n">Последнее</th><th class="n">Дней в выдаче</th></tr></thead><tbody>${v.rows.map(row).join("")}</tbody></table></div>` + src;
     }
