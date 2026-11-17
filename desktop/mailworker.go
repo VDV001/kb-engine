@@ -834,3 +834,5 @@ func (w *mailWorker) keepTurns(id string, q []mailrelay.WindowTurn) {
 	}
 	w.keptTurns[id] = append(q, w.keptTurns[id]...)
 }
+
+func (c phoneChats) SetPick(context.Context, string, mailrelay.Pick) error { return nil }

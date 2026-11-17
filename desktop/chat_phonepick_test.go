@@ -7,6 +7,7 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/mailrelay"
 )
 
 // pickDesk is a chat desk with one window model, one model allowed to the
@@ -91,5 +92,29 @@ func TestPhonePickSources(t *testing.T) {
 	}
 	if _, err := phoneAsk(d, id); err != nil {
 		t.Errorf("back to all the window allows: %v", err)
+	}
+}
+
+// Ящик видит выбор телефона через phoneChats, а телефон — модели окна и
+// разрешенные телефону (#657).
+func TestPhonePickWiring(t *testing.T) {
+	d, _, _, id := pickDesk(t)
+	pc := phoneChats{d: d, changed: func(string) {}}
+	if err := pc.SetPick(context.Background(), id, mailrelay.Pick{Model: "llama-phone", Only: []string{"src-a"}}); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := d.load(id)
+	if err != nil || rec.PhonePick != "llama-phone" || len(rec.PhoneOnly) != 1 {
+		t.Fatalf("%+v %v", rec, err)
+	}
+	if err := pc.SetPick(context.Background(), id, mailrelay.Pick{}); err != nil {
+		t.Fatal(err)
+	}
+	if rec, _ := d.load(id); rec.PhonePick != "" || rec.PhoneOnly != nil {
+		t.Errorf("empty pick — как в окне: %+v", rec)
+	}
+	st, err := phoneDesk{settings: d.settings}.State(context.Background())
+	if err != nil || len(st.Models) != 2 || st.Models[0] != "qwen3" || st.Models[1] != "llama-phone" {
+		t.Errorf("models %v %v", st.Models, err)
 	}
 }

@@ -164,6 +164,7 @@ type Hearer interface {
 // названия источников и подключений чата.
 type DeskState struct {
 	Model   string       `json:"model"`
+	Models  []string     `json:"models,omitempty"`
 	Sources []DeskSource `json:"sources"`
 	// Hear — кто распознает голос телефона (#648): HearDevice, HearApple,
 	// HearCloud, HearServer; пусто — голоса нет. Телефон говорит это человеку:
