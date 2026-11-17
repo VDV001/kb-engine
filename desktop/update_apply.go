@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
-	"strconv"
 	"time"
 
 	wr "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -25,9 +24,9 @@ func applyBuild(app *App, home string) func(context.Context, string, string) err
 				if err := installMac(path, bundle); err != nil {
 					return err
 				}
-				app.update.noteRestart()
-				// Ждем выхода этого окна по pid, а не по времени: open -n раньше выхода дал бы второй экземпляр.
-				restartLater(app, exec.Command("/bin/sh", "-c", `while kill -0 "$1" 2>/dev/null; do sleep 0.2; done; /usr/bin/open -n "$0"`, bundle, strconv.Itoa(os.Getpid())))
+				app.update.noteRestart(version)
+				service := os.Getenv("XPC_SERVICE_NAME")
+				restartLater(app, restartCommand(service, os.Getuid(), bundle, os.Getpid()), service == launchdLabel)
 				return nil
 			}
 		case "windows":
@@ -41,8 +40,8 @@ func applyBuild(app *App, home string) func(context.Context, string, string) err
 			if err := exec.Command(saved).Start(); err != nil {
 				return err
 			}
-			app.update.noteRestart()
-			restartLater(app, nil)
+			app.update.noteRestart(version)
+			restartLater(app, nil, false)
 			return nil
 		}
 		saved, err := saveForManual(home, path, version)
@@ -53,12 +52,17 @@ func applyBuild(app *App, home string) func(context.Context, string, string) err
 	}
 }
 
-// restartLater starts after (если есть) и закрывает окно чуть позже: страница
-// успевает получить ответ UpdateInstall.
-func restartLater(app *App, after *exec.Cmd) {
+// restartLater restarts the window a moment later: человек успевает увидеть
+// шаг «Перезапускаюсь». Под launchd (launchd) команда сама перезапускает службу
+// и убивает это окно; иначе помощник стартует, окно закрывается.
+func restartLater(app *App, cmd *exec.Cmd, launchd bool) {
 	go func() {
-		if after != nil {
-			_ = after.Start()
+		time.Sleep(1500 * time.Millisecond)
+		switch {
+		case cmd != nil && launchd:
+			_ = cmd.Run()
+		case cmd != nil:
+			_ = cmd.Start()
 		}
 		time.Sleep(500 * time.Millisecond)
 		wr.Quit(app.ctx)

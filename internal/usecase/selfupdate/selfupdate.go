@@ -64,6 +64,9 @@ func (o Offer) Available() bool { return o.ok }
 // Version is the offered release's tag.
 func (o Offer) Version() domain.ReleaseVersion { return o.version }
 
+// AssetSize is the offered file's length in bytes, по манифесту.
+func (o Offer) AssetSize() int64 { return o.asset.Size() }
+
 // AssetName is the offered file's name in the release.
 func (o Offer) AssetName() string { return o.asset.Name() }
 

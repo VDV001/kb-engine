@@ -320,7 +320,8 @@ func TestUpdateDeskReportsThePhases(t *testing.T) {
 	body := []byte(strings.Repeat("x", 200_000))
 	pub, src := signedRelease(t, "v0.41.0", body)
 	var seen []updateState
-	d := newUpdateDesk("v0.40.0", src, pub, "darwin-arm64", func(context.Context, string, string) error { return nil })
+	var d *updateDesk
+	d = newUpdateDesk("v0.40.0", src, pub, "darwin-arm64", func(context.Context, string, string) error { d.noteRestart("v0.41.0"); return nil })
 	d.emit = func(s updateState) { seen = append(seen, s) }
 	d.check(context.Background())
 	if err := d.Install(context.Background()); err != nil {
@@ -369,7 +370,7 @@ func TestRestartCommand(t *testing.T) {
 		t.Errorf("under launchd: %q", got)
 	}
 	c = restartCommand("", 501, "/Users/x/Applications/kb.app", 1234)
-	if len(c.Args) < 6 || c.Args[0] != "/bin/sh" || c.Args[len(c.Args)-2] != "/Users/x/Applications/kb.app" || c.Args[len(c.Args)-1] != "1234" {
+	if len(c.Args) < 5 || c.Args[0] != "/bin/sh" || c.Args[len(c.Args)-2] != "/Users/x/Applications/kb.app" || c.Args[len(c.Args)-1] != "1234" {
 		t.Errorf("without launchd: %q", c.Args)
 	}
 }

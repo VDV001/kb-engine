@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -31,6 +33,7 @@ func releasePublicKey() ed25519.PublicKey {
 // updateState is what the window shows about updates.
 type updateState struct {
 	Current   string `json:"current"`
+	Build     string `json:"build"`     // сборка как есть: v0.41.2-1-g2f1aa3ef или dev
 	Version   string `json:"version"`   // предложенный выпуск
 	Available bool   `json:"available"` // есть новее — «Обновить»
 	Dev       bool   `json:"dev"`       // сборка без тега: не ищем
@@ -62,11 +65,11 @@ func newUpdateDesk(build string, src selfupdate.Source, pub ed25519.PublicKey, p
 	d := &updateDesk{apply: apply, tmp: os.TempDir()}
 	v, err := domain.NewReleaseVersion(build)
 	if err != nil {
-		d.st = updateState{Current: build, Dev: true}
+		d.st = updateState{Current: build, Build: build, Dev: true}
 		return d
 	}
 	d.u = &selfupdate.Updater{Source: src, PublicKey: pub, Current: v, Platform: platform}
-	d.st = updateState{Current: v.String()}
+	d.st = updateState{Current: v.String(), Build: build}
 	return d
 }
 
@@ -99,8 +102,40 @@ func (d *updateDesk) State() updateState {
 
 var errNoUpdate = errors.New("нового выпуска нет — проверьте еще раз позже")
 
+// update changes the state under the lock and tells the page (steps and the
+// download's progress); emit — вне замка.
+func (d *updateDesk) update(fn func(*updateState)) {
+	d.mu.Lock()
+	fn(&d.st)
+	st, emit := d.st, d.emit
+	d.mu.Unlock()
+	if emit != nil {
+		emit(st)
+	}
+}
+
+// progressWriter counts the download and reports it at most every 100 ms.
+type progressWriter struct {
+	w      io.Writer
+	done   int64
+	last   time.Time
+	report func(done int64)
+}
+
+func (p *progressWriter) Write(b []byte) (int, error) {
+	n, err := p.w.Write(b)
+	p.done += int64(n)
+	if now := time.Now(); now.Sub(p.last) >= 100*time.Millisecond {
+		p.last = now
+		p.report(p.done)
+	}
+	return n, err
+}
+
 // Install downloads the offered build into a temp file — подпись и sha256
-// проверены по дороге — and hands it to the platform's apply.
+// проверены по дороге — and hands it to the platform's apply. Каждый шаг уходит
+// странице (download с числом байт, install, restart); сбой — шаг error со
+// словами, кнопка снова доступна (отзыв владельца 17.11: «закрылось и все»).
 func (d *updateDesk) Install(ctx context.Context) error {
 	d.mu.Lock()
 	o := d.offer
@@ -108,28 +143,47 @@ func (d *updateDesk) Install(ctx context.Context) error {
 		d.mu.Unlock()
 		return errNoUpdate
 	}
-	d.st.Busy, d.st.Saved = true, ""
 	d.mu.Unlock()
-	defer func() { d.mu.Lock(); d.st.Busy = false; d.mu.Unlock() }()
+	d.update(func(s *updateState) {
+		s.Busy, s.Saved, s.Error, s.Phase, s.Done, s.Total = true, "", "", "download", 0, o.AssetSize()
+	})
+	err := d.install(ctx, o)
+	if err != nil {
+		d.update(func(s *updateState) { s.Busy, s.Phase, s.Error = false, "error", err.Error() })
+		return err
+	}
+	d.update(func(s *updateState) { // предложение потрачено: кнопка не предложит то же снова
+		s.Busy = false
+		s.Phase = "saved"
+		if s.Restart {
+			s.Phase = "restart"
+		}
+		if d.apply != nil {
+			d.offer, s.Available = selfupdate.Offer{}, false
+		}
+	})
+	return nil
+}
+
+func (d *updateDesk) install(ctx context.Context, o selfupdate.Offer) error {
 	f, err := os.CreateTemp(d.tmp, "dvk-update-*"+filepath.Ext(o.AssetName()))
 	if err != nil {
 		return err
 	}
 	path := f.Name()
-	err = d.u.Download(ctx, o, f)
+	defer func() { _ = os.Remove(path) }() // установка уже взяла свое; подмененный файл — не нужен
+	err = d.u.Download(ctx, o, &progressWriter{w: f, report: func(n int64) { d.update(func(s *updateState) { s.Done = n }) }})
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
-	if err == nil && d.apply != nil {
-		err = d.apply(ctx, path, o.Version().String())
+	if err != nil {
+		return err
 	}
-	_ = os.Remove(path)               // установка уже взяла свое; подмененный файл — не нужен
-	if err == nil && d.apply != nil { // предложение потрачено: кнопка не предложит то же снова
-		d.mu.Lock()
-		d.offer, d.st.Available = selfupdate.Offer{}, false
-		d.mu.Unlock()
+	d.update(func(s *updateState) { s.Done, s.Phase = s.Total, "install" })
+	if d.apply != nil {
+		return d.apply(ctx, path, o.Version().String())
 	}
-	return err
+	return nil
 }
 
 // updateEvery is how often the window asks for a newer release.
@@ -185,11 +239,16 @@ func saveForManual(home, path, version string) (string, error) {
 	return dst, nil
 }
 
-// noteRestart tells the page the window is about to restart on the new build.
-func (d *updateDesk) noteRestart() {
+// noteRestart tells the page the window is about to restart on the new build
+// and leaves the «обновилось» marker for the first start of the new window.
+func (d *updateDesk) noteRestart(to string) {
 	d.mu.Lock()
 	d.st.Restart = true
+	from := d.st.Current
 	d.mu.Unlock()
+	if d.dir != "" {
+		_ = writeUpdateDone(d.dir, from, to)
+	}
 }
 
 // noteSaved remembers where the build was put, for the page.
@@ -224,11 +283,58 @@ func (a *App) UpdateInstall() error {
 	return a.update.Install(a.ctx)
 }
 
-// заглушки до GREEN
-type updateDone struct{ From, To string }
+// launchdLabel — служба окна в launchd (scripts/desktop-install.sh).
+const launchdLabel = "com.daniilvdovin.kb"
 
+// restartCommand restarts the window on the new build. Под launchd —
+// `launchctl kickstart -k`: помощник-потомок умирает вместе с окном (замер
+// 17.11, обновление «закрылось и все»); без launchd — open -n после выхода
+// окна по pid.
 func restartCommand(service string, uid int, bundle string, pid int) *exec.Cmd {
-	return exec.Command("true")
+	if service == launchdLabel {
+		return exec.Command("launchctl", "kickstart", "-k", "gui/"+strconv.Itoa(uid)+"/"+launchdLabel)
+	}
+	return exec.Command("/bin/sh", "-c", `while kill -0 "$1" 2>/dev/null; do sleep 0.2; done; /usr/bin/open -n "$0"`, bundle, strconv.Itoa(pid))
 }
-func writeUpdateDone(dir, from, to string) error      { return nil }
-func consumeUpdateDone(dir string) (updateDone, bool) { return updateDone{}, false }
+
+// updateDone is the marker «окно обновилось» for the first start after it.
+type updateDone struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+const updateDoneFile = "update-done.json"
+
+// writeUpdateDone leaves the marker next to the settings: новое окно прочтет его
+// один раз и скажет, что обновилось.
+func writeUpdateDone(dir, from, to string) error {
+	b, err := json.Marshal(updateDone{From: from, To: to})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, updateDoneFile), b, 0o600)
+}
+
+// consumeUpdateDone reads and removes the marker.
+func consumeUpdateDone(dir string) (updateDone, bool) {
+	p := filepath.Join(dir, updateDoneFile)
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return updateDone{}, false
+	}
+	_ = os.Remove(p)
+	var d updateDone
+	if json.Unmarshal(b, &d) != nil || d.To == "" {
+		return updateDone{}, false
+	}
+	return d, true
+}
+
+// UpdateDone says once, after a restart, that the window has just updated.
+func (a *App) UpdateDone() updateDone {
+	if a.update == nil || a.update.dir == "" {
+		return updateDone{}
+	}
+	d, _ := consumeUpdateDone(a.update.dir)
+	return d
+}
