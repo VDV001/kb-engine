@@ -24,9 +24,11 @@ type WordForms struct {
 }
 
 // OwnQuery — запрос, по которому находят сам товар, и средняя позиция в выдаче.
+// Days — место по дням периода с его первого дня, 0 — товара в выдаче не было (#670).
 type OwnQuery struct {
 	Text            string
 	Count, Position int
+	Days            []int
 }
 
 // TitleInput — название карточки и то, с чем его сравнивают (#607).
