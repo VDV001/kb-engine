@@ -115,3 +115,10 @@ func TestNewModelCall_describePurpose(t *testing.T) {
 		t.Fatalf("describe: %+v %v", c, err)
 	}
 }
+
+// Изображения (#678) — свое назначение вызова: в статистике они отдельной строкой.
+func TestImageCallPurpose(t *testing.T) {
+	if _, err := domain.NewBilledModelCall(time.Now(), domain.CallImage, "google/gemini-3.1-flash-image", 68_000_000_000, time.Second, false); err != nil {
+		t.Errorf("an image call refused: %v", err)
+	}
+}

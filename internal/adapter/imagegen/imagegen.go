@@ -36,6 +36,7 @@ type Client struct {
 type Image struct {
 	Data []byte
 	MIME string
+	Cost string // цена вызова от шлюза, доллары; пусто — шлюз не прислал
 }
 
 const defaultMax = 32 << 20
@@ -51,6 +52,11 @@ type imageURL struct {
 }
 
 type reply struct {
+	ProviderMetadata struct {
+		Gateway struct {
+			Cost json.RawMessage `json:"cost"`
+		} `json:"gateway"`
+	} `json:"providerMetadata"`
 	Choices []struct {
 		Message struct {
 			Images []struct {
@@ -100,7 +106,24 @@ func (c Client) Generate(ctx context.Context, prompt string, refs [][]byte) (Ima
 	if json.Unmarshal(raw, &r) != nil || len(r.Choices) == 0 || len(r.Choices[0].Message.Images) == 0 {
 		return Image{}, ErrNoImage
 	}
-	return parseDataURL(r.Choices[0].Message.Images[0].ImageURL.URL)
+	img, err := parseDataURL(r.Choices[0].Message.Images[0].ImageURL.URL)
+	img.Cost = r.cost()
+	return img, err
+}
+
+// cost returns the gateway price as text — строка или число; иначе пусто:
+// цена — учет, и ее странный тип не должен ломать получение картинки.
+func (r reply) cost() string {
+	raw := r.ProviderMetadata.Gateway.Cost
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+	var n json.Number
+	if json.Unmarshal(raw, &n) == nil {
+		return n.String()
+	}
+	return ""
 }
 
 // statusError turns the gateway's code into words for the person.

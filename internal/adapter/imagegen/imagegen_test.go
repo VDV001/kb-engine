@@ -96,3 +96,22 @@ func TestGenerateLimitsTheReply(t *testing.T) {
 		t.Errorf("%v", err)
 	}
 }
+
+// Цена вызова приходит от шлюза (providerMetadata.gateway.cost, строкой или
+// числом); нет — пусто, а не ноль (вызов «без счета», а не бесплатный).
+func TestGenerateCost(t *testing.T) {
+	for name, c := range map[string]struct{ meta, want string }{
+		"string": {`"providerMetadata":{"gateway":{"cost":"0.068"}},`, "0.068"},
+		"number": {`"providerMetadata":{"gateway":{"cost":0.139}},`, "0.139"},
+		"none":   {``, ""},
+		"null":   {`"providerMetadata":{"gateway":{"cost":null}},`, ""},
+	} {
+		srv := gateway(t, 200, `{`+c.meta+`"choices":[{"message":{"images":[{"image_url":{"url":"data:image/png;base64,`+pngB64+`"}}]}}]}`, nil, nil)
+		cl := imagegen.Client{URL: srv.URL + "/v1", Model: "m", Key: "k", HTTP: srv.Client()}
+		img, err := cl.Generate(context.Background(), "x", nil)
+		srv.Close()
+		if err != nil || img.Cost != c.want {
+			t.Errorf("%s: cost %q, %v", name, img.Cost, err)
+		}
+	}
+}
