@@ -791,7 +791,8 @@ async function putPiece(sealed) {
 async function sendVoice(chat, mode, wav) {
   const file = await putPiece(await sealFile(st.pair, wav));
   const c = st.chats[chat];
-  await send(chat, { kind: "voice", text: mode, file }, (counter) => {
+  const pk = mode === "ask" && c && c.msgs.some((x) => x.who === "desk") ? pickToSend(c) : null; // выбор (#657) — как у текстового вопроса
+  await send(chat, { kind: "voice", text: mode, file, ...(pk && { pick: { model: pk.model, only: pk.only } }) }, (counter) => {
     if (!c) return;
     if (mode === "ask") {
       asked(c, "🎤 вопрос голосом", counter, Date.now());

@@ -639,7 +639,8 @@ func chatAnswerer(d *chatDesk) answerFn {
 		}
 		// Источники чата — телефону для показа (#647); пусто — все.
 		a := mailrelay.Answer{Chat: rec.ID, Sources: answerSources(rec), Only: rec.Sources}
-		a.Context = (*mailrelay.ContextFill)(rec.Context) // круг контекста на телефоне (#647); та же форма
+		a.Pick = &mailrelay.Pick{Model: rec.PhonePick, Only: rec.PhoneOnly} // выбор телефона, как его хранит окно (#657)
+		a.Context = (*mailrelay.ContextFill)(rec.Context)                   // круг контекста на телефоне (#647); та же форма
 		if n := len(rec.Messages); n > 0 {
 			a.Text = rec.Messages[n-1].Text
 		}

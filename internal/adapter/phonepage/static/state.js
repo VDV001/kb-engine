@@ -236,8 +236,18 @@ function desked(st, m, p) {
   if (m.from === "desk" && p.kind === "desk") {
     st.desk = p.desk || null;
     st.deskAt = Date.now();
+    for (const c of Object.values(st.chats || {})) dropRevoked(c, st.desk);
   }
   return false;
+}
+
+// dropRevoked resets the phone's model in chat c when the window no longer
+// offers it (#657): «как в окне» видно сразу, а сброс уходит с ближайшим
+// вопросом — окно хранит прежний выбор и иначе откажет ходу.
+function dropRevoked(c, desk) {
+  const cur = c.pickLocal || c.pick;
+  if (!desk?.models || !cur?.model || desk.models.includes(cur.model)) return;
+  c.pickLocal = { model: "", only: [...(cur.only || [])] };
 }
 
 // choiceView is what the phone shows of chat c's model and sources (#647, #657):
@@ -262,6 +272,7 @@ export function choiceView(c, desk) {
 // (#657): модель ("" — как в окне) и источники (пусто — все, что дает окно).
 export function setPick(c, pick) {
   c.pickLocal = { model: pick.model || "", only: [...(pick.only || [])] };
+  if (samePick(c.pickLocal, c.pick || { model: "", only: [] })) delete c.pickLocal; // вернулся к подтвержденному — ждать нечего
 }
 
 // pickToSend is the choice to send with the next question: только измененный.

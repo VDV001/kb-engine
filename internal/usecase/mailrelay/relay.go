@@ -646,19 +646,34 @@ func (r Relay) now() time.Time {
 func (r Relay) question(ctx context.Context, st *State, chat string, req Payload) Payload {
 	// Выбор телефона (#657) — до хода, в чате, который окно уже знает: в новом
 	// выбирать не из чего. Отказ окна — словами и без хода.
-	var picked *Pick
-	if w := st.Chats[chat]; req.Pick != nil && w != "" && r.Picker != nil {
-		applied, err := r.Picker.SetPick(ctx, w, *req.Pick)
-		if err != nil {
-			return Payload{Kind: KindError, Text: err.Error()}
-		}
-		picked = &applied
+	applied, refusal := r.applyPick(ctx, st, chat, req.Pick)
+	if refusal != nil {
+		return *refusal
 	}
-	reply := r.questionTurn(ctx, st, chat, req)
-	if reply.Kind == KindAnswer {
-		reply.Pick = picked // подтверждение: телефон снимает «ушло» только по нему
+	return confirmed(r.questionTurn(ctx, st, chat, req), applied)
+}
+
+// confirmed tells the phone the choice the window applied (#657): телефон
+// снимает «ушло» только по нему; выбор из ответа окна — после хода, он точнее.
+func confirmed(reply Payload, applied *Pick) Payload {
+	if reply.Kind == KindAnswer && reply.Pick == nil {
+		reply.Pick = applied
 	}
 	return reply
+}
+
+// applyPick sets the phone's choice in the window's chat before a turn and
+// returns what the window saved; отказ окна — словами, без хода.
+func (r Relay) applyPick(ctx context.Context, st *State, chat string, pick *Pick) (*Pick, *Payload) {
+	w := st.Chats[chat]
+	if pick == nil || w == "" || r.Picker == nil {
+		return nil, nil
+	}
+	applied, err := r.Picker.SetPick(ctx, w, *pick)
+	if err != nil {
+		return nil, &Payload{Kind: KindError, Text: err.Error()}
+	}
+	return &applied, nil
 }
 
 // questionTurn runs the phone's question, with its file if any.
@@ -772,7 +787,7 @@ func (r Relay) ask(ctx context.Context, st *State, chat, question string, files 
 		touchShared(st, chat)
 	}
 	r.pendingTitle(ctx, st, chat)
-	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources, Context: a.Context, Only: a.Only}
+	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources, Context: a.Context, Only: a.Only, Pick: a.Pick}
 }
 
 // minPostGap — предел частоты отправки окна в ящик (сервер: раз в секунду).
@@ -1156,7 +1171,11 @@ func (r Relay) voice(ctx context.Context, st *State, chat string, req Payload) P
 	case text == "": // тишина вопроса — свой код: «heard» — ответ диктовке (повторное ревью #660)
 		return Payload{Kind: KindError, Text: VoiceSilent}
 	}
-	reply := r.ask(ctx, st, chat, text, nil)
+	applied, refusal := r.applyPick(ctx, st, chat, req.Pick)
+	if refusal != nil {
+		return *refusal
+	}
+	reply := confirmed(r.ask(ctx, st, chat, text, nil), applied)
 	reply.Heard = text
 	return reply
 }
