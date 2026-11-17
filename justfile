@@ -42,7 +42,7 @@ desktop: web
     # frontend/dist встраивается в окно; прежняя копия заменяется целиком.
     find desktop/app-ui -mindepth 1 ! -name .keep -delete
     cp -R frontend/dist/. desktop/app-ui/
-    cd desktop && CGO_LDFLAGS="-framework UniformTypeIdentifiers" go build -tags desktop,production -ldflags "-s -w" -o ../bin/kb.app/Contents/MacOS/kb .
+    cd desktop && CGO_LDFLAGS="-framework UniformTypeIdentifiers" go build -tags desktop,production -ldflags "-s -w -X main.version=$(git describe --tags --always)" -o ../bin/kb.app/Contents/MacOS/kb .
     # Движок рядом с окном: кнопка «Включить» во вкладке «Браузер» запускает из него
     # kbengine browser serve (desktop/browserdesk.go ищет его рядом с окном первым).
     go build -o bin/kb.app/Contents/MacOS/kbengine ./cmd/kbengine
@@ -69,7 +69,7 @@ desktop-windows: web
     cp -R frontend/dist/. desktop/app-ui/
     cd desktop && go run ./winres -dir build/windows -syso rsrc_windows_amd64.syso -ico build/windows/dvk.ico
     find desktop/setupwin/payload -mindepth 1 ! -name .gitkeep -delete
-    cd desktop && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -tags desktop,production -ldflags "-s -w -H windowsgui" -o setupwin/payload/kb.exe .
+    cd desktop && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -tags desktop,production -ldflags "-s -w -H windowsgui -X main.version=$(git describe --tags --always)" -o setupwin/payload/kb.exe .
     cd desktop && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -H windowsgui" -o setupwin/payload/kb-listen.exe ./listenwin
     cd desktop && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -H windowsgui" -o setupwin/payload/kb-extract.exe ./extractwin
     GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o desktop/setupwin/payload/kbengine.exe ./cmd/kbengine
@@ -80,6 +80,33 @@ desktop-windows: web
     find desktop/setupwin/payload -mindepth 1 ! -name .gitkeep -delete
     rm -f desktop/setupwin/rsrc_windows_amd64.syso
     @ls -lh bin/windows/DVK-Setup.exe
+
+# Выпуск окна DVK (#651): сборки Mac и Windows, подписанный манифест, загрузка на
+# GitHub. Запускать в СВОЕМ Терминале: ключ подписи — в Связке (спросит доступ),
+# наружу уходит только то, что подписано. HEAD должен стоять на теге выпуска, а
+# выпуск tag уже существовать (обычный выпуск kb-engine). Канал dvk-latest —
+# постоянный выпуск с манифестом, не «latest» (ревью #672). Манифест верится
+# 90 дней; продлить без пересборки — just window-renew.
+window-release tag:
+    @test "$(git describe --tags --exact-match)" = "{{tag}}" || { echo "HEAD не на теге {{tag}}"; exit 1; }
+    @git diff --quiet HEAD || { echo "в дереве есть неподтвержденные правки: подписывать нечего"; exit 1; }
+    just desktop
+    just desktop-windows
+    rm -rf dist/window && mkdir -p dist/window/manifest
+    ditto -c -k --keepParent bin/kb.app dist/window/DVK-mac-arm64.zip
+    cp bin/windows/DVK-Setup.exe dist/window/DVK-Setup.exe
+    go run ./cmd/kbengine release sign --version {{tag}} --out dist/window/manifest darwin-arm64=dist/window/DVK-mac-arm64.zip windows-amd64=dist/window/DVK-Setup.exe
+    gh release upload {{tag}} dist/window/DVK-mac-arm64.zip dist/window/DVK-Setup.exe --clobber -R VDV001/kb-engine
+    gh release view dvk-latest -R VDV001/kb-engine >/dev/null 2>&1 || gh release create dvk-latest --title "DVK window channel" --notes "Манифест последнего окна DVK (подписан ключом владельца). Файлы — в выпуске своего тега." --latest=false -R VDV001/kb-engine
+    gh release upload dvk-latest dist/window/manifest/dvk-manifest.json dist/window/manifest/dvk-manifest.json.sig --clobber -R VDV001/kb-engine
+
+# Продлить срок манифеста последнего окна без пересборки (#651): скачивает манифест
+# канала, подписывает заново и кладет обратно.
+window-renew days="90":
+    rm -rf dist/window-renew && mkdir -p dist/window-renew
+    gh release download dvk-latest -R VDV001/kb-engine --dir dist/window-renew --pattern 'dvk-manifest.json*'
+    go run ./cmd/kbengine release renew --dir dist/window-renew --valid-days {{days}}
+    gh release upload dvk-latest dist/window-renew/dvk-manifest.json dist/window-renew/dvk-manifest.json.sig --clobber -R VDV001/kb-engine
 
 # DVK для Android (#622) — bin/android/DVK.apk, TWA над /m/ kb-сервера.
 # Запускать в своем Терминале: ключ подписи и пароль — в Связке ключей.
