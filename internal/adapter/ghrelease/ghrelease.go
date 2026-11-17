@@ -33,8 +33,18 @@ type Client struct {
 
 var releasePath = regexp.MustCompile(`^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$`)
 
-// Fetch reads Base+path; больше limit байт — ErrTooLarge.
+// Fetch reads Base+path whole; больше limit байт — ErrTooLarge.
 func (c Client) Fetch(ctx context.Context, path string, limit int64) ([]byte, error) {
+	rc, err := c.Open(ctx, path, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rc.Close() }()
+	return io.ReadAll(rc)
+}
+
+// Open streams Base+path; чтение дальше limit байт — ErrTooLarge.
+func (c Client) Open(ctx context.Context, path string, limit int64) (io.ReadCloser, error) {
 	if !releasePath.MatchString(path) || slices.ContainsFunc(strings.Split(path, "/"), func(s string) bool { return s == "." || s == ".." }) {
 		return nil, fmt.Errorf("%w: %q", ErrBadPath, path)
 	}
@@ -50,19 +60,37 @@ func (c Client) Fetch(ctx context.Context, path string, limit int64) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("release %s: %s", path, resp.Status)
 	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
-	if err != nil {
-		return nil, err
-	}
-	if int64(len(b)) > limit {
-		return nil, fmt.Errorf("%w: %s over %d bytes", ErrTooLarge, path, limit)
-	}
-	return b, nil
+	return &limited{rc: resp.Body, left: limit, path: path}, nil
 }
+
+// limited reads at most left bytes; дальше — ErrTooLarge, а не тихая обрезка.
+type limited struct {
+	rc   io.ReadCloser
+	left int64
+	path string
+}
+
+func (l *limited) Read(p []byte) (int, error) {
+	if l.left <= 0 {
+		var one [1]byte
+		if n, _ := l.rc.Read(one[:]); n > 0 {
+			return 0, fmt.Errorf("%w: %s", ErrTooLarge, l.path)
+		}
+		return 0, io.EOF
+	}
+	if int64(len(p)) > l.left {
+		p = p[:l.left]
+	}
+	n, err := l.rc.Read(p)
+	l.left -= int64(n)
+	return n, err
+}
+
+func (l *limited) Close() error { return l.rc.Close() }
 
 // client is the caller's client with the release redirect policy on top.
 func (c Client) client() http.Client {
@@ -84,5 +112,3 @@ func (c Client) client() http.Client {
 	}
 	return hc
 }
-
-func (c Client) Open(context.Context, string, int64) (io.ReadCloser, error) { return nil, ErrBadPath }

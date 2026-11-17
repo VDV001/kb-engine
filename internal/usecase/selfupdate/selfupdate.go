@@ -6,6 +6,7 @@ package selfupdate
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -13,8 +14,9 @@ import (
 	"github.com/daniil/kb-engine/internal/domain"
 )
 
-// Source fetches a release file by its path under the repository's releases
-// (latest/download/<имя> или download/<тег>/<имя>); больше limit байт — отказ.
+// Source reads a release file by its path under the repository's releases
+// (download/<тег>/<имя>): Fetch — целиком (манифест), Open — потоком (сборка);
+// больше limit байт — отказ.
 type Source interface {
 	Fetch(ctx context.Context, path string, limit int64) ([]byte, error)
 	Open(ctx context.Context, path string, limit int64) (io.ReadCloser, error)
@@ -96,26 +98,24 @@ func (u Updater) Check(ctx context.Context) (Offer, error) {
 	return Offer{version: m.Version(), asset: a, ok: true}, nil
 }
 
-// Download fetches the offered file and checks it against the signed manifest.
+// Download streams the offered file into dst and checks it against the signed
+// manifest: размер и sha256 считаются по дороге (ревью #672: не в память).
+// Ошибка — содержимое dst не годится: окно пишет во временный файл и стирает его.
 func (u Updater) Download(ctx context.Context, o Offer, dst io.Writer) error {
-	b, err := u.download(ctx, o)
+	if !o.ok {
+		return ErrNoOffer
+	}
+	rc, err := u.Source.Open(ctx, "download/"+o.version.String()+"/"+o.asset.Name(), o.asset.Size())
 	if err != nil {
 		return err
 	}
-	_, err = dst.Write(b)
-	return err
-}
-
-func (u Updater) download(ctx context.Context, o Offer) ([]byte, error) {
-	if !o.ok {
-		return nil, ErrNoOffer
-	}
-	b, err := u.Source.Fetch(ctx, "download/"+o.version.String()+"/"+o.asset.Name(), o.asset.Size())
+	defer func() { _ = rc.Close() }()
+	h := sha256.New()
+	n, err := io.Copy(io.MultiWriter(dst, h), rc)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if err := o.asset.Matches(b); err != nil {
-		return nil, err
-	}
-	return b, nil
+	var sum [sha256.Size]byte
+	h.Sum(sum[:0])
+	return o.asset.MatchesSum(n, sum)
 }

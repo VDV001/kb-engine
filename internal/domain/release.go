@@ -92,8 +92,12 @@ func (a ReleaseAsset) Size() int64 { return a.size }
 
 // Matches checks the downloaded bytes against the manifest: подмененный файл
 // того же имени и размера отвергается по sha256.
-func (a ReleaseAsset) Matches(b []byte) error {
-	if int64(len(b)) != a.size || sha256.Sum256(b) != a.sha256 {
+func (a ReleaseAsset) Matches(b []byte) error { return a.MatchesSum(int64(len(b)), sha256.Sum256(b)) }
+
+// MatchesSum checks a streamed file by its length and sha256 (ревью #672: сборка
+// идет потоком, не в память).
+func (a ReleaseAsset) MatchesSum(n int64, sum [sha256.Size]byte) error {
+	if n != a.size || sum != a.sha256 {
 		return fmt.Errorf("%w: %s", ErrReleaseAssetMismatch, a.name)
 	}
 	return nil
