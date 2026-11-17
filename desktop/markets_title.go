@@ -152,6 +152,7 @@ func (c *ttlMap[V]) put(k string, v V, now time.Time) {
 type cardPart struct {
 	card   mpstats.Card
 	own    []markets.OwnQuery
+	from   time.Time // первый день мест own по дням (#670)
 	ownErr error
 }
 
@@ -210,7 +211,9 @@ func readParts(ctx context.Context, m mpstats.MCP, id int64, cp *cardPart, np *n
 	defer cancel()
 	var wg sync.WaitGroup
 	if own {
-		wg.Go(func() { cp.own, cp.ownErr = m.CardQueries(ctx, id, time.Time{}, time.Time{}) })
+		from, to := searchPeriod(time.Now())
+		cp.from = from
+		wg.Go(func() { cp.own, cp.ownErr = m.CardQueries(ctx, id, from, to) })
 	}
 	if niche {
 		wg.Go(func() {

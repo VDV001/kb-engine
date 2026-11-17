@@ -71,22 +71,54 @@ func (m MCP) Card(ctx context.Context, sku int64) (Card, error) {
 	return c, nil
 }
 
-// CardQueries reads the queries sku is found by in 30 days to yesterday (ozon_sku report=keywords).
-func (m MCP) CardQueries(ctx context.Context, sku int64, _, _ time.Time) ([]markets.OwnQuery, error) {
+// CardQueries reads the queries sku is found by in days from..to (ozon_sku
+// report=keywords): у каждого места по дням — 0, где товара в выдаче не было.
+func (m MCP) CardQueries(ctx context.Context, sku int64, from, to time.Time) ([]markets.OwnQuery, error) {
 	var rows []struct {
-		Query    string  `json:"query"`
-		Count    int     `json:"count"`
-		Position float64 `json:"avg_position"`
+		Query     string     `json:"query"`
+		Count     int        `json:"count"`
+		Position  float64    `json:"avg_position"`
+		Positions []*float64 `json:"positions"`
 	}
-	if err := m.call(ctx, "ozon_sku", map[string]any{"sku": sku, "report": "keywords"}, &rows); err != nil {
+	if err := m.call(ctx, "ozon_sku", map[string]any{"sku": sku, "report": "keywords", "d1": isoDay(from), "d2": isoDay(to)}, &rows); err != nil {
 		return nil, err
 	}
 	out := make([]markets.OwnQuery, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, markets.OwnQuery{Text: r.Query, Count: r.Count, Position: int(r.Position)})
+		q := markets.OwnQuery{Text: r.Query, Count: r.Count, Position: int(r.Position), Days: make([]int, len(r.Positions))}
+		for i, p := range r.Positions {
+			if p != nil {
+				q.Days[i] = int(*p)
+			}
+		}
+		out = append(out, q)
 	}
 	return out, nil
 }
+
+// SearchStats reads how sku is seen in search in from..to and the same span
+// before it (ozon_sku report=search_stats; null — 0).
+func (m MCP) SearchStats(ctx context.Context, sku int64, from, to time.Time) (markets.SearchStats, error) {
+	var raw struct {
+		Words       float64  `json:"search_words_count"`
+		WordsBefore float64  `json:"search_words_count_previous"`
+		Avg         *float64 `json:"search_position_avg"`
+		AvgBefore   *float64 `json:"search_position_avg_previous"`
+	}
+	if err := m.call(ctx, "ozon_sku", map[string]any{"sku": sku, "report": "search_stats", "d1": isoDay(from), "d2": isoDay(to)}, &raw); err != nil {
+		return markets.SearchStats{}, err
+	}
+	st := markets.SearchStats{Words: int(raw.Words), WordsBefore: int(raw.WordsBefore)}
+	if raw.Avg != nil {
+		st.Avg = int(*raw.Avg)
+	}
+	if raw.AvgBefore != nil {
+		st.AvgBefore = int(*raw.AvgBefore)
+	}
+	return st, nil
+}
+
+func isoDay(t time.Time) string { return t.Format(time.DateOnly) }
 
 // NicheQueries reads niche path's search queries and word forms in 30 days to
 // yesterday (ozon_category report=keywords).
@@ -360,8 +392,4 @@ func clip(s string, n int) string {
 		return string(r)
 	}
 	return string(r[:n]) + "…"
-}
-
-func (m MCP) SearchStats(context.Context, int64, time.Time, time.Time) (markets.SearchStats, error) {
-	return markets.SearchStats{}, nil
 }

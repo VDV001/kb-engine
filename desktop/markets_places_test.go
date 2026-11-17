@@ -69,7 +69,8 @@ func TestPlacesView(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := calls.Load()
-	if v, err := s2.placesCheck(ctx, srv.Client(), "1234567", false, now); err != nil || v.Calls != 0 || len(v.Rows) != 2 {
+	// «Название» кладет в память по настоящим часам — и спрашиваем по ним.
+	if v, err := s2.placesCheck(ctx, srv.Client(), "1234567", false, time.Now()); err != nil || v.Calls != 0 || len(v.Rows) != 2 {
 		t.Errorf("after title: %+v %v", v, err)
 	}
 	if calls.Load() != before {

@@ -6939,7 +6939,7 @@ function shCard() {
     ["Рейтинг", `${shVal("rating", p)} · отзывов ${fmt(p.reviews)}`, shHint("rating")]];
   const gone = shOzon() ? ["ABC по сумме", "Возвращено", "Индекс цен", "ДРР", "Рейтинг"] : ["Отказ при получении", "Выкуплено на"];
   $("#sh-card").innerHTML = `<div class="mk-card-h"><h3>${esc(p.name)}</h3></div><dl>${rows.filter((r) => !gone.includes(r[0])).map(([k, v, t]) => `<dt${t ? mkTip(k, t) : ""}>${k}</dt><dd>${k === "SKU" ? shOzonSKU(p.sku) : k === "Артикул" && p.article ? esc(v) + shCopyBtn(p.article) : esc(v)}</dd>`).join("")}</dl>` +
-    shMoneyCard(p) + shTitleCard(p) + shTagsCard(p) + shDescCard(p) + shPhotosCard(p) + shInfoCard(p) + `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
+    shMoneyCard(p) + shTitleCard(p) + shTagsCard(p) + shPlacesCard(p) + shDescCard(p) + shPhotosCard(p) + shInfoCard(p) + `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
 }
 // «Название» в карточке (#607): главный запрос ниши MPStats и что добавить или
 // убрать; ответ хранится по SKU, чтобы перерисовка таблицы его не стирала.
@@ -7197,6 +7197,41 @@ function shTagsCard(p) {
   }
   return `<h4 class="sh-money-h">Хештеги</h4>${btn}${body}`;
 }
+// «Место в выдаче» (#670): запросы, по которым товар находят в поиске Ozon, и
+// место по каждому за 31 день из MPStats; без запросов — сравнение с прошлым.
+const shPlaces = new Map(); // кабинет|SKU → { busy } | { v } | { err }
+function shPlacesCard(p) {
+  if (!shOzon() || !/^\d+$/.test(p.sku || "")) return "";
+  const t = shPlaces.get(shTagsKey(p)), btn = `<button class="btn" type="button" data-sh-places="${esc(p.sku)}"${t && t.busy ? " disabled" : ""}${mkTip("Место в выдаче", "запросы, по которым товар в поиске Ozon, и место по каждому за 31 день — отчет keywords MPStats: 1 запрос тарифа, ноль, если «Название» или «Хештеги» уже читали; без запросов — еще 1 на сравнение с прошлым периодом")}>${t && t.busy ? "Читаю MPStats…" : t && t.v ? "Проверить еще раз" : "Место в выдаче"}</button>`;
+  let body = "";
+  if (t && t.err) body = `<div class="note">${esc(t.err)}</div>`;
+  if (t && t.v) {
+    const v = t.v, per = `${shDay(v.from)} – ${shDay(v.to)}`;
+    const src = `<div class="note">${esc(v.source)} · ${v.calls ? `${fmt(v.calls)} ${plural(v.calls, "запрос", "запроса", "запросов")} тарифа` : "из памяти, без запросов тарифа"}</div>`;
+    if (!v.rows.length) {
+      const st = v.stats;
+      body = `<div class="note">За ${per} товар не находят в поиске Ozon ни по одному запросу.${st && st.wordsBefore ? ` 30 днями раньше — по ${fmt(st.wordsBefore)} ${plural(st.wordsBefore, "запросу", "запросам", "запросам")}${st.avgBefore ? `, среднее место ${fmt(st.avgBefore)}` : ""}.` : ""}</div>` + src;
+    } else {
+      const row = (r) => `<tr><td>${esc(r.query)}</td><td class="n">${fmt(r.count)}</td><td class="n">${fmt(r.avg)}</td><td class="n">${r.last ? `${fmt(r.last)} <span class="muted">${esc(shDay(r.lastDay))}</span>` : "—"}</td><td class="n">${fmt(r.seen)} из ${fmt(r.days)}</td></tr>`;
+      body = `<div class="note">За ${per}: ${fmt(v.total)} ${plural(v.total, "запрос", "запроса", "запросов")}, по которым товар в выдаче${v.total > v.rows.length ? `; показаны ${fmt(v.rows.length)} самых частых` : ""}. Место — номер в выдаче, меньше — выше.</div>` +
+        `<div style="overflow-x:auto"><table class="st-table"><thead><tr><th>Запрос</th><th class="n">Запросов</th><th class="n">Среднее место</th><th class="n">Последнее</th><th class="n">Дней в выдаче</th></tr></thead><tbody>${v.rows.map(row).join("")}</tbody></table></div>` + src;
+    }
+  }
+  return `<h4 class="sh-money-h">Место в выдаче</h4>${btn}${body}`;
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-sh-places]");
+  if (!b) return;
+  hideTip();
+  const p = sh.v && sh.v.products[sh.sel], sku = b.dataset.shPlaces;
+  if (!p || p.sku !== sku) return;
+  const key = shTagsKey(p);
+  if (!native() || !native().MarketsPlaces) { shPlaces.set(key, { err: "Место в выдаче смотрится в окне приложения." }); return shCard(); }
+  const fresh = !!(shPlaces.get(key) || {}).v; // «Проверить еще раз» — мимо памяти
+  shPlaces.set(key, { busy: true }); shCard();
+  try { shPlaces.set(key, { v: await native().MarketsPlaces(sku, fresh) }); } catch (err) { shPlaces.set(key, { err: "Место в выдаче не прочитано: " + errText(err) }); }
+  if (sh.v && sh.v.products[sh.sel] && sh.v.products[sh.sel].sku === sku) shCard();
+});
 document.addEventListener("click", async (e) => {
   const b = e.target.closest("[data-sh-tags]");
   if (!b) return;
