@@ -354,6 +354,32 @@ if (typeof s.forget === "function") {
   s.take(st26, { seq: 3, chat: "k", from: "desk" }, dk14(3, { kind: "delete", text: "chat" }));
   want(!st26.chats.k && s.take(st26, { seq: 4, chat: "k", from: "desk" }, dk14(4, { kind: "answer", text: "поздно" })) === false && !st26.chats.k, "the window's delete forgets the chat too");
 }
+// 27. Чат окна на телефоне (#669): «asked» заводит чат с названием окна, вопрос
+// помечен «в окне» и ждет ответа; ответ ложится как обычно; удаленный — мимо.
+const st27 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: {}, gone: { old: 1 } };
+want(s.take(st27, { seq: 1, chat: "w", from: "desk", at: "2026-11-17T10:00:00Z" }, dk14(1, { kind: "asked", text: "сроки?", title: "Поставки" })) === true, "asked changes the state");
+const c27 = () => st27.chats.w || { msgs: [] };
+want(c27().title === "Поставки" && c27().msgs.length === 1 && c27().msgs[0].who === "me" && c27().msgs[0].window === true && c27().msgs[0].text === "сроки?" && c27().pending, "asked opens the window's chat on the phone");
+s.take(st27, { seq: 2, chat: "w", from: "desk", at: "2026-11-17T10:00:01Z" }, dk14(2, { kind: "answer", text: "до пятницы" }));
+want(c27().msgs.length === 2 && c27().msgs[1]?.who === "desk" && !c27().pending, "the window's answer follows its question");
+s.take(st27, { seq: 3, chat: "w", from: "desk" }, dk14(3, { kind: "asked", text: "еще?", title: "Новое имя" }));
+want(c27().title === "Поставки" && c27().msgs.length === 3, "a later asked keeps the phone's title");
+want(s.take(st27, { seq: 4, chat: "old", from: "desk" }, dk14(4, { kind: "asked", text: "x", title: "y" })) === false && !st27.chats.old, "a deleted chat does not come back by asked");
+// 28. Ревью #675: история пачкой; ответ на ход окна не сбрасывает источники и
+// счетчик чата; «выпал из 50» не стирает чат с неотправленным вопросом.
+const st28 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: {}, outbox: [] };
+s.take(st28, { seq: 1, chat: "h", from: "desk", at: "2026-11-17T10:00:00Z" }, dk14(1, { kind: "history", title: "Поставки", history: [{ q: "q1", a: "a1" }, { q: "q2", a: "a2" }] }));
+const h28 = st28.chats.h || { msgs: [] };
+want(h28.title === "Поставки" && h28.msgs.length === 4 && h28.msgs[0].who === "me" && h28.msgs[0].window && h28.msgs[3].who === "desk" && h28.msgs[3].text === "a2" && !h28.pending, "history lands as window questions and answers");
+const st28b = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { p: { title: "Чат", msgs: [], updated: 1, only: ["src-1"], context: { used: 900, window: 1000 } } } };
+s.take(st28b, { seq: 1, chat: "p", from: "desk" }, dk14(1, { kind: "asked", text: "из окна" }));
+s.take(st28b, { seq: 2, chat: "p", from: "desk" }, dk14(2, { kind: "answer", text: "ответ окна" }));
+want(st28b.chats.p.only?.[0] === "src-1" && st28b.chats.p.context?.used === 900, "a window turn keeps the phone's sources and context");
+const st28c = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { e: { title: "Старый", msgs: [{ who: "me", text: "не ушел", counter: "3", sent: false }], updated: 1 }, f: { title: "Пусто", msgs: [], updated: 1 } },
+  outbox: [{ chat: "e", sealed: "q", counter: "3" }] };
+s.take(st28c, { seq: 1, chat: "e", from: "desk" }, dk14(1, { kind: "delete", text: "evicted" }));
+s.take(st28c, { seq: 2, chat: "f", from: "desk" }, dk14(2, { kind: "delete", text: "evicted" }));
+want(st28c.chats.e && st28c.outbox.filter((o) => !o.drop).length === 1 && !st28c.chats.f, "evicted keeps a chat with an unsent question, drops an idle one");
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 

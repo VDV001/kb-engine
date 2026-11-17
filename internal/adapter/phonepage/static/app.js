@@ -419,6 +419,12 @@ function paintChat(c, follow) {
         meta.textContent = "в очереди · уйдет при связи";
         li.append(meta);
       }
+      if (m.window) { // вопрос задан в окне DVK на компьютере (#669)
+        const meta = document.createElement("span");
+        meta.className = "meta";
+        meta.textContent = "в окне";
+        li.append(meta);
+      }
     }
     return li;
   });
