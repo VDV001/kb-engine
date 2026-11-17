@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/usecase/markets"
@@ -34,6 +35,7 @@ type MCP struct {
 	URL   string
 	Token string
 	HTTP  *http.Client // nil — свой, с пределом в полторы минуты
+	Tries *atomic.Int64
 }
 
 // Card — карточка товара Ozon в MPStats: путь ниши, бренд, продавец,
