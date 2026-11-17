@@ -250,24 +250,41 @@ func (d phoneDesk) State(context.Context) (mailrelay.DeskState, error) {
 	cfg := d.settings.cfg
 	d.settings.mu.Unlock()
 	c := cfg.Chat.WithDefaults()
-	st := mailrelay.DeskState{Model: c.Model, Sources: []mailrelay.DeskSource{}}
+	st := mailrelay.DeskState{Model: c.Model, Sources: phoneSources(cfg)}
 	if d.hear != nil {
 		st.Hear = d.hear()
 	}
+	return st, nil
+}
+
+// phoneSources are what a chat searches, as the phone sees them (#656, #657):
+// включенные источники, которые окно читает, и подключения, разрешенные чату,
+// — только когда чат их спрашивает (режим инструментов, ревью #656).
+func phoneSources(cfg desktopconfig.Config) []mailrelay.DeskSource {
+	out := []mailrelay.DeskSource{}
 	for _, s := range cfg.WithSources().Sources {
 		if s.Enabled && searched(cfg, s) {
-			st.Sources = append(st.Sources, mailrelay.DeskSource{ID: s.ID, Name: sourceLabel(s)})
+			out = append(out, mailrelay.DeskSource{ID: s.ID, Name: sourceLabel(s)})
 		}
 	}
-	if chatMode(c) != chat.ModeTools {
-		return st, nil
+	if chatMode(cfg.Chat.WithDefaults()) != chat.ModeTools {
+		return out
 	}
 	for _, c := range cfg.Connections {
 		if name, ok := chatConnKinds[c.Kind]; ok && c.Enabled && c.Share {
-			st.Sources = append(st.Sources, mailrelay.DeskSource{ID: c.ID, Name: name + " · " + cmp.Or(c.Name, name), Conn: true})
+			out = append(out, mailrelay.DeskSource{ID: c.ID, Name: name + " · " + cmp.Or(c.Name, name), Conn: true})
 		}
 	}
-	return st, nil
+	return out
+}
+
+// phoneSourceIDs are the ids of phoneSources.
+func phoneSourceIDs(cfg desktopconfig.Config) []string {
+	var ids []string
+	for _, s := range phoneSources(cfg) {
+		ids = append(ids, s.ID)
+	}
+	return ids
 }
 
 // searched reports whether the window searches source s: вид, записанный

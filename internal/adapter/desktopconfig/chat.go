@@ -73,7 +73,9 @@ type Chat struct {
 	// человек вносит сам.
 	ContextWindow int `json:"contextWindow,omitempty"`
 	// MemoryQuiet — новое ждет в портрете, в чате не предлагается.
-	MemoryQuiet bool     `json:"memoryQuiet,omitempty"`
+	MemoryQuiet bool `json:"memoryQuiet,omitempty"`
+	// PhoneModels — модели, которые телефон может выбрать для своих ходов
+	// («Телефону: разрешить», #657); пусто — только модель окна.
 	PhoneModels []string `json:"phoneModels,omitempty"`
 }
 

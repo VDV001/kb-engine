@@ -13,10 +13,10 @@ import (
 // вопроса и ответа здесь нет по устройству.
 
 // ErrModelNotForPhone — модель не разрешена телефону («Телефону: разрешить», #657).
-var ErrModelNotForPhone = errors.New("stub")
+var ErrModelNotForPhone = errors.New("эта модель не разрешена телефону: «Телефону: разрешить» у модели в «Чат и модель» окна")
 
 // ErrNoChatSources — у суженного с телефона чата не осталось разрешенных источников (#657).
-var ErrNoChatSources = errors.New("stub2")
+var ErrNoChatSources = errors.New("у чата не осталось источников, разрешенных в окне: выберите источники на телефоне или в окне")
 
 // ErrInvalidModelCall — вызов нарушает инвариант (нет модели, токены < 0…).
 var ErrInvalidModelCall = errors.New("invalid model call")

@@ -69,10 +69,15 @@ type chatRecord struct {
 	// Compressed — конспект начала разговора (#539); Messages остаются целыми.
 	Compressed *chatCompressed `json:"compressed,omitempty"`
 	// CanCompress — есть ли что сжимать; только в ответе, в файл не пишется.
-	CanCompress bool     `json:"canCompress,omitempty"`
-	Phone       bool     `json:"phone,omitempty"`
-	PhonePick   string   `json:"phonePick,omitempty"`
-	PhoneOnly   []string `json:"phoneOnly,omitempty"`
+	CanCompress bool `json:"canCompress,omitempty"`
+	// Phone — чат заведен в окне после #669: его ходы уходят на телефоны.
+	Phone bool `json:"phone,omitempty"`
+	// PhonePick — модель, выбранная телефоном для своих ходов в этом чате
+	// (#657); пусто — модель окна. Применяется, только пока разрешена.
+	PhonePick string `json:"phonePick,omitempty"`
+	// PhoneOnly — источники, которыми телефон сузил выбор окна для своих
+	// ходов; nil — как в окне.
+	PhoneOnly []string `json:"phoneOnly,omitempty"`
 }
 
 // chatCompressed is the summary that stands for the first Folded messages
@@ -370,7 +375,12 @@ func (d *chatDesk) ask(parent context.Context, r askReq, out askOut) (chatRecord
 		}
 	}
 	r.Sources = turnSources(r, rec, out)
-	c := d.config()
+	windowSources := slices.Clone(r.Sources) // выбор окна: ход телефона его не переписывает
+	c, sources, err := d.turnConfig(out, rec, r.Sources)
+	if err != nil {
+		return chatRecord{}, err
+	}
+	r.Sources = sources
 	key, err := d.modelKey(c)
 	if err != nil {
 		return chatRecord{}, err
@@ -417,7 +427,7 @@ func (d *chatDesk) ask(parent context.Context, r askReq, out askOut) (chatRecord
 	rec.Messages = append(rec.Messages,
 		chatMessage{Role: string(chat.RoleUser), Text: strings.TrimSpace(question), From: phoneFrom(out)},
 		chatMessage{Role: string(chat.RoleAssistant), Text: turn.Answer, Docs: used, Uses: append(web, turn.Uses...)})
-	rec.Model, rec.Updated, rec.Sources = c.Model, d.now(), slices.Clone(r.Sources)
+	rec.Model, rec.Updated, rec.Sources = c.Model, d.now(), windowSources
 	rec.ContextUsed = turn.PromptTokens // 0 — провайдер не прислал счет: старое число не показываем
 	if err := d.saveLive(rec, id != ""); err != nil {
 		return chatRecord{}, err
@@ -948,5 +958,3 @@ func canCompress(rec chatRecord) bool {
 	}
 	return len(rec.Messages) > compressKeep
 }
-
-func (d *chatDesk) SetPhonePick(string, string, []string, bool) error { return nil }
