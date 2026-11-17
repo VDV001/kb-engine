@@ -63,6 +63,25 @@ func TestFetchRefusals(t *testing.T) {
 	if _, err := c.Fetch(t.Context(), "to-http", 10); err == nil {
 		t.Error("redirect to plain http followed")
 	}
+	// Окно без https не ходит, даже если адрес выпуска задан с http.
+	if _, err := (ghrelease.Client{Base: plain.URL + "/", HTTP: plain.Client()}).Fetch(t.Context(), "x", 10); err == nil {
+		t.Error("plain http base fetched")
+	}
+	// Своя политика переадресаций вызывающего остается в силе.
+	own := errors.New("caller refused")
+	srv2 := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/r/hop" {
+			http.Redirect(w, r, "/r/exact", http.StatusFound)
+			return
+		}
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv2.Close()
+	strict := *srv2.Client()
+	strict.CheckRedirect = func(*http.Request, []*http.Request) error { return own }
+	if _, err := (ghrelease.Client{Base: srv2.URL + "/r/", HTTP: &strict}).Fetch(t.Context(), "hop", 10); !errors.Is(err, own) {
+		t.Errorf("caller's redirect policy dropped: %v", err)
+	}
 	for _, p := range []string{"../secrets", "/etc/passwd", "a/../../b", "https://evil/x"} {
 		if _, err := c.Fetch(t.Context(), p, 10); !errors.Is(err, ghrelease.ErrBadPath) {
 			t.Errorf("path %q: %v", p, err)

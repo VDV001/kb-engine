@@ -36,8 +36,10 @@ func (f *fakeReleases) Fetch(_ context.Context, path string, limit int64) ([]byt
 }
 
 const (
-	manifestPath = "latest/download/dvk-manifest.json"
-	sigPath      = "latest/download/dvk-manifest.json.sig"
+	// Манифест — в постоянном выпуске-канале, а не в «latest»: выпуск только
+	// сервера стал бы «latest» и без манифеста дал бы 404 всем окнам (ревью #672).
+	manifestPath = "download/dvk-latest/dvk-manifest.json"
+	sigPath      = "download/dvk-latest/dvk-manifest.json.sig"
 	setupPath    = "download/v0.41.0/DVK-Setup.exe"
 )
 

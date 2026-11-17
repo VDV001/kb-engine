@@ -167,3 +167,8 @@ func releasePrivateKey() (ed25519.PrivateKey, error) {
 	clear(seed)
 	return priv, nil
 }
+
+var (
+	errNoReleaseKey  = errors.New("stub")
+	errBadReleaseKey = errors.New("stub2")
+)

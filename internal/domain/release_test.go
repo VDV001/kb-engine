@@ -21,6 +21,10 @@ func TestNewReleaseVersion(t *testing.T) {
 		// git describe между тегами: сборка считается версией последнего тега,
 		// и выпуск с тем же номером обновлением не предлагается.
 		{"v0.40.0-11-g154839a6", "v0.40.0", true},
+		// --dirty: сборка из дерева с правками — все равно версия тега.
+		{"v0.40.0-11-g154839a6-dirty", "v0.40.0", true},
+		{"v0.40.0-dirty", "v0.40.0", true},
+		{"v0.40.0-dirty-dirty", "", false},
 		{"dev", "", false},
 		{"", "", false},
 		{"0.41.0", "", false},
@@ -109,10 +113,12 @@ func TestParseReleaseManifest(t *testing.T) {
 		"dot name":           manifestJSON("v0.41.0", assetJSON("darwin-arm64", "..", mac)),
 		"unknown platform":   manifestJSON("v0.41.0", assetJSON("plan9-386", "a.zip", mac)),
 		"duplicate platform": manifestJSON("v0.41.0", assetJSON("darwin-arm64", "a.zip", mac), assetJSON("darwin-arm64", "b.zip", win)),
-		"short sha":          manifestJSON("v0.41.0", `{"platform":"darwin-arm64","name":"a.zip","sha256":"abcd","size":1}`),
-		"zero size":          manifestJSON("v0.41.0", `{"platform":"darwin-arm64","name":"a.zip","sha256":"`+sum(nil)+`","size":0}`),
-		"huge size":          manifestJSON("v0.41.0", fmt.Sprintf(`{"platform":"darwin-arm64","name":"a.zip","sha256":"%s","size":%d}`, sum(nil), domain.MaxReleaseAsset+1)),
-		"trailing data":      append(good, []byte(` {}`)...),
+		// На странице выпуска имя одно на файл: второй затер бы первый.
+		"duplicate name": manifestJSON("v0.41.0", assetJSON("darwin-arm64", "DVK.zip", mac), assetJSON("windows-amd64", "DVK.zip", win)),
+		"short sha":      manifestJSON("v0.41.0", `{"platform":"darwin-arm64","name":"a.zip","sha256":"abcd","size":1}`),
+		"zero size":      manifestJSON("v0.41.0", `{"platform":"darwin-arm64","name":"a.zip","sha256":"`+sum(nil)+`","size":0}`),
+		"huge size":      manifestJSON("v0.41.0", fmt.Sprintf(`{"platform":"darwin-arm64","name":"a.zip","sha256":"%s","size":%d}`, sum(nil), domain.MaxReleaseAsset+1)),
+		"trailing data":  append(good, []byte(` {}`)...),
 	}
 	for name, b := range bad {
 		if _, err := domain.ParseReleaseManifest(b); !errors.Is(err, domain.ErrBadReleaseManifest) {

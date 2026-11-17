@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,9 +79,9 @@ func TestReleaseSignPassesTheWindowsCheck(t *testing.T) {
 	if strings.TrimSpace(stdout.String()) != hex.EncodeToString(pub) {
 		t.Errorf("sign printed %q, want the public key", stdout.String())
 	}
-	src := dirReleases{"latest/download/dvk-manifest.json": filepath.Join(out, "dvk-manifest.json"),
-		"latest/download/dvk-manifest.json.sig": filepath.Join(out, "dvk-manifest.json.sig"),
-		"download/v0.41.0/DVK-Setup.exe":        win}
+	src := dirReleases{"download/dvk-latest/dvk-manifest.json": filepath.Join(out, "dvk-manifest.json"),
+		"download/dvk-latest/dvk-manifest.json.sig": filepath.Join(out, "dvk-manifest.json.sig"),
+		"download/v0.41.0/DVK-Setup.exe":            win}
 	cur, _ := domain.NewReleaseVersion("v0.40.0")
 	u := selfupdate.Updater{Source: src, PublicKey: pub, Current: cur, Platform: "windows-amd64"}
 	offer, err := u.Check(t.Context())
@@ -89,6 +90,34 @@ func TestReleaseSignPassesTheWindowsCheck(t *testing.T) {
 	}
 	if b, err := u.Download(t.Context(), offer); err != nil || string(b) != "windows setup" {
 		t.Errorf("download: %q %v", b, err)
+	}
+}
+
+func TestReleaseKeyErrors(t *testing.T) {
+	withKeys(t, fakeKeys{})
+	if _, err := releasePrivateKey(); !errors.Is(err, errNoReleaseKey) {
+		t.Errorf("empty store: %v", err)
+	}
+	withKeys(t, fakeKeys{releaseKeyAccount: "zz"})
+	if _, err := releasePrivateKey(); !errors.Is(err, errBadReleaseKey) {
+		t.Errorf("broken key: %v", err)
+	}
+}
+
+// Повторный sign в ту же папку не оставляет новый манифест со старой подписью.
+func TestReleaseSignReplacesBoth(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "dvk-manifest.json.sig"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "dvk-manifest.json.sig.new"), 0o755); err != nil { // запись подписи упадет
+		t.Fatal(err)
+	}
+	if err := writeRelease(dir, []byte("manifest"), []byte("sig")); err == nil {
+		t.Fatal("write over a blocked signature succeeded")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "dvk-manifest.json")); err == nil {
+		t.Error("manifest written although its signature was not")
 	}
 }
 
