@@ -90,3 +90,54 @@ func TestRelayConfirmsWhatTheWindowSaved(t *testing.T) {
 		t.Errorf("confirmed %+v", last.Pick)
 	}
 }
+
+// Голосовой вопрос несет выбор, как текстовый (ревью #677, п.5).
+func TestRelayVoiceQuestionCarriesThePick(t *testing.T) {
+	files := &voiceFiles{m: map[string][]byte{id1: []byte("sealed-wav")}}
+	b := &box{}
+	b.phone("c-1", "A", 1, q("привет"))
+	r := newRelay(b, &asker{}, &store{})
+	r.Files, r.Hear = files, &hearer{}
+	pk := &picker{}
+	r.Picker = pk
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	v := voice(mailrelay.VoiceAsk, id1, []byte("sealed-wav"))
+	v.Pick = &mailrelay.Pick{Model: "llama-phone"}
+	b.phone("c-1", "A", 2, v)
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	ps := payloads(t, b)
+	last := ps[len(ps)-1]
+	if len(pk.set) != 1 || pk.set[0] != "w-1=llama-phone" || last.Pick == nil || last.Pick.Model != "llama-phone" {
+		t.Errorf("set %v, answer %+v", pk.set, last)
+	}
+}
+
+// storedPick answers with the window's stored pick.
+type storedPick struct{ pick *mailrelay.Pick }
+
+func (s storedPick) Ask(context.Context, string, string) (string, string, error) {
+	return "w-1", "ок", nil
+}
+func (s storedPick) AskSourced(context.Context, string, string) (mailrelay.Answer, error) {
+	return mailrelay.Answer{Chat: "w-1", Text: "ок", Pick: s.pick}, nil
+}
+
+// Ответ несет выбор, сохраненный в окне: телефон узнает сброс или выбор
+// другого телефона (ревью #677, п.3).
+func TestRelayAnswerCarriesTheStoredPick(t *testing.T) {
+	b := &box{}
+	b.phone("c-1", "A", 1, q("привет"))
+	r := newRelay(b, &asker{}, &store{})
+	r.Asker = storedPick{pick: &mailrelay.Pick{Model: "llama-phone", Only: []string{"src-b"}}}
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	got := payloads(t, b)[0]
+	if got.Pick == nil || got.Pick.Model != "llama-phone" || len(got.Pick.Only) != 1 {
+		t.Errorf("answer %+v", got)
+	}
+}

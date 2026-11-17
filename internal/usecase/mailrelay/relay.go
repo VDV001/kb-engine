@@ -318,6 +318,8 @@ type Answer struct {
 	Context    *ContextFill
 	// Only — источники чата после хода (#647); пусто — все.
 	Only []string
+	// Pick — выбор телефона, сохраненный в окне (#657); nil — окно его не знает.
+	Pick *Pick
 }
 
 // SourcedAsker is an Asker that also tells where the answer came from.
