@@ -141,3 +141,15 @@ func TestSetPhoneModel(t *testing.T) {
 		t.Error("empty model accepted")
 	}
 }
+
+// Страница настроек чата о PhoneModels не знает: ее сохранение разрешений не стирает.
+func TestChatSettingsKeepPhoneModels(t *testing.T) {
+	d, _, _, _ := pickDesk(t)
+	a := &App{chat: d}
+	if err := a.SetChatSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3", Mode: "tools"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if c := d.config(); len(c.PhoneModels) != 1 || c.PhoneModels[0] != "llama-phone" {
+		t.Errorf("page save dropped the phone's models: %v", c.PhoneModels)
+	}
+}

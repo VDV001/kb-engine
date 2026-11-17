@@ -165,6 +165,11 @@ func (a *App) ChatModels() (modelsView, error) { return a.chat.Models() }
 // SetChatModel switches the chat model from the quick picker; остальное не трогает.
 func (a *App) SetChatModel(model string) error { return a.chat.SetModel(model) }
 
+// SetChatPhoneModel allows or forbids a model to the phone (#657).
+func (a *App) SetChatPhoneModel(model string, allow bool) error {
+	return a.chat.SetPhoneModel(model, allow)
+}
+
 // BrowserState returns the Browser tab's controls: установленные браузеры, выбор и работает ли сервер.
 func (a *App) BrowserState() browserView { return a.browser.View() }
 

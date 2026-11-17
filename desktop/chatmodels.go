@@ -33,7 +33,7 @@ type modelsView struct {
 	Recent    []modelChoice `json:"recent"`
 	All       []modelChoice `json:"all"`
 	PriceNote string        `json:"priceNote"`
-	Phone     []string      `json:"phone"`
+	Phone     []string      `json:"phone"` // «Телефону: разрешить» (#657)
 }
 
 // isGateway reports whether the chat address is the Vercel AI Gateway, чьи
@@ -128,7 +128,7 @@ func (d *chatDesk) Models() (modelsView, error) {
 		cancel()
 	}
 	v := modelChoices(c.Model, c.URL, calls, gw, own)
-	v.PriceNote = note
+	v.PriceNote, v.Phone = note, append([]string{}, c.PhoneModels...)
 	return v, nil
 }
 
@@ -145,4 +145,19 @@ func (d *chatDesk) SetModel(model string) error {
 	return d.SetSettings(c, "")
 }
 
-func (d *chatDesk) SetPhoneModel(string, bool) error { return nil }
+// SetPhoneModel allows or forbids the phone model (#657, «Телефону: разрешить»):
+// меняется только список разрешенного, модель окна — нет.
+func (d *chatDesk) SetPhoneModel(model string, allow bool) error {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return errors.New("модель не выбрана")
+	}
+	d.settings.mu.Lock()
+	c := d.settings.cfg.Chat
+	d.settings.mu.Unlock()
+	c.PhoneModels = slices.DeleteFunc(slices.Clone(c.PhoneModels), func(m string) bool { return m == model })
+	if allow {
+		c.PhoneModels = append(c.PhoneModels, model)
+	}
+	return d.SetSettings(c, "")
+}
