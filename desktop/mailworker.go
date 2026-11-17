@@ -255,7 +255,7 @@ func (d phoneDesk) State(context.Context) (mailrelay.DeskState, error) {
 	d.settings.mu.Unlock()
 	c := cfg.Chat.WithDefaults()
 	// Модели телефона: модель окна первой, затем разрешенные «Телефону: разрешить» (#657).
-	st := mailrelay.DeskState{Model: c.Model, Models: append([]string{c.Model}, slices.DeleteFunc(slices.Clone(c.PhoneModels), func(m string) bool { return m == c.Model })...), Sources: phoneSources(cfg)}
+	st := mailrelay.DeskState{Second: c.SecondModel, Model: c.Model, Models: append([]string{c.Model}, slices.DeleteFunc(slices.Clone(c.PhoneModels), func(m string) bool { return m == c.Model })...), Sources: phoneSources(cfg)}
 	if d.hear != nil {
 		st.Hear = d.hear()
 	}
@@ -640,7 +640,10 @@ func chatAnswerer(d *chatDesk) answerFn {
 		// Источники чата — телефону для показа (#647); пусто — все.
 		a := mailrelay.Answer{Chat: rec.ID, Sources: answerSources(rec), Only: rec.Sources}
 		a.Pick = &mailrelay.Pick{Model: rec.PhonePick, Only: rec.PhoneOnly} // выбор телефона, как его хранит окно (#657)
-		a.Context = (*mailrelay.ContextFill)(rec.Context)                   // круг контекста на телефоне (#647); та же форма
+		if n := len(rec.Messages); n > 0 {
+			a.Model = rec.Messages[n-1].Model // телефон подписывает ответ моделью, как окно (#685)
+		}
+		a.Context = (*mailrelay.ContextFill)(rec.Context) // круг контекста на телефоне (#647); та же форма
 		if n := len(rec.Messages); n > 0 {
 			a.Text = rec.Messages[n-1].Text
 		}

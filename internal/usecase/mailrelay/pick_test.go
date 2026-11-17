@@ -141,3 +141,28 @@ func TestRelayAnswerCarriesTheStoredPick(t *testing.T) {
 		t.Errorf("answer %+v", got)
 	}
 }
+
+// modelAsker answers with the model that wrote it.
+type modelAsker struct{ model string }
+
+func (m modelAsker) Ask(context.Context, string, string) (string, string, error) {
+	return "w-1", "ок", nil
+}
+func (m modelAsker) AskSourced(context.Context, string, string) (mailrelay.Answer, error) {
+	return mailrelay.Answer{Chat: "w-1", Text: "ок", Model: m.model}, nil
+}
+
+// Ответ несет модель, которая его написала (#685): телефон подписывает ответ,
+// как окно.
+func TestRelayAnswerCarriesTheModel(t *testing.T) {
+	b := &box{}
+	b.phone("c-1", "A", 1, q("привет"))
+	r := newRelay(b, &asker{}, &store{})
+	r.Asker = modelAsker{model: "anthropic/claude-haiku-5.5"}
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got := payloads(t, b)[0]; got.Model != "anthropic/claude-haiku-5.5" {
+		t.Errorf("answer %+v", got)
+	}
+}

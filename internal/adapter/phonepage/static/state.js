@@ -92,7 +92,7 @@ export function take(st, m, o) {
   if (answer) {
     const withFile = [...c.msgs].reverse().find((x) => x.who === "me")?.attach;
     const text = p.kind === "error" ? (withFile && ATTACH_WORDS[p.text]) || VOICE_WORDS[p.text] || p.text : p.text;
-    c.msgs.push({ who: p.kind === "error" ? "error" : "desk", text, at, sources: p.sources || [] });
+    c.msgs.push({ who: p.kind === "error" ? "error" : "desk", text, at, sources: p.sources || [], ...(p.kind === "answer" && p.model && { model: p.model }) }); // модель ответа — подписью (#685)
     c.pending = false;
     delete c.step;
     delete c.accepted;
@@ -264,7 +264,7 @@ export function choiceView(c, desk) {
   const picked = (cur.only || []).filter((id) => allowed.some((x) => x.id === id));
   const choices = allowed.map((x) => ({ ...x, on: !picked.length || picked.includes(x.id) }));
   const shown = choices.filter((x) => x.on);
-  return { model: cur.model && models.includes(cur.model) ? cur.model : desk.model || "", models, choices, pending: !!c.pickLocal,
+  return { model: cur.model && models.includes(cur.model) ? cur.model : desk.model || "", models, second: models.includes(desk.second) ? desk.second : "", choices, pending: !!c.pickLocal,
     on: shown.length, total: all.length, names: shown.map((x) => x.name) };
 }
 

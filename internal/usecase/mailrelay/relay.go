@@ -93,6 +93,8 @@ type Payload struct {
 	// Pick — выбор телефона для его ходов в чате (#657): в вопросе — если
 	// меняли, в ответе — подтвержденный окном.
 	Pick *Pick `json:"pick,omitempty"`
+	// Model — в ответе: модель, которая его написала (#685).
+	Model string `json:"model,omitempty"`
 }
 
 // Pick is the phone's choice for its turns in a chat (#657).
@@ -163,8 +165,10 @@ type Hearer interface {
 // DeskState is what the phone shows by its input: модель настроек окна и
 // названия источников и подключений чата.
 type DeskState struct {
-	Model   string       `json:"model"`
-	Models  []string     `json:"models,omitempty"`
+	Model  string   `json:"model"`
+	Models []string `json:"models,omitempty"`
+	// Second — вторая модель чата окна (#685); телефон помечает ее в выборе.
+	Second  string       `json:"second,omitempty"`
 	Sources []DeskSource `json:"sources"`
 	// Hear — кто распознает голос телефона (#648): HearDevice, HearApple,
 	// HearCloud, HearServer; пусто — голоса нет. Телефон говорит это человеку:
@@ -320,6 +324,8 @@ type Answer struct {
 	Only []string
 	// Pick — выбор телефона, сохраненный в окне (#657); nil — окно его не знает.
 	Pick *Pick
+	// Model — модель, написавшая ответ (#685); пусто — окно ее не назвало.
+	Model string
 }
 
 // SourcedAsker is an Asker that also tells where the answer came from.
@@ -787,7 +793,7 @@ func (r Relay) ask(ctx context.Context, st *State, chat, question string, files 
 		touchShared(st, chat)
 	}
 	r.pendingTitle(ctx, st, chat)
-	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources, Context: a.Context, Only: a.Only, Pick: a.Pick}
+	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources, Context: a.Context, Only: a.Only, Pick: a.Pick, Model: a.Model}
 }
 
 // minPostGap — предел частоты отправки окна в ящик (сервер: раз в секунду).

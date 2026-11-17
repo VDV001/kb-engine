@@ -427,6 +427,18 @@ if (typeof s.setPick === "function") {
   s.take(st30d, { seq: 1, chat: "p", from: "desk" }, dk14(1, { kind: "answer", text: "ок", pick: {} }));
   want(s.choiceView(c30d, desk30).model === "qwen3" && s.pickToSend(c30d) === null, "the window's reset shows on the phone");
 }
+// 31. Телефон подписывает ответ моделью и помечает вторую модель (#685).
+{
+  const c31 = { title: "Чат", msgs: [], updated: 1 };
+  const st31 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { p: c31 } };
+  s.take(st31, { seq: 1, chat: "p", from: "desk" }, dk14(1, { kind: "answer", text: "ок", model: "anthropic/claude-haiku-5.5" }));
+  want(c31.msgs.at(-1).model === "anthropic/claude-haiku-5.5", "an answer keeps the model that wrote it");
+  s.take(st31, { seq: 2, chat: "p", from: "desk" }, dk14(2, { kind: "answer", text: "еще" }));
+  want(c31.msgs.at(-1).model === undefined, "an answer without a model is not signed");
+  const desk31 = { model: "qwen3", second: "llama-phone", models: ["qwen3", "llama-phone"], sources: [] };
+  want(s.choiceView({ msgs: [], updated: 1 }, desk31).second === "llama-phone", "the second model is marked in the choice");
+  want(s.choiceView({ msgs: [], updated: 1 }, { model: "qwen3", models: ["qwen3"], sources: [] }).second === "", "no second model — no mark");
+}
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 
