@@ -431,10 +431,7 @@ func (d *chatDesk) ask(parent context.Context, r askReq, out askOut) (chatRecord
 	rec.Updated, rec.Sources = d.now(), windowSources
 	// Ход телефона на другой модели не пишет ни модель чата, ни счет токенов: окно
 	// заполнения считается по модели окна. 0 — провайдер не прислал счет: старое число не показываем.
-	rec.ContextUsed = 0
-	if c.Model == d.config().Model {
-		rec.Model, rec.ContextUsed = c.Model, turn.PromptTokens
-	}
+	d.noteTurnModel(&rec, c.Model, turn.PromptTokens)
 	if err := d.saveLive(rec, id != ""); err != nil {
 		return chatRecord{}, err
 	}
@@ -548,6 +545,15 @@ func (d *chatDesk) Get(id string) (chatRecord, error) {
 	rec.CanCompress = canCompress(rec)
 	rec.Context = d.contextOf(rec)
 	return rec, err
+}
+
+// noteTurnModel records the model of a turn and its token count in rec: ход
+// на модели не окна (телефон, #657) их не пишет — счет не про модель окна.
+func (d *chatDesk) noteTurnModel(rec *chatRecord, model string, tokens int) {
+	rec.ContextUsed = 0
+	if model == d.config().Model {
+		rec.Model, rec.ContextUsed = model, tokens
+	}
 }
 
 // contextOf is the fill of rec's context: последний счет провайдера против

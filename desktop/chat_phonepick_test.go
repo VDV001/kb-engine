@@ -226,13 +226,11 @@ func TestSetPhoneModelConcurrent(t *testing.T) {
 	models := []string{"m1", "m2", "m3", "m4", "m5", "m6"}
 	var wg sync.WaitGroup
 	for _, m := range models {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if err := d.SetPhoneModel(m, true); err != nil {
 				t.Error(err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	for _, m := range models {
