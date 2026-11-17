@@ -69,8 +69,10 @@ type chatRecord struct {
 	// Compressed — конспект начала разговора (#539); Messages остаются целыми.
 	Compressed *chatCompressed `json:"compressed,omitempty"`
 	// CanCompress — есть ли что сжимать; только в ответе, в файл не пишется.
-	CanCompress bool `json:"canCompress,omitempty"`
-	Phone       bool `json:"phone,omitempty"`
+	CanCompress bool     `json:"canCompress,omitempty"`
+	Phone       bool     `json:"phone,omitempty"`
+	PhonePick   string   `json:"phonePick,omitempty"`
+	PhoneOnly   []string `json:"phoneOnly,omitempty"`
 }
 
 // chatCompressed is the summary that stands for the first Folded messages
@@ -946,3 +948,5 @@ func canCompress(rec chatRecord) bool {
 	}
 	return len(rec.Messages) > compressKeep
 }
+
+func (d *chatDesk) SetPhonePick(string, string, []string, bool) error { return nil }

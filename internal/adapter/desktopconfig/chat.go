@@ -73,7 +73,8 @@ type Chat struct {
 	// человек вносит сам.
 	ContextWindow int `json:"contextWindow,omitempty"`
 	// MemoryQuiet — новое ждет в портрете, в чате не предлагается.
-	MemoryQuiet bool `json:"memoryQuiet,omitempty"`
+	MemoryQuiet bool     `json:"memoryQuiet,omitempty"`
+	PhoneModels []string `json:"phoneModels,omitempty"`
 }
 
 // WithDefaults fills the empty fields.

@@ -12,6 +12,12 @@ import (
 // звали, какая модель, сколько токенов ушло и пришло, как быстро. Текста
 // вопроса и ответа здесь нет по устройству.
 
+// ErrModelNotForPhone — модель не разрешена телефону («Телефону: разрешить», #657).
+var ErrModelNotForPhone = errors.New("stub")
+
+// ErrNoChatSources — у суженного с телефона чата не осталось разрешенных источников (#657).
+var ErrNoChatSources = errors.New("stub2")
+
 // ErrInvalidModelCall — вызов нарушает инвариант (нет модели, токены < 0…).
 var ErrInvalidModelCall = errors.New("invalid model call")
 
