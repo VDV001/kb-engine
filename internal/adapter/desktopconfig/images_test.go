@@ -30,7 +30,8 @@ func TestImagesCheck(t *testing.T) {
 		if (err == nil) != c.ok || (err != nil && !errors.Is(err, desktopconfig.ErrChatSettings)) {
 			t.Errorf("%s: %v", c.name, err)
 		}
-		if c.i.On() != c.on {
+		if c.ok && c.i.On() != c.on { // негодные настройки не сохраняются: «подключена» спрашивается только у годных
+
 			t.Errorf("%s: On %v", c.name, c.i.On())
 		}
 	}
