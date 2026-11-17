@@ -97,6 +97,50 @@ func (a *App) MarketsInfographicGenerate(cab, sku, model, prompt string, maxCost
 	return a.settings.infographicGenerate(ctx, nil, ozon.DefaultURL, cab, sku, model, prompt, maxCost, fetchImage(ozonImageHosts, maxStudioImage))
 }
 
+// ImageSettings is the connected image model for the settings page (#678).
+func (a *App) ImageSettings() imageSettingsView { return a.settings.imageSettings() }
+
+// SetImageSettings connects or, with an empty address and name, disconnects the
+// person's image model; key — новый ключ, пусто — прежний.
+func (a *App) SetImageSettings(url, model, key string) error {
+	return a.settings.setImageSettings(url, model, key)
+}
+
+// MarketsImageGenerate draws the card's infographic with the person's own image
+// model (#678). Платно: вызывает страница только по кнопке, после показа, что
+// рисует модель человека и сколько у нее обычно стоит кадр (цену шлюза окно не знает).
+func (a *App) MarketsImageGenerate(cab, sku, prompt string) (ownImage, error) {
+	cl, err := a.settings.imageClient()
+	if err != nil {
+		return ownImage{}, err
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 4*time.Minute)
+	defer cancel()
+	draw := imageDesk{draw: cl, model: cl.Model, calls: a.chat.calls}
+	return a.settings.ownInfographic(ctx, nil, ozon.DefaultURL, cab, sku, prompt, draw, fetchImage(ozonImageHosts, maxStudioImage))
+}
+
+// MarketsImageSave asks where to save a picture of the own model (data URL); "" — отменил.
+func (a *App) MarketsImageSave(data, sku string) (string, error) {
+	head, b64, ok := strings.Cut(data, ",")
+	if !ok || !strings.HasPrefix(head, "data:image/") || !strings.HasSuffix(head, ";base64") || len(b64) > 48<<20 {
+		return "", errors.New("сохраняются только картинки, которые нарисовала модель")
+	}
+	raw, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		return "", errors.New("картинка повреждена")
+	}
+	ext := map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}[strings.TrimSuffix(strings.TrimPrefix(head, "data:"), ";base64")]
+	if ext == "" {
+		ext = ".png"
+	}
+	p, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{Title: "Сохранить инфографику", DefaultFilename: "Инфографика " + sku + " " + time.Now().Format("2006-01-02 15.04") + ext})
+	if err != nil || p == "" {
+		return "", err
+	}
+	return p, os.WriteFile(p, raw, 0o600)
+}
+
 // MarketsInfographicResult reads a started generation.
 func (a *App) MarketsInfographicResult(id string) (studioJobView, error) {
 	ctx, cancel := context.WithTimeout(a.ctx, time.Minute)

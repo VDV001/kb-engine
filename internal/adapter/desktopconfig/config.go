@@ -52,6 +52,8 @@ type Config struct {
 	Connections []Connection `json:"connections,omitempty"`
 	// Chat — модель чата (#436): адрес, имя, режим. Ключ — в Связке ключей.
 	Chat Chat `json:"chat"`
+	// Images — модель изображений, подключенная человеком (#678).
+	Images Images `json:"images,omitzero"`
 	// Spend — лимит месяца и свои цены моделей для «Денег» статистики (#493).
 	Spend Spend `json:"spend"`
 	// Browser — какой браузер запускает кнопка «Включить» во вкладке «Браузер».

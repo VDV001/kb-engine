@@ -39,9 +39,10 @@ const (
 	CallForecast CallPurpose = "forecast" // прогноз продаж моделью в «Маркетах» (#580)
 	CallCardText CallPurpose = "cardtext" // новое описание карточки товара (#611)
 	CallReviews  CallPurpose = "reviews"  // выводы из отзывов о товаре (#612)
+	CallImage    CallPurpose = "image"    // изображение моделью изображений (#678)
 )
 
-var callPurposes = []CallPurpose{CallAnswer, CallSearch, CallExtract, CallCompress, CallListen, CallSpeak, CallDescribe, CallForecast, CallCardText, CallReviews}
+var callPurposes = []CallPurpose{CallAnswer, CallSearch, CallExtract, CallCompress, CallListen, CallSpeak, CallDescribe, CallForecast, CallCardText, CallReviews, CallImage}
 
 // ModelCall is one request to a model.
 type ModelCall struct {

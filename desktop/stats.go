@@ -24,6 +24,7 @@ var purposeTitles = map[domain.CallPurpose]string{
 	domain.CallForecast: "Прогноз продаж",
 	domain.CallCardText: "Описание карточки",
 	domain.CallReviews:  "Выводы из отзывов",
+	domain.CallImage:    "Изображения",
 }
 
 // maxStatsDays bounds the period: экран предлагает 7, 30 и 90 дней.

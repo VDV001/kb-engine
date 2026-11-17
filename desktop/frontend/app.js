@@ -3154,6 +3154,7 @@ async function loadChatSettings() {
   $("#chat-model-chip").textContent = (s.model || "").replace(/^[^/]+\//, "");
   renderMemSettings();
   renderAccValues();
+  loadImageSettings(); // модель изображений (#678): своя форма, свой ключ
 }
 // renderVoiceSettings: кто слушает (Apple Speech, без сети ли) и каким голосом
 // читать ответ.
@@ -4286,6 +4287,34 @@ $("#chat-model").addEventListener("submit", async (e) => {
   } catch (err) {
     $("#chat-model-note").textContent = errText(err);
   }
+});
+
+// Модель изображений (#678): отдельная форма в «Чат и модель», свой ключ в Связке.
+const shImg = { on: false, model: "", asked: false }; // подключена ли своя модель изображений; asked — форма уже читалась для карточки
+async function loadImageSettings() {
+  if (!native() || !native().ImageSettings) { $("#img-model").hidden = true; return; }
+  let v = { url: "", model: "", hasKey: false };
+  try { v = await native().ImageSettings(); } catch { /* форма остается пустой */ }
+  $("#img-url").value = v.url || ""; $("#img-name").value = v.model || ""; $("#img-key").value = "";
+  $("#img-key-saved").hidden = !v.hasKey;
+  $("#img-off").hidden = !(v.url && v.model);
+  shImg.on = !!(v.url && v.model && v.hasKey); shImg.model = v.model || "";
+}
+$("#img-save").addEventListener("click", async () => {
+  try {
+    await native().SetImageSettings($("#img-url").value.trim(), $("#img-name").value.trim(), $("#img-key").value);
+    $("#img-note").textContent = "";
+    toast("Сохранено", " · модель изображений");
+    await loadImageSettings();
+  } catch (err) { $("#img-note").textContent = errText(err); }
+});
+$("#img-off").addEventListener("click", async () => {
+  try {
+    await native().SetImageSettings("", "", "");
+    $("#img-note").textContent = "";
+    toast("Отключено", " · модель изображений; ключ стерт из Связки");
+    await loadImageSettings();
+  } catch (err) { $("#img-note").textContent = errText(err); }
 });
 
 // --- Портрет «Что DVK помнит обо мне» (#479, прототип 06.11, везде A) -------------
@@ -7135,8 +7164,47 @@ function shInfoCard(p) {
       (t.unsure ? `<div class="note">Неизвестно, запущена ли генерация: ответ ИИ Студии не пришел. Не запускайте снова — проверьте историю ИИ Студии на сайте MPStats; кнопка оживет после «Обновить цены».</div>` : "") +
       (short ? `<div class="note">Токенов не хватает — пополните баланс ИИ Студии в MPStats.</div>` : empty ? `<div class="note">Сначала задание: напишите сами или попросите модель окна.</div>` : "");
   }
-  return `<h4 class="sh-money-h">Инфографика</h4>${body}<div data-sh-info-job>${shInfoJob(t, sku)}</div>`;
+  return `<h4 class="sh-money-h">Инфографика</h4>${body}<div data-sh-info-job>${shInfoJob(t, sku)}</div>${shOwnCard(t, sku)}`;
 }
+// Своя модель изображений (#678): нарисовать моделью, которую человек подключил сам.
+// Платно по его ключу; цена шлюза у каждой модели своя, окно ее заранее не знает,
+// поэтому кнопка говорит об этом прямо, а итог вызова виден в «Статистике».
+function shOwnCard(t, sku) {
+  if (!shImg.asked && native() && native().ImageSettings) { shImg.asked = true; loadImageSettings().then(() => { if (sh.v) shCard(); }); }
+  if (!shImg.on) return `<div class="note">Своя модель изображений: подключите в «Чат и модель» — адрес, имя и ключ.</div>`;
+  const empty = !(t.ownPrompt ?? t.prompt ?? "").trim();
+  return `<div class="sh-title-h">Своя модель · ${esc(shImg.model)}</div>` +
+    `<textarea class="sh-info-prompt" data-sh-own-prompt rows="4" placeholder="Что нарисовать: фон, 3–4 преимущества товара крупным текстом">${esc(t.ownPrompt ?? t.prompt ?? "")}</textarea>` +
+    `<button class="btn mk-main" type="button" data-sh-own="gen" data-sku="${sku}"${t.ownBusy || empty ? " disabled" : ""}${mkTip("Нарисовать своей моделью", "платно: спишется по Вашему ключу, цену кадра назначает шлюз и окно ее заранее не знает; итог виден в «Статистике»; главное фото карточки уйдет модели как образец")}>${t.ownBusy ? "Рисую…" : "Нарисовать своей моделью"}</button>` +
+    (t.ownErr ? `<div class="note">${esc(t.ownErr)}</div>` : "") +
+    (t.own ? `<div class="sh-title-h">Готово · ${esc(t.own.model)}${t.own.cost ? ` · $${esc(t.own.cost)}` : ""}</div><div class="sh-ph-row sh-info-out"><figure><img src="${esc(t.own.data)}" alt="инфографика своей моделью"><button class="btn" type="button" data-sh-own="save" data-sku="${sku}">Сохранить…</button></figure></div><div class="note">Перед загрузкой в Ozon проверьте текст на картинке: нейросеть могла исказить буквы.</div>` : "");
+}
+document.addEventListener("input", (e) => {
+  if (!e.target.matches("[data-sh-own-prompt]")) return;
+  const p = sh.v && sh.v.products[sh.sel], t = p && shInfo.get(shInfoKey(p));
+  if (!t) return;
+  const was = !(t.ownPrompt ?? t.prompt ?? "").trim();
+  t.ownPrompt = e.target.value;
+  if (was !== !t.ownPrompt.trim()) { const pos = e.target.selectionStart; shCard(); const ta = document.querySelector("[data-sh-own-prompt]"); if (ta) { ta.focus(); ta.setSelectionRange(pos, pos); } }
+});
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-sh-own]");
+  if (!b) return;
+  hideTip();
+  const p = sh.v && sh.v.products[sh.sel], sku = b.dataset.sku;
+  if (!p || p.sku !== sku) return;
+  const t = shInfo.get(shInfoKey(p)) || {};
+  shInfo.set(shInfoKey(p), t);
+  if (b.dataset.shOwn === "save") {
+    try { const path = await native().MarketsImageSave(t.own.data, sku); if (path) toast("Сохранено", " · " + path); } catch (err) { toast("Не сохранено", " · " + errText(err), null, "bad"); }
+    return;
+  }
+  if (t.ownBusy) return;
+  t.ownBusy = true; t.ownErr = ""; shCard();
+  try { t.own = await native().MarketsImageGenerate(sh.v.path, sku, t.ownPrompt ?? t.prompt ?? ""); } catch (err) { t.ownErr = "Не нарисовано: " + errText(err); }
+  t.ownBusy = false;
+  if (sh.v && sh.v.products[sh.sel] && sh.v.products[sh.sel].sku === sku) shCard();
+});
 // shInfoJob — ход и итог генерации; опрос перерисовывает только его, задание и выбор не трогает (ревью #629).
 function shInfoJob(t, sku) {
   const j = t.job;
