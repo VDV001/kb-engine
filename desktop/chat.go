@@ -105,6 +105,8 @@ type askReq struct {
 	Sources  []string `json:"sources"`
 	// Portrait — как портрет идет в чат, когда не помещается: "", full, relevant.
 	Portrait string `json:"portrait"`
+	// Role — какой моделью ответить: "second" — второстепенной (#678), иначе главной.
+	Role string `json:"role"`
 	// docs — прочитанное приложенное телефоном (#650); со страницы не приходит.
 	docs []chat.Doc
 }
@@ -117,6 +119,8 @@ type chatMessage struct {
 	Uses []chat.Use `json:"uses,omitempty"`
 	// From — «phone»: вопрос задан с телефона (#646), окно так его и помечает.
 	From string `json:"from,omitempty"`
+	// Model — какой моделью сделан ответ (#678).
+	Model string `json:"model,omitempty"`
 }
 
 type chatDoc struct {
@@ -377,7 +381,7 @@ func (d *chatDesk) ask(parent context.Context, r askReq, out askOut) (chatRecord
 	}
 	r.Sources = turnSources(r, rec, out)
 	windowSources := slices.Clone(r.Sources) // выбор окна: ход телефона его не переписывает
-	c, sources, err := d.turnConfig(out, rec, r.Sources)
+	c, sources, err := d.turnConfig(out, rec, r.Sources, r.Role)
 	if err != nil {
 		return chatRecord{}, err
 	}
@@ -427,7 +431,7 @@ func (d *chatDesk) ask(parent context.Context, r askReq, out askOut) (chatRecord
 	}
 	rec.Messages = append(rec.Messages,
 		chatMessage{Role: string(chat.RoleUser), Text: strings.TrimSpace(question), From: phoneFrom(out)},
-		chatMessage{Role: string(chat.RoleAssistant), Text: turn.Answer, Docs: used, Uses: append(web, turn.Uses...)})
+		chatMessage{Role: string(chat.RoleAssistant), Text: turn.Answer, Model: c.Model, Docs: used, Uses: append(web, turn.Uses...)})
 	rec.Updated, rec.Sources = d.now(), windowSources
 	// Ход телефона на другой модели не пишет ни модель чата, ни счет токенов: окно
 	// заполнения считается по модели окна. 0 — провайдер не прислал счет: старое число не показываем.
