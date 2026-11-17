@@ -7282,20 +7282,28 @@ function shRichCard(p) {
   if (t.v) {
     body += t.v.variants.map((v, i) => `<div class="sh-title-h">${esc(v.name || "Вариант " + (i + 1))} ` +
       `<button type="button" class="lnk" data-sh-rich-save="${i}"${mkTip("Сохранить JSON", "файл для «Rich-контент JSON» в кабинете Ozon")}>сохранить</button> ` +
-      `<button type="button" class="lnk" data-sh-copy="${esc(v.json)}"${mkTip("Скопировать JSON", "вставить в «Rich-контент JSON» в кабинете Ozon")}>скопировать</button></div>` +
-      `<ul>${v.blocks.map((b) => `<li><b>${esc(b.title)}</b>${b.text ? " — " + esc(b.text) : ""}</li>`).join("")}</ul>`).join("") +
+      `<button type="button" class="lnk" data-sh-rich-copy="${i}"${mkTip("Скопировать JSON", "вставить в «Rich-контент JSON» в кабинете Ozon")}>скопировать</button></div>` +
+      `<ul>${v.blocks.map((b) => `<li><b>${esc(b.title)}</b>${b.text ? " — " + esc(b.text) : ""} <span class="muted">· фото ${fmt(b.photo)}</span></li>`).join("")}</ul>` +
+      (v.photosFixed ? `<div class="note">Модель назвала фото, которого у карточки нет, — окно поставило незанятое.</div>` : "")).join("") +
       `<div class="note">Написала модель ${esc(t.v.model)}: прочитайте тексты перед вставкой. Фото — карточки, по одному на блок.</div>`;
   }
   return `<h4 class="sh-money-h">Рич-контент</h4>${btn}${body}`;
 }
 document.addEventListener("click", async (e) => {
-  const b = e.target.closest("[data-sh-rich], [data-sh-rich-save]");
+  const b = e.target.closest("[data-sh-rich], [data-sh-rich-save], [data-sh-rich-copy]");
   if (!b) return;
   hideTip();
   const p = sh.v && sh.v.products[sh.sel];
   if (!p) return;
   const key = shTagsKey(p), t = shRich.get(key) || {};
   if (!native() || !native().MarketsRich) { shRich.set(key, { err: "Рич-контент предлагается в окне приложения." }); return shCard(); }
+  if (b.dataset.shRichCopy !== undefined) { // по номеру: JSON не лежит в атрибуте и не показывается в подсказке (ревью #676)
+    const v = t.v && t.v.variants[+b.dataset.shRichCopy];
+    if (!v) return;
+    try { await navigator.clipboard.writeText(v.json); toast("Скопировано", ` · «${v.name || "вариант"}» — вставьте в «Rich-контент JSON» в кабинете`); }
+    catch { toast("Не скопировано", " · буфер обмена недоступен — сохраните вариант файлом", null, "bad"); }
+    return;
+  }
   if (b.dataset.shRichSave !== undefined) {
     const v = t.v && t.v.variants[+b.dataset.shRichSave];
     if (!v) return;

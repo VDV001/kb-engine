@@ -17,6 +17,8 @@ const (
 	maxRichTitle = 60
 	// maxRichBlocks — блоков в варианте: billboard — картинка во всю ширину.
 	maxRichBlocks = 6
+	// maxRichVariants — столько вариантов просит задание и показывает окно.
+	maxRichVariants = 3
 )
 
 // RichInput — что модель знает о товаре для рич-контента (#671).
@@ -89,7 +91,7 @@ func ParseRichVariants(text string, photos int) ([]RichVariant, error) {
 		if json.NewDecoder(strings.NewReader(text[i:])).Decode(&raw) == nil && raw.Variants != nil {
 			var out []RichVariant
 			for _, v := range raw.Variants {
-				if rv := richVariant(v.Name, v.Blocks, photos); len(rv.Blocks) > 0 {
+				if rv := richVariant(v.Name, v.Blocks, photos); len(rv.Blocks) > 0 && len(out) < maxRichVariants {
 					out = append(out, rv)
 				}
 			}
@@ -107,8 +109,11 @@ func ParseRichVariants(text string, photos int) ([]RichVariant, error) {
 	return nil, fmt.Errorf("%w: в ответе нет JSON с variants", ErrModelRich)
 }
 
+// richVariant keeps the blocks with a title; фото вне 1..photos — первое еще
+// не занятое в варианте (ревью #676: не одно главное фото во всех блоках).
 func richVariant(name string, bs []richBlockJSON, photos int) RichVariant {
 	v := RichVariant{Name: clipRunes(strings.TrimSpace(name), maxRichTitle)}
+	used := map[int]bool{}
 	for _, b := range bs {
 		t := clipRunes(strings.TrimSpace(b.Title), maxRichTitle)
 		if t == "" || len(v.Blocks) == maxRichBlocks {
@@ -116,11 +121,22 @@ func richVariant(name string, bs []richBlockJSON, photos int) RichVariant {
 		}
 		p := b.Photo
 		if p < 1 || p > photos {
-			p = 1
+			p, v.PhotosFixed = freePhoto(used, photos), true
 		}
+		used[p] = true
 		v.Blocks = append(v.Blocks, RichBlock{Title: t, Text: clipRunes(strings.TrimSpace(b.Text), MaxRichText), Photo: p})
 	}
 	return v
+}
+
+// freePhoto is the first photo not used yet; все заняты — первое.
+func freePhoto(used map[int]bool, photos int) int {
+	for i := 1; i <= photos; i++ {
+		if !used[i] {
+			return i
+		}
+	}
+	return 1
 }
 
 func clipRunes(s string, n int) string {
@@ -178,7 +194,7 @@ func RichJSON(v RichVariant, photos []RichPhoto) ([]byte, error) {
 		blocks = append(blocks, richBlockOut{
 			Img:   richImg{Src: p.URL, SrcMobile: p.URL, Alt: b.Title, Position: "width_full", PositionMobile: "width_full", WidthMobile: p.Width, HeightMobile: p.Height},
 			Title: richItems{Items: []richItem{{Type: "text", Content: b.Title}}, Size: "size4", Align: "left", Color: "color1"},
-			Text:  richItems{Items: []richItem{{Type: "text", Content: b.Text}}, Size: "size2", Align: "left", Color: "color1"},
+			Text:  richItems{Items: textItems(b.Text), Size: "size2", Align: "left", Color: "color1"},
 		})
 	}
 	doc := map[string]any{
@@ -186,4 +202,12 @@ func RichJSON(v RichVariant, photos []RichPhoto) ([]byte, error) {
 		"version": 0.3,
 	}
 	return json.MarshalIndent(doc, "", "  ")
+}
+
+// textItems is a block's text; пустой — «br», как у живых карточек (замер 17.11).
+func textItems(text string) []richItem {
+	if text == "" {
+		return []richItem{{Type: "br"}}
+	}
+	return []richItem{{Type: "text", Content: text}}
 }

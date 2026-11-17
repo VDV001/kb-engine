@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,11 +9,11 @@ import (
 	"image"
 	_ "image/jpeg" // фото карточек Ozon — jpg и png
 	_ "image/png"
-	"io"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -34,6 +35,8 @@ type richVariantView struct {
 	Name   string          `json:"name"`
 	Blocks []richBlockView `json:"blocks"`
 	JSON   string          `json:"json"`
+	// PhotosFixed — модель назвала фото, которого нет: окно взяло незанятое.
+	PhotosFixed bool `json:"photosFixed"`
 }
 
 // richView — варианты от модели окна.
@@ -61,7 +64,7 @@ func (a *App) MarketsRichSave(sku, name, doc string) (string, error) {
 		return "", err
 	}
 	p, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{Title: "Сохранить рич-контент",
-		DefaultFilename: strings.TrimSpace("Рич-контент "+sku+" "+name) + ".json"})
+		DefaultFilename: richFileName(sku, name)})
 	if err != nil || p == "" {
 		return "", err
 	}
@@ -106,7 +109,7 @@ func (f *folderSettings) richVariants(ctx context.Context, hc *http.Client, cd *
 	if err != nil {
 		return richView{}, errors.New("модель ответила не вариантами — попробуйте еще раз")
 	}
-	photos, err := photoSizes(ctx, hc, card.Photos, vs)
+	photos, err := photoSizes(ctx, fetch, card.Photos, vs)
 	if err != nil {
 		return richView{}, err
 	}
@@ -116,7 +119,7 @@ func (f *folderSettings) richVariants(ctx context.Context, hc *http.Client, cd *
 		if err != nil {
 			return richView{}, err
 		}
-		out := richVariantView{Name: rv.Name, JSON: string(doc)}
+		out := richVariantView{Name: rv.Name, JSON: string(doc), PhotosFixed: rv.PhotosFixed}
 		for _, b := range rv.Blocks {
 			out.Blocks = append(out.Blocks, richBlockView{Title: b.Title, Text: b.Text, Photo: b.Photo})
 		}
@@ -125,55 +128,52 @@ func (f *folderSettings) richVariants(ctx context.Context, hc *http.Client, cd *
 	return v, nil
 }
 
-// photoSizes reads the size of every photo the variants use (только их).
-func photoSizes(ctx context.Context, hc *http.Client, urls []string, vs []markets.RichVariant) ([]markets.RichPhoto, error) {
+// photoSizes reads the size of every photo the variants use (только их, разом):
+// скачивает fetch — в окне только https с ozone.ru (ревью #676, как #629).
+func photoSizes(ctx context.Context, fetch func(context.Context, string) ([]byte, error), urls []string, vs []markets.RichVariant) ([]markets.RichPhoto, error) {
 	out := make([]markets.RichPhoto, len(urls))
-	for i, u := range urls {
-		out[i].URL = u
-	}
+	errs := make([]error, len(urls))
+	need := map[int]bool{}
 	for _, v := range vs {
 		for _, b := range v.Blocks {
-			p := &out[b.Photo-1]
-			if p.Width > 0 {
-				continue
+			need[b.Photo-1] = true
+		}
+	}
+	var wg sync.WaitGroup
+	for i, u := range urls {
+		out[i].URL = u
+		if !need[i] {
+			continue
+		}
+		wg.Go(func() {
+			b, err := fetch(ctx, u)
+			if err == nil {
+				var cfg image.Config
+				if cfg, _, err = image.DecodeConfig(bytes.NewReader(b)); err != nil {
+					err = errors.New("формат не jpg и не png")
+				}
+				out[i].Width, out[i].Height = cfg.Width, cfg.Height
 			}
-			w, h, err := imageSize(ctx, hc, p.URL)
-			if err != nil {
-				return nil, fmt.Errorf("размер фото %d не прочитан — %w", b.Photo, err)
-			}
-			p.Width, p.Height = w, h
+			errs[i] = err
+		})
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			return nil, fmt.Errorf("размер фото %d не прочитан — %w", i+1, err)
 		}
 	}
 	return out, nil
 }
 
-// maxPhotoHead — сколько байт фото читать ради размера: заголовок jpg и png в начале.
-const maxPhotoHead = 1 << 20
-
-func imageSize(ctx context.Context, hc *http.Client, u string) (int, int, error) {
-	if !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
-		return 0, 0, errors.New("адрес не http")
-	}
-	if hc == nil {
-		hc = http.DefaultClient
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return 0, 0, err
-	}
-	resp, err := hc.Do(req)
-	if err != nil {
-		return 0, 0, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return 0, 0, errors.New(resp.Status)
-	}
-	cfg, _, err := image.DecodeConfig(io.LimitReader(resp.Body, maxPhotoHead))
-	if err != nil {
-		return 0, 0, errors.New("формат не jpg и не png")
-	}
-	return cfg.Width, cfg.Height, nil
+// richFileName is the default file name; имя варианта придумала модель —
+// без знаков, которые ломают путь (ревью #676).
+func richFileName(sku, name string) string {
+	name = strings.Map(func(r rune) rune {
+		if strings.ContainsRune(`/\:*?"<>|`, r) || r < 0x20 {
+			return ' '
+		}
+		return r
+	}, name)
+	return strings.Join(strings.Fields("Рич-контент "+sku+" "+name), " ") + ".json"
 }
-
-func richFileName(sku, name string) string { return name }
