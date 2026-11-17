@@ -26,6 +26,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -87,7 +88,8 @@ type Payload struct {
 	// Heard — что окно расслышало в голосовом вопросе (#648, ответ на KindVoice).
 	Heard string `json:"heard,omitempty"`
 	// Attach — файл к вопросу телефона (#650): куски в файлах ящика по порядку.
-	Attach *Attachment `json:"attach,omitempty"`
+	Attach  *Attachment `json:"attach,omitempty"`
+	History []Exchange  `json:"history,omitempty"`
 }
 
 // Attachment is a file the phone attached to a question: имя, тип, длина
@@ -226,6 +228,12 @@ const (
 	KindEdited = "edited"
 	// ChatEditFailed — код: окно не смогло переименовать или удалить чат.
 	ChatEditFailed = "chaterr"
+	// KindAsked — вопрос, заданный в окне (#669): Text — вопрос, Title — название чата.
+	KindAsked = "asked"
+	// KindHistory — история чата окна пачкой (#669): History, Title.
+	KindHistory = "history"
+	// DeleteEvicted — Text у KindDelete: чат окна выпал из MaxSharedChats.
+	DeleteEvicted = "evicted"
 	// KindRemember — окно предлагает запомнить факты о человеке (#647, Facts).
 	KindRemember = "remember"
 	// KindMemory — решение телефона по факту (Text yes/no, Facts[0]) и ответ окна
@@ -372,6 +380,29 @@ type State struct {
 	// ponytail: по записи на удаленный чат (id ~16 байт); станет заметно —
 	// забывать старше срока ящика.
 	Deleted map[string]bool `json:"deleted,omitempty"`
+	// Shared — чаты ящика, заведенные окном (#669), старые первыми.
+	Shared []string `json:"shared,omitempty"`
+}
+
+// MaxSharedChats — сколько чатов окна держит ящик (решение владельца 17.11).
+const MaxSharedChats = 50
+
+// Exchange is one turn of a chat: вопрос и ответ.
+type Exchange struct {
+	Question string `json:"q"`
+	Answer   string `json:"a"`
+}
+
+// WindowTurn is a turn the person made in the window (#669): Chat — чат окна,
+// Last — только что сделанный обмен. New — чат заведен окном после выкатки
+// #669: без связи с ящиком он заводится в ящике целиком (историю дает
+// Relay.HistoryOf). Старые чаты окна (New = false) на телефон не уходят
+// (решение владельца 17.11).
+type WindowTurn struct {
+	Chat  string
+	Title string
+	New   bool
+	Last  Exchange
 }
 
 // maxTitles bounds State.Titles: названия чатов, которых окно еще не знает.
@@ -423,6 +454,14 @@ type Relay struct {
 	Open FileOpener
 	// Chats — переименование и удаление чатов окна с телефона (#649); nil — отказ.
 	Chats ChatEditor
+	// Turns — ходы человека в окне для телефонов (#669).
+	Turns []WindowTurn
+	// HistoryOf reads a window chat's exchanges when the mailbox opens it
+	// (ревью #675: в очереди — только последний обмен); nil или сбой — Last.
+	HistoryOf func(chat string) ([]Exchange, error)
+	// Shared — ходы Turns легли в сохраненные исходящие: до этой отметки круг
+	// их не взял, и работник отдаст их следующему кругу (ревью #675).
+	Shared func()
 }
 
 // Notifier tells the phones an answer is waiting (kb-сервер, /api/mail/notify).
@@ -469,6 +508,9 @@ func (r Relay) start(ctx context.Context) (State, error) {
 		return st, err
 	}
 	if err := r.offer(&st); err != nil {
+		return st, err
+	}
+	if err := r.share(&st); err != nil {
 		return st, err
 	}
 	return st, r.flush(ctx, &st)
@@ -688,6 +730,9 @@ func (r Relay) ask(ctx context.Context, st *State, chat, question string, files 
 		return Payload{Kind: KindError, Text: err.Error()}
 	}
 	st.Chats[chat] = a.Chat
+	if slices.Contains(st.Shared, chat) { // работа с телефона освежает место чата окна (ревью #675)
+		touchShared(st, chat)
+	}
 	r.pendingTitle(ctx, st, chat)
 	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources, Context: a.Context, Only: a.Only}
 }
@@ -739,6 +784,136 @@ func (r Relay) offer(st *State) error {
 		return fmt.Errorf("mailrelay: state: %w", err)
 	}
 	return nil
+}
+
+// share queues the window's turns for the phones (#669): связанный чат — только
+// новый ход; новый чат окна без связи — заводится в ящике историей пачками
+// (предел отправки сервера — раз в секунду, ревью #675). Чатов окна в ящике —
+// MaxSharedChats последних: самый старый уходит с телефонов delete «evicted»,
+// в окне остается. Удаление и переименование того же круга (Notes) — в силе.
+func (r Relay) share(st *State) error {
+	if len(r.Turns) == 0 {
+		return nil
+	}
+	gone, titles := sameRoundEdits(r.Notes)
+	for _, t := range r.Turns {
+		if gone[t.Chat] {
+			continue
+		}
+		if nt, ok := titles[t.Chat]; ok {
+			t.Title = nt
+		}
+		r.shareTurn(st, t)
+		r.evict(st)
+	}
+	if err := r.Store.Save(*st); err != nil {
+		return fmt.Errorf("mailrelay: state: %w", err)
+	}
+	if r.Shared != nil {
+		r.Shared()
+	}
+	return nil
+}
+
+// history is window chat t's exchanges for a new mailbox chat: HistoryOf или,
+// если ее нет или чат не прочитан, — хотя бы последний обмен.
+func (r Relay) history(t WindowTurn) []Exchange {
+	if r.HistoryOf != nil {
+		h, err := r.HistoryOf(t.Chat)
+		if err == nil && len(h) > 0 {
+			return h
+		}
+		if err != nil {
+			r.logf("mailrelay: history %s: %v", t.Chat, err)
+		}
+	}
+	return []Exchange{t.Last}
+}
+
+// sameRoundEdits are the window's deletes and renames of this round by chat.
+func sameRoundEdits(notes []Note) (gone map[string]bool, titles map[string]string) {
+	gone, titles = map[string]bool{}, map[string]string{}
+	for _, n := range notes {
+		switch n.Payload.Kind {
+		case KindDelete:
+			gone[n.Chat] = true
+		case KindRename:
+			titles[n.Chat] = n.Payload.Text
+		}
+	}
+	return gone, titles
+}
+
+// shareTurn queues one window turn: связанный — новый ход, новый — история.
+func (r Relay) shareTurn(st *State, t WindowTurn) {
+	chat := mailChat(st, t.Chat)
+	if chat == "" {
+		if !t.New {
+			return
+		}
+		chat = newShareChat()
+		if st.Chats == nil {
+			st.Chats = map[string]string{}
+		}
+		st.Chats[chat] = t.Chat
+		for _, pack := range r.historyPacks(r.history(t)) {
+			r.queueDesk(st, chat, Payload{Kind: KindHistory, Title: t.Title, History: pack})
+		}
+	} else {
+		x := t.Last
+		r.queueDesk(st, chat, Payload{Kind: KindAsked, Text: x.Question, Title: t.Title})
+		r.queueDesk(st, chat, Payload{Kind: KindAnswer, Text: trim(x.Answer, r.MaxText)})
+	}
+	if t.New || slices.Contains(st.Shared, chat) {
+		touchShared(st, chat)
+	}
+}
+
+// touchShared moves a window chat to the fresh end of State.Shared.
+func touchShared(st *State, chat string) {
+	st.Shared = append(slices.DeleteFunc(st.Shared, func(c string) bool { return c == chat }), chat)
+}
+
+// evict keeps MaxSharedChats window chats: самый старый — delete «evicted» на
+// телефоны и без связи, но не «удален»: вопрос телефона, ушедший до
+// вытеснения, получит ответ новым чатом окна, а не пропадет (ревью #675).
+func (r Relay) evict(st *State) {
+	for len(st.Shared) > MaxSharedChats {
+		old := st.Shared[0]
+		st.Shared = st.Shared[1:]
+		r.queueDesk(st, old, Payload{Kind: KindDelete, Text: DeleteEvicted})
+		delete(st.Chats, old)
+		delete(st.Offered, old)
+		delete(st.Titles, old)
+	}
+}
+
+// historyPacks splits the history into packs whose JSON fits MaxText; ответ,
+// не влезающий и в пустую пачку, укорочен (MaxText 0 — одна пачка).
+func (r Relay) historyPacks(h []Exchange) [][]Exchange {
+	if r.MaxText <= 0 {
+		return [][]Exchange{h}
+	}
+	size := func(xs []Exchange) int { b, _ := json.Marshal(xs); return len(b) }
+	var packs [][]Exchange
+	var cur []Exchange
+	for _, x := range h {
+		for size([]Exchange{x}) > r.MaxText && len(x.Answer) > len(trimNote) {
+			x.Answer = trim(x.Answer, max(len(x.Answer)/2, len(trimNote)))
+		}
+		if len(cur) > 0 && size(append(slices.Clone(cur), x)) > r.MaxText {
+			packs, cur = append(packs, cur), nil
+		}
+		cur = append(cur, x)
+	}
+	return append(packs, cur)
+}
+
+// newShareChat is a mailbox chat for a window chat: 16 hex, как у телефона.
+func newShareChat() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b) // crypto/rand.Read не возвращает ошибку с Go 1.24
+	return hex.EncodeToString(b)
 }
 
 // mailChat is the mailbox chat of window chat w; "" — телефон его не заводил.
@@ -1002,6 +1177,7 @@ func forgetChat(st *State, chat string) {
 	delete(st.Chats, chat)
 	delete(st.Offered, chat)
 	delete(st.Titles, chat)
+	st.Shared = slices.DeleteFunc(st.Shared, func(c string) bool { return c == chat })
 	if st.Deleted == nil {
 		st.Deleted = map[string]bool{}
 	}

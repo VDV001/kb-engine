@@ -58,10 +58,14 @@ type mailWorker struct {
 	appleAt  time.Time            // когда спрашивали: не чаще раза в 5 минут
 
 	notesMu sync.Mutex
-	notes   []mailrelay.Note // «Запомнить о Вас?» для телефонов: пишет разбор ответа, забирает круг
-	quiet   func() bool      // «новое — только в портрете»: телефону не предлагать (ревью #655)
-	logf    func(string, ...any)
-	creds   map[string]mailCreds // только горутина работника
+	notes   []mailrelay.Note       // «Запомнить о Вас?» для телефонов: пишет разбор ответа, забирает круг
+	turns   []mailrelay.WindowTurn // ходы человека в окне для телефонов (#669)
+	// keptTurns — ходы сервера, чей круг сорвался до исходящих (ревью #675).
+	keptTurns map[string][]mailrelay.WindowTurn
+	history   func(string) ([]mailrelay.Exchange, error) // чат окна для ящика
+	quiet     func() bool                                // «новое — только в портрете»: телефону не предлагать (ревью #655)
+	logf      func(string, ...any)
+	creds     map[string]mailCreds // только горутина работника
 }
 
 // mailCreds is what the worker read from the keychain for a server: ключ чата
@@ -102,9 +106,14 @@ func (w *mailWorker) tick(ctx context.Context) error {
 	var errs []error
 	// Заметки — один раз за круг и каждому ящику целиком: свои чаты берет
 	// каждый, иначе первый сервер съел бы факты чатов второго (#647).
-	notes := w.Take()
+	notes, turns := w.Take(), w.takeTurns()
 	for _, id := range w.servers() {
-		if err := w.tickServer(ctx, id, notes); err != nil {
+		q, shared := w.turnsFor(id, turns), false
+		err := w.tickServer(ctx, id, notes, q, func() { shared = true })
+		if !shared {
+			w.keepTurns(id, q)
+		}
+		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", id, err))
 		}
 	}
@@ -157,7 +166,7 @@ func (w *mailWorker) credsFor(id string) (mailCreds, error) {
 // переводы строк — до 2 байт на знак) не выводят шифротекст за предел ящика.
 const mailMaxText = (mailcrypt.MaxPlain - 64) / 2
 
-func (w *mailWorker) tickServer(ctx context.Context, id string, notes []mailrelay.Note) error {
+func (w *mailWorker) tickServer(ctx context.Context, id string, notes []mailrelay.Note, turns []mailrelay.WindowTurn, shared func()) error {
 	c, err := w.credsFor(id)
 	if err != nil || c.none {
 		return err
@@ -182,6 +191,9 @@ func (w *mailWorker) tickServer(ctx context.Context, id string, notes []mailrela
 		Logf:      w.logf,
 		Notifier:  mailNotify{c.client},
 		Notes:     notes,
+		Turns:     turns,
+		Shared:    shared,
+		HistoryOf: w.history,
 		Memory:    w.memory,
 		Desk:      w.desk,
 		Files:     mailVoiceFiles{c.client},
@@ -209,6 +221,8 @@ func (w *mailWorker) useChat(d *chatDesk) {
 	// Один чат в двух местах (#649): правка с телефона — в чат окна, правка в
 	// окне — заметкой телефону.
 	w.chats = phoneChats{d: d, changed: func(id string) { w.changed(id) }}
+	d.turned = w.shareTurn // ходы окна — телефонам (#669)
+	w.history = chatHistory(d)
 	prev := d.edited
 	d.edited = func(id, title string, deleted bool) {
 		if prev != nil {
@@ -728,4 +742,78 @@ func (f *mailStateFile) Load() (mailrelay.State, error) {
 
 func (f *mailStateFile) Save(st mailrelay.State) error {
 	return f.write(mailStateDTO{Sender: f.senderHex, State: st})
+}
+
+// windowTurn is the window's turn for the phones (#669): только последний
+// обмен — историю ящик прочтет сам, если заводит чат (ревью #675).
+func windowTurn(rec chatRecord) mailrelay.WindowTurn {
+	t := mailrelay.WindowTurn{Chat: rec.ID, Title: rec.Title, New: rec.Phone}
+	if h := exchangesOf(rec); len(h) > 0 {
+		t.Last = h[len(h)-1]
+	}
+	return t
+}
+
+// exchangesOf is the chat's questions and answers in order.
+func exchangesOf(rec chatRecord) []mailrelay.Exchange {
+	var out []mailrelay.Exchange
+	for i := 0; i+1 < len(rec.Messages); i += 2 {
+		q, a := rec.Messages[i], rec.Messages[i+1]
+		if q.Role == string(chat.RoleUser) && a.Role == string(chat.RoleAssistant) {
+			out = append(out, mailrelay.Exchange{Question: q.Text, Answer: a.Text})
+		}
+	}
+	return out
+}
+
+// shareTurn queues the window's turn for the next round (#669).
+func (w *mailWorker) shareTurn(rec chatRecord) {
+	w.notesMu.Lock()
+	defer w.notesMu.Unlock()
+	w.turns = append(w.turns, windowTurn(rec))
+}
+
+// takeTurns gives the queued window turns to the round.
+func (w *mailWorker) takeTurns() []mailrelay.WindowTurn {
+	w.notesMu.Lock()
+	defer w.notesMu.Unlock()
+	q := w.turns
+	w.turns = nil
+	return q
+}
+
+// chatHistory reads a window chat's exchanges for the mailbox (Relay.HistoryOf).
+func chatHistory(d *chatDesk) func(string) ([]mailrelay.Exchange, error) {
+	return func(id string) ([]mailrelay.Exchange, error) {
+		// Без d.mu: замок держит весь ход модели (минуты), а файл чата пишется
+		// атомарно (save: временный файл и rename) — читается целым.
+		rec, err := d.load(id)
+		if err != nil {
+			return nil, err
+		}
+		return exchangesOf(rec), nil
+	}
+}
+
+// turnsFor is server id's round: ходы, оставшиеся от его сорванного круга, и новые.
+func (w *mailWorker) turnsFor(id string, fresh []mailrelay.WindowTurn) []mailrelay.WindowTurn {
+	w.notesMu.Lock()
+	defer w.notesMu.Unlock()
+	q := append(w.keptTurns[id], fresh...)
+	delete(w.keptTurns, id)
+	return q
+}
+
+// keepTurns gives server id's turns back when its round failed before they
+// reached the outbox (ревью #675): иначе связанный чат телефона пропустил бы ход.
+func (w *mailWorker) keepTurns(id string, q []mailrelay.WindowTurn) {
+	if len(q) == 0 {
+		return
+	}
+	w.notesMu.Lock()
+	defer w.notesMu.Unlock()
+	if w.keptTurns == nil {
+		w.keptTurns = map[string][]mailrelay.WindowTurn{}
+	}
+	w.keptTurns[id] = append(q, w.keptTurns[id]...)
 }
