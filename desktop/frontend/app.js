@@ -3614,8 +3614,9 @@ async function askChat() {
   try {
     const sent = chatState.attached.map((a) => a.ref);
     const mode = chatState.portraitMode[chatState.id] || "";
-    const c = await native().Ask({ id: chatState.id, question: q, refs: sent, sources: chatState.only || [], portrait: mode, role: chatState.role });
-    chatState.role = ""; chatState.hint = null; paintHint(); // ответ получен: роль и подсказка — на следующий вопрос
+    const role = chatState.role;
+    resetHint(); // вопрос ушел: старая плашка не висит, пока модель думает; роль — только этому вопросу
+    const c = await native().Ask({ id: chatState.id, question: q, refs: sent, sources: chatState.only || [], portrait: mode, role });
     if (mode) chatState.portraitMode[c.id] = mode; // новый чат получил id
     if (!chatState.id) delete chatState.portraitMode[""]; // выбор до вопроса — только для этого чата
     const pn = c.portrait;
@@ -3635,6 +3636,7 @@ async function askChat() {
     if (!chatState.chat.messages.length) chatState.chat = null;
     chatState.declined = false; // «Не надо» не глушит предложение после сбоя ответа
     $("#chat-q").value = q; // вопрос не теряется
+    refreshHint(); // вопрос вернулся в поле — совет заново (роль сброшена: «ответить ей» решает человек)
     micLoop.on = false;
     stopVoice(); // до заметки: остановка возвращает обычную подпись под полем
     showChatNote("Нет ответа: " + errText(e));
@@ -3657,6 +3659,7 @@ async function newChat() {
   chatState.id = "";
   chatState.chat = null;
   chatState.over = null;
+  resetHint();
   loadPortrait().then(() => { if (!chatState.chat && !chatState.busy) renderChat(); });
   chatState.attached = [];
   chatState.only = null;
@@ -3866,6 +3869,7 @@ function renderAttached() {
   const mine = chatState.attached.map((a, i) => `<span class="chat-att" data-tip="${esc(a.title)}" data-tip-b="${esc(a.hint || "")}"><span class="t">${esc(a.title)}</span><span class="w">${esc(a.via)}</span><button type="button" data-unattach="${i}" aria-label="Убрать: ${esc(a.title)}">×</button></span>`);
   box.innerHTML = [...mine, ...auto].join("");
   box.hidden = !box.innerHTML;
+  refreshHint(); // файлы меняют совет (приложены файлы — основная модель)
 }
 function addAttached(a) {
   if (!chatState.attached.some((x) => x.ref === a.ref)) chatState.attached.push(a);
@@ -4011,7 +4015,9 @@ async function chooseModel(id) {
   closeModelPick();
   if (!id || id === mdl.v.current) return;
   try { await native().SetChatModel(id); } catch (e) { return showChatNote("Модель не сменилась: " + errText(e)); }
+  if (mdl.v && mdl.v.second === id) mdl.v.second = ""; // вторая, ставшая главной, — уже не вторая
   await loadChatSettings();
+  refreshHint();
   toast("Модель", " · " + id);
 }
 $("#chat-mdl-pop").addEventListener("input", (e) => { if (e.target.id === "md-q") { mdl.q = e.target.value; mdl.sel = 0; renderModelPick(); } });
@@ -4028,7 +4034,7 @@ $("#chat-mdl-pop").addEventListener("click", (e) => {
   if (sc) { // вторая модель чата (#678) — не выбор модели окна
     hideTip();
     const id = sc.dataset.mdlSecond, on = sc.getAttribute("aria-pressed") !== "true";
-    native().SetChatSecondModel(on ? id : "").then(() => { mdl.v.second = on ? id : ""; renderModelPick(); refreshHint(); })
+    native().SetChatSecondModel(on ? id : "").then(async () => { mdl.v.second = on ? id : ""; renderModelPick(); await loadChatSettings(); refreshHint(); })
       .catch((err) => showChatNote("Вторая модель не сохранена: " + errText(err)));
     return;
   }
@@ -4055,7 +4061,13 @@ async function refreshHint() {
   try { h = await native().ChatHint(q, chatState.attached.length); } catch { /* подсказка — не ошибка */ }
   if ($("#chat-q").value.trim() !== q) return; // пока ждали, текст сменился
   chatState.hint = h && h.role ? h : null;
-  if (!chatState.hint) chatState.role = "";
+  if (!chatState.hint || chatState.hint.role !== "second") chatState.role = ""; // совет сменился: прежнее «ответить ей» не действует
+  paintHint();
+}
+// resetHint drops the hint and the chosen role: смена чата, отправка вопроса.
+function resetHint() {
+  clearTimeout(chatState.hintTimer);
+  chatState.hint = null; chatState.role = "";
   paintHint();
 }
 function paintHint() {
@@ -4140,6 +4152,7 @@ async function selectChat(id) {
   try {
     chatState.chat = await native().Chat(id);
     chatState.id = id;
+    resetHint(); // совет и роль — про вопрос в том чате, где их показали
     chatState.offerAsk = chatState.offerCost = chatState.declined = false; // предложение сжать — про тот чат, где его показали
     // Источники чата — только те, что есть сейчас: удаленный или выключенный
     // оставил бы чат искать нигде (ревью #465).

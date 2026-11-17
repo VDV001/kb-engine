@@ -34,8 +34,12 @@ type ModelHint struct {
 	Reason HintReason
 }
 
-// longQuestion — с этого числа знаков вопрос считается длинным.
-const longQuestion = 400
+// longQuestion — с этого числа знаков вопрос считается длинным; shortQuestion —
+// до этого числа простым: между ними без ключевых слов совета нет (ревью #682).
+const (
+	longQuestion  = 400
+	shortQuestion = 150
+)
 
 // analysisWords — основы слов вопросов, где нужна основная модель.
 // ponytail: простые подстроки — ложные срабатывания возможны; потолок — тонкая
@@ -58,5 +62,8 @@ func SuggestModelRole(question string, files int) ModelHint {
 	case slices.ContainsFunc(analysisWords, func(w string) bool { return strings.Contains(q, w) }):
 		return ModelHint{RoleMain, ReasonAnalysis}
 	}
-	return ModelHint{RoleSecond, ReasonShort}
+	if utf8.RuneCountInString(q) <= shortQuestion {
+		return ModelHint{RoleSecond, ReasonShort}
+	}
+	return ModelHint{}
 }

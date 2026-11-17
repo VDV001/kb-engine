@@ -28,7 +28,9 @@ var hintReasons = map[domain.HintReason]string{
 func (d *chatDesk) SetSecondModel(model string) error {
 	d.phoneMu.Lock() // чтение-запись настроек: не теряем соседнее переключение
 	defer d.phoneMu.Unlock()
-	c := d.config()
+	d.settings.mu.Lock()
+	c := d.settings.cfg.Chat
+	d.settings.mu.Unlock()
 	c.SecondModel = strings.TrimSpace(model)
 	return d.SetSettings(c, "")
 }

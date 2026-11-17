@@ -138,10 +138,15 @@ func (d *chatDesk) SetModel(model string) error {
 	if model == "" {
 		return domain.ErrNoChatModel
 	}
+	d.phoneMu.Lock() // чтение-запись настроек: смена главной не теряет соседнее переключение
+	defer d.phoneMu.Unlock()
 	d.settings.mu.Lock()
 	c := d.settings.cfg.Chat
 	d.settings.mu.Unlock()
 	c.Model = model
+	if c.SecondModel == model { // вторая, ставшая главной, — уже не вторая
+		c.SecondModel = ""
+	}
 	return d.SetSettings(c, "")
 }
 
