@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"time"
 )
 
 // Отказы самообновления окна DVK (#651).
@@ -20,6 +21,7 @@ var (
 	ErrReleaseSignature     = errors.New("release manifest signature is not valid")
 	ErrReleaseAssetMismatch = errors.New("release file does not match the manifest")
 	ErrNoReleaseAsset       = errors.New("release has no file for this platform")
+	ErrReleaseExpired       = errors.New("release manifest has expired: the owner must sign it again")
 )
 
 // MaxReleaseAsset — потолок файла выпуска: kb.app и установщик весят десятки
@@ -107,6 +109,7 @@ func (a ReleaseAsset) MatchesSum(n int64, sum [sha256.Size]byte) error {
 // платформам. Окно верит только ему, а не странице выпуска GitHub.
 type ReleaseManifest struct {
 	version ReleaseVersion
+	expires time.Time
 	assets  []ReleaseAsset
 }
 
@@ -126,6 +129,7 @@ type releaseAssetJSON struct {
 
 type releaseManifestJSON struct {
 	Version string             `json:"version"`
+	Expires string             `json:"expires"` // RFC 3339
 	Assets  []releaseAssetJSON `json:"assets"`
 }
 
@@ -147,10 +151,14 @@ func ParseReleaseManifest(b []byte) (ReleaseManifest, error) {
 	if err != nil {
 		return bad(err.Error())
 	}
+	exp, err := time.Parse(time.RFC3339, raw.Expires)
+	if err != nil {
+		return bad("expires: " + err.Error())
+	}
 	if len(raw.Assets) == 0 {
 		return bad("no files")
 	}
-	m := ReleaseManifest{version: v}
+	m := ReleaseManifest{version: v, expires: exp.UTC()}
 	for _, r := range raw.Assets {
 		if _, dup := m.Asset(r.Platform); dup {
 			return bad("two files for " + r.Platform)
@@ -187,6 +195,14 @@ func parseReleaseAsset(r releaseAssetJSON) (ReleaseAsset, error) {
 	return a, nil
 }
 
+// Expires is when the signed manifest stops being believed (UTC): подпись без
+// срока дала бы «заморозку» на старом выпуске — старый подписанный манифест
+// можно подсунуть вместо нового (ревью #679).
+func (m ReleaseManifest) Expires() time.Time { return m.expires }
+
+// Expired reports whether the manifest is out of date at now.
+func (m ReleaseManifest) Expired(now time.Time) bool { return !now.Before(m.expires) }
+
 // Version is the release's tag.
 func (m ReleaseManifest) Version() ReleaseVersion { return m.version }
 
@@ -212,8 +228,8 @@ func NewReleaseAsset(platform, name string, body []byte) (ReleaseAsset, error) {
 }
 
 // NewReleaseManifest builds the manifest the release signs.
-func NewReleaseManifest(version string, assets ...ReleaseAsset) (ReleaseManifest, error) {
-	m, err := ParseReleaseManifest(manifestJSON(version, assets))
+func NewReleaseManifest(version string, expires time.Time, assets ...ReleaseAsset) (ReleaseManifest, error) {
+	m, err := ParseReleaseManifest(manifestJSON(version, expires, assets))
 	if err != nil {
 		return ReleaseManifest{}, err
 	}
@@ -221,10 +237,17 @@ func NewReleaseManifest(version string, assets ...ReleaseAsset) (ReleaseManifest
 }
 
 // JSON is the manifest as published: эти байты и подписываются.
-func (m ReleaseManifest) JSON() []byte { return manifestJSON(m.version.String(), m.assets) }
+func (m ReleaseManifest) JSON() []byte { return manifestJSON(m.version.String(), m.expires, m.assets) }
 
-func manifestJSON(version string, assets []ReleaseAsset) []byte {
-	raw := releaseManifestJSON{Version: version, Assets: []releaseAssetJSON{}}
+// Renewed is the same release with a later expiry: подписывается заново без
+// пересборки файлов.
+func (m ReleaseManifest) Renewed(expires time.Time) ReleaseManifest {
+	m.expires = expires.UTC()
+	return m
+}
+
+func manifestJSON(version string, expires time.Time, assets []ReleaseAsset) []byte {
+	raw := releaseManifestJSON{Version: version, Expires: expires.UTC().Format(time.RFC3339), Assets: []releaseAssetJSON{}}
 	for _, a := range assets {
 		raw.Assets = append(raw.Assets, releaseAssetJSON{Platform: a.platform, Name: a.name, SHA256: hex.EncodeToString(a.sha256[:]), Size: a.size})
 	}

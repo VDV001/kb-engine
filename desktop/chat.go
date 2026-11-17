@@ -70,7 +70,14 @@ type chatRecord struct {
 	Compressed *chatCompressed `json:"compressed,omitempty"`
 	// CanCompress — есть ли что сжимать; только в ответе, в файл не пишется.
 	CanCompress bool `json:"canCompress,omitempty"`
-	Phone       bool `json:"phone,omitempty"`
+	// Phone — чат заведен в окне после #669: его ходы уходят на телефоны.
+	Phone bool `json:"phone,omitempty"`
+	// PhonePick — модель, выбранная телефоном для своих ходов в этом чате
+	// (#657); пусто — модель окна. Применяется, только пока разрешена.
+	PhonePick string `json:"phonePick,omitempty"`
+	// PhoneOnly — источники, которыми телефон сузил выбор окна для своих
+	// ходов; nil — как в окне.
+	PhoneOnly []string `json:"phoneOnly,omitempty"`
 }
 
 // chatCompressed is the summary that stands for the first Folded messages
@@ -98,6 +105,8 @@ type askReq struct {
 	Sources  []string `json:"sources"`
 	// Portrait — как портрет идет в чат, когда не помещается: "", full, relevant.
 	Portrait string `json:"portrait"`
+	// Role — какой моделью ответить: "second" — второстепенной (#678), иначе главной.
+	Role string `json:"role"`
 	// docs — прочитанное приложенное телефоном (#650); со страницы не приходит.
 	docs []chat.Doc
 }
@@ -110,6 +119,8 @@ type chatMessage struct {
 	Uses []chat.Use `json:"uses,omitempty"`
 	// From — «phone»: вопрос задан с телефона (#646), окно так его и помечает.
 	From string `json:"from,omitempty"`
+	// Model — какой моделью сделан ответ (#678).
+	Model string `json:"model,omitempty"`
 }
 
 type chatDoc struct {
@@ -149,6 +160,7 @@ type chatDesk struct {
 	// безопасности #636) — только находку Диска его подключением.
 	openFound func(ctx context.Context, doc chat.Doc) (chat.Doc, error)
 	model     func(c desktopconfig.Chat, key string) chat.Model
+	phoneMu   sync.Mutex // переключатели «телефону» (#657): чтение-запись списка моделей
 	now       func() time.Time
 	// show shows the answer while the model writes it (событие chat:delta);
 	// nil — без показа. Вопрос один за раз, поэтому текст без id чата.
@@ -368,7 +380,12 @@ func (d *chatDesk) ask(parent context.Context, r askReq, out askOut) (chatRecord
 		}
 	}
 	r.Sources = turnSources(r, rec, out)
-	c := d.config()
+	windowSources := slices.Clone(r.Sources) // выбор окна: ход телефона его не переписывает
+	c, sources, err := d.turnConfig(out, rec, r.Sources, r.Role)
+	if err != nil {
+		return chatRecord{}, err
+	}
+	r.Sources = sources
 	key, err := d.modelKey(c)
 	if err != nil {
 		return chatRecord{}, err
@@ -414,9 +431,11 @@ func (d *chatDesk) ask(parent context.Context, r askReq, out askOut) (chatRecord
 	}
 	rec.Messages = append(rec.Messages,
 		chatMessage{Role: string(chat.RoleUser), Text: strings.TrimSpace(question), From: phoneFrom(out)},
-		chatMessage{Role: string(chat.RoleAssistant), Text: turn.Answer, Docs: used, Uses: append(web, turn.Uses...)})
-	rec.Model, rec.Updated, rec.Sources = c.Model, d.now(), slices.Clone(r.Sources)
-	rec.ContextUsed = turn.PromptTokens // 0 — провайдер не прислал счет: старое число не показываем
+		chatMessage{Role: string(chat.RoleAssistant), Text: turn.Answer, Model: c.Model, Docs: used, Uses: append(web, turn.Uses...)})
+	rec.Updated, rec.Sources = d.now(), windowSources
+	// Ход телефона на другой модели не пишет ни модель чата, ни счет токенов: окно
+	// заполнения считается по модели окна. 0 — провайдер не прислал счет: старое число не показываем.
+	d.noteTurnModel(&rec, c.Model, turn.PromptTokens)
 	if err := d.saveLive(rec, id != ""); err != nil {
 		return chatRecord{}, err
 	}
@@ -530,6 +549,15 @@ func (d *chatDesk) Get(id string) (chatRecord, error) {
 	rec.CanCompress = canCompress(rec)
 	rec.Context = d.contextOf(rec)
 	return rec, err
+}
+
+// noteTurnModel records the model of a turn and its token count in rec: ход
+// на модели не окна (телефон, #657) их не пишет — счет не про модель окна.
+func (d *chatDesk) noteTurnModel(rec *chatRecord, model string, tokens int) {
+	rec.ContextUsed = 0
+	if model == d.config().Model {
+		rec.Model, rec.ContextUsed = model, tokens
+	}
 }
 
 // contextOf is the fill of rec's context: последний счет провайдера против

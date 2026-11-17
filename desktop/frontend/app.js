@@ -2971,7 +2971,7 @@ $("#problems-view").addEventListener("click", (e) => {
 // показывает и прячет колонку чатов и колонку документов целиком; край
 // колонки тянется и прилипает к удобным ширинам. Ответ ждется до 3 минут —
 // режим «модель ищет» делает несколько запросов к модели подряд.
-const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [], attached: [], only: null, moreOpen: false, voices: [], portraitMode: {}, over: null, memNew: null, verOffers: [], offerCost: false, openCost: "", conns: [], steps: [], phone: {} }; // phone: чат окна → ход по вопросу с телефона (#646)
+const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [], attached: [], only: null, moreOpen: false, voices: [], portraitMode: {}, over: null, memNew: null, verOffers: [], offerCost: false, openCost: "", conns: [], steps: [], phone: {}, role: "", hint: null, hintTimer: 0 }; // role: ответ второй моделью (#678); phone: чат окна → ход по вопросу с телефона (#646)
 // memState — портрет «Что DVK помнит обо мне» (#479), как его отдало окно.
 const memState = { p: null, qedit: "", where: "", err: "" };
 async function openChatView() {
@@ -3406,7 +3406,7 @@ function renderChat() {
     const folded = (c.compressed && c.compressed.folded) || 0;
     log.innerHTML = c.messages.map((m, i) => (m.role === "user"
       ? `<div class="msg user">${esc(m.text)}${m.from === "phone" ? phoneTag() : ""}</div>`
-      : `<div class="msg bot">${answerHTML(m.text)}${usesHTML(m.uses)}</div>`)
+      : `<div class="msg bot">${answerHTML(m.text)}${usesHTML(m.uses)}${m.model ? modelTag(m.model) : ""}</div>`)
       + (i === folded - 1 ? `<div class="chat-fold" role="separator">Выше сжато ${folded} сообщ.: модель видит конспект, а не их. Исходный разговор сохранен.</div>` : "")).join("");
   }
   // Вопрос с телефона в этом чате — сразу за сообщениями, до карточек памяти и
@@ -3472,6 +3472,8 @@ if (window.runtime) window.runtime.EventsOn("chat:step", (u) => {
 // Вопрос с телефона (#646): окно показывает его сразу, с пометкой и тем же
 // индикатором хода, что у своих вопросов; в другом чате — строкой внизу.
 // Функция, а не константа: mkTip объявлен ниже, при загрузке его еще нет.
+// modelTag signs an answer with the model that wrote it (#678).
+const modelTag = (id) => `<span class="msg-from"${mkTip("Модель ответа", id)}>${esc(id.split("/").pop())}</span>`;
 const phoneTag = () => `<span class="msg-from"${mkTip("С телефона", "вопрос задан на телефоне; ответ ушел и туда")}>с телефона</span>`;
 const phoneWait = (t) => (t.steps.length ? stepsHTML(t.steps) : `<span class="building"></span>думаю…`);
 if (window.runtime) window.runtime.EventsOn("phone:turn", async (t) => {
@@ -3506,6 +3508,35 @@ if (window.runtime) window.runtime.EventsOn("phone:turn", async (t) => {
 // Работник ящика ответил телефону в чате окна (#622): список чатов — свежий,
 // открытый чат с этим ходом — тоже. Пока человек переименовывает чат, список не
 // трогаем: перерисовка затерла бы набранное имя (ревью #635).
+// Обновление окна (#651): плашка в шапке, пока есть выпуск новее; ставится только по нажатию.
+function paintUpdate(st) {
+  const cell = $("#update-cell"), btn = $("#update-btn");
+  if (!cell || !st) return;
+  cell.hidden = !st.available && !st.alert;
+  // Подпись не сошлась или нет сборки под платформу: человек видит, что проверка не прошла, а не «обновлений нет».
+  const bad = st.alert && !st.available;
+  $("#update-label").textContent = st.busy ? "скачиваю…" : bad ? "проверка обновления не прошла" : "обновить до " + (st.version || "");
+  btn.dataset.tipB = bad ? st.error || "" : "Скачать и проверить подпись новой сборки";
+  btn.disabled = !!st.busy || bad;
+}
+if (window.runtime) window.runtime.EventsOn("update:state", paintUpdate);
+$("#update-btn")?.addEventListener("click", async () => {
+  const btn = $("#update-btn");
+  btn.disabled = true; // второе нажатие во время скачивания получило бы «нового выпуска нет»
+  $("#update-label").textContent = "скачиваю…";
+  try {
+    await native().UpdateInstall();
+    const st = await native().UpdateState();
+    paintUpdate(st);
+    if (st.restart) { toast("Окно обновлено", " · перезапускаюсь на новой сборке…", null, "info"); return; }
+    toast("Новая сборка скачана и проверена", " · лежит в «Загрузки»: " + (st.saved || "") + ". Закройте окно и поставьте ее поверх.", null, "info");
+  } catch (e) {
+    toast("Обновление не поставилось", " · " + (e?.message || e), null, "bad");
+    native().UpdateState().then(paintUpdate).catch(() => {});
+  }
+});
+native()?.UpdateState().then(paintUpdate).catch(() => {});
+
 if (window.runtime) window.runtime.EventsOn("chats:changed", async (id) => {
   if (!chatState.renaming) await renderChatList();
   if (id && id === chatState.id && !chatState.busy) {
@@ -3612,7 +3643,9 @@ async function askChat() {
   try {
     const sent = chatState.attached.map((a) => a.ref);
     const mode = chatState.portraitMode[chatState.id] || "";
-    const c = await native().Ask({ id: chatState.id, question: q, refs: sent, sources: chatState.only || [], portrait: mode });
+    const role = chatState.role;
+    resetHint(); // вопрос ушел: старая плашка не висит, пока модель думает; роль — только этому вопросу
+    const c = await native().Ask({ id: chatState.id, question: q, refs: sent, sources: chatState.only || [], portrait: mode, role });
     if (mode) chatState.portraitMode[c.id] = mode; // новый чат получил id
     if (!chatState.id) delete chatState.portraitMode[""]; // выбор до вопроса — только для этого чата
     const pn = c.portrait;
@@ -3632,6 +3665,7 @@ async function askChat() {
     if (!chatState.chat.messages.length) chatState.chat = null;
     chatState.declined = false; // «Не надо» не глушит предложение после сбоя ответа
     $("#chat-q").value = q; // вопрос не теряется
+    refreshHint(); // вопрос вернулся в поле — совет заново (роль сброшена: «ответить ей» решает человек)
     micLoop.on = false;
     stopVoice(); // до заметки: остановка возвращает обычную подпись под полем
     showChatNote("Нет ответа: " + errText(e));
@@ -3654,6 +3688,7 @@ async function newChat() {
   chatState.id = "";
   chatState.chat = null;
   chatState.over = null;
+  resetHint();
   loadPortrait().then(() => { if (!chatState.chat && !chatState.busy) renderChat(); });
   chatState.attached = [];
   chatState.only = null;
@@ -3863,6 +3898,7 @@ function renderAttached() {
   const mine = chatState.attached.map((a, i) => `<span class="chat-att" data-tip="${esc(a.title)}" data-tip-b="${esc(a.hint || "")}"><span class="t">${esc(a.title)}</span><span class="w">${esc(a.via)}</span><button type="button" data-unattach="${i}" aria-label="Убрать: ${esc(a.title)}">×</button></span>`);
   box.innerHTML = [...mine, ...auto].join("");
   box.hidden = !box.innerHTML;
+  refreshHint(); // файлы меняют совет (приложены файлы — основная модель)
 }
 function addAttached(a) {
   if (!chatState.attached.some((x) => x.ref === a.ref)) chatState.attached.push(a);
@@ -3987,16 +4023,30 @@ function renderModelPick() {
   const price = (m) => (m.typed ? "вписать" : m.in ? `$${m.in} / $${m.out}` : "цена неизвестна");
   const tip = (m) => (m.typed ? "модель с таким именем у адреса чата; окно его не проверяет — проверит первый ответ"
     : m.in ? `за миллион токенов: $${m.in} на входе, $${m.out} на выходе${m.own ? " · своя цена из «Статистики»" : " · цена шлюза"}` : "цены нет ни у шлюза, ни своей в «Статистике»");
+  // «телефону» (#657): модель, которую телефон может выбрать для своих ходов; модель окна телефон видит всегда.
+  const ph = (m) => {
+    if (m.typed) return "";
+    const on = (mdl.v.phone || []).includes(m.id);
+    return `<button class="md-ph" type="button" data-mdl-phone="${esc(m.id)}" aria-pressed="${on}"${mkTip(on ? "Телефону: разрешено" : "Телефону: разрешить", on ? "телефон может выбрать эту модель для своих ходов; нажмите, чтобы запретить" : "телефон сможет выбрать эту модель для своих ходов в чате; модель окна он видит всегда")}>телефону</button>`;
+  };
+  // «второстепенная» (#678): вторая модель чата; подсказка при вводе советует, какой из двух отвечать.
+  const sec = (m) => {
+    if (m.typed) return "";
+    const on = mdl.v.second === m.id;
+    return `<button class="md-ph" type="button" data-mdl-second="${esc(m.id)}" aria-pressed="${on}"${mkTip(on ? "Второстепенная модель" : "Сделать второстепенной", on ? "эта модель — вторая в чате: ей чат советует отвечать на короткие вопросы; нажмите, чтобы снять" : "вторая модель чата: быстрая или дешевая, для коротких вопросов; главная остается для сложных")}>вторая</button>`;
+  };
   $("#md-list").innerHTML = items.map(({ cap, m }, i) => (cap ? `<div class="md-cap">${cap}</div>` : "") +
-    `<button class="md-it" type="button" role="option" data-mdl="${esc(m.id)}" aria-selected="${i === mdl.sel}" data-tip="${esc(m.id)}" data-tip-b="${esc(tip(m))}">` +
-    `<span class="dot">${m.id === cur ? "●" : ""}</span><span class="id">${esc(m.id)}</span><span class="pr">${price(m)}</span></button>`).join("");
+    `<div class="md-row"><button class="md-it" type="button" role="option" data-mdl="${esc(m.id)}" aria-selected="${i === mdl.sel}" data-tip="${esc(m.id)}" data-tip-b="${esc(tip(m))}">` +
+    `<span class="dot">${m.id === cur ? "●" : ""}</span><span class="id">${esc(m.id)}</span><span class="pr">${price(m)}</span></button>${sec(m)}${ph(m)}</div>`).join("");
   const s = $("#md-list").querySelector('[aria-selected="true"]'); if (s) s.scrollIntoView({ block: "nearest" });
 }
 async function chooseModel(id) {
   closeModelPick();
   if (!id || id === mdl.v.current) return;
   try { await native().SetChatModel(id); } catch (e) { return showChatNote("Модель не сменилась: " + errText(e)); }
+  if (mdl.v && mdl.v.second === id) mdl.v.second = ""; // вторая, ставшая главной, — уже не вторая
   await loadChatSettings();
+  refreshHint();
   toast("Модель", " · " + id);
 }
 $("#chat-mdl-pop").addEventListener("input", (e) => { if (e.target.id === "md-q") { mdl.q = e.target.value; mdl.sel = 0; renderModelPick(); } });
@@ -4009,10 +4059,60 @@ $("#chat-mdl-pop").addEventListener("keydown", (e) => {
 });
 $("#chat-mdl-pop").addEventListener("click", (e) => {
   if (e.target.closest("#md-set")) { closeModelPick(); openSettings("chat"); return; }
+  const sc = e.target.closest("[data-mdl-second]");
+  if (sc) { // вторая модель чата (#678) — не выбор модели окна
+    hideTip();
+    const id = sc.dataset.mdlSecond, on = sc.getAttribute("aria-pressed") !== "true";
+    native().SetChatSecondModel(on ? id : "").then(async () => { mdl.v.second = on ? id : ""; renderModelPick(); await loadChatSettings(); refreshHint(); })
+      .catch((err) => showChatNote("Вторая модель не сохранена: " + errText(err)));
+    return;
+  }
+  const p = e.target.closest("[data-mdl-phone]");
+  if (p) { // разрешение телефону — не выбор модели окна
+    hideTip();
+    const id = p.dataset.mdlPhone, on = p.getAttribute("aria-pressed") !== "true";
+    native().SetChatPhoneModel(id, on).then(() => {
+      mdl.v.phone = on ? [...(mdl.v.phone || []), id] : (mdl.v.phone || []).filter((x) => x !== id);
+      renderModelPick();
+    }).catch((err) => showChatNote("Разрешение телефону не сохранено: " + errText(err)));
+    return;
+  }
   const b = e.target.closest("[data-mdl]"); if (b) { hideTip(); chooseModel(b.dataset.mdl); }
 });
 document.addEventListener("click", (e) => { if (!$("#chat-mdl-pop").hidden && !e.target.closest("#chat-mdl-pop, #chat-model-chip")) closeModelPick(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#chat-mdl-pop").hidden) { closeModelPick(); $("#chat-q").focus(); e.stopPropagation(); } }, true);
+// Подсказка модели при вводе (#678): правилами в Go, без вызова модели. Совет —
+// строка над полем; «второй» отвечать нужно разрешить нажатием, главная — по умолчанию.
+async function refreshHint() {
+  const q = $("#chat-q").value.trim();
+  if (!native() || !native().ChatHint || chatState.busy || !q) { chatState.hint = null; chatState.role = ""; return paintHint(); }
+  let h = null;
+  try { h = await native().ChatHint(q, chatState.attached.length); } catch { /* подсказка — не ошибка */ }
+  if ($("#chat-q").value.trim() !== q) return; // пока ждали, текст сменился
+  chatState.hint = h && h.role ? h : null;
+  if (!chatState.hint || chatState.hint.role !== "second") chatState.role = ""; // совет сменился: прежнее «ответить ей» не действует
+  paintHint();
+}
+// resetHint drops the hint and the chosen role: смена чата, отправка вопроса.
+function resetHint() {
+  clearTimeout(chatState.hintTimer);
+  chatState.hint = null; chatState.role = "";
+  paintHint();
+}
+function paintHint() {
+  const box = $("#chat-hint"), h = chatState.hint;
+  box.hidden = !h;
+  if (!h) return;
+  const second = h.role === "second", applied = chatState.role === "second";
+  box.innerHTML = `<span>${applied ? "Отвечу" : "Подойдет"} <b>${esc(h.model)}</b>${applied ? "" : " — " + esc(h.reason)}</span>` +
+    (second ? `<button class="lnk" type="button" data-hint-apply>${applied ? "вернуть основную" : "ответить ей"}</button>` : "");
+}
+$("#chat-hint").addEventListener("click", (e) => {
+  if (!e.target.closest("[data-hint-apply]")) return;
+  chatState.role = chatState.role === "second" ? "" : "second";
+  paintHint();
+});
+$("#chat-q").addEventListener("input", () => { clearTimeout(chatState.hintTimer); chatState.hintTimer = setTimeout(refreshHint, 300); });
 $("#chat-q").addEventListener("keydown", (e) => {
   if (e.key === "Escape" && (dict.on || micLoop.on)) { e.preventDefault(); micLoop.on = false; stopMic(false); setMic(dict.on); return; }
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); askChat(); }
@@ -4081,6 +4181,7 @@ async function selectChat(id) {
   try {
     chatState.chat = await native().Chat(id);
     chatState.id = id;
+    resetHint(); // совет и роль — про вопрос в том чате, где их показали
     chatState.offerAsk = chatState.offerCost = chatState.declined = false; // предложение сжать — про тот чат, где его показали
     // Источники чата — только те, что есть сейчас: удаленный или выключенный
     // оставил бы чат искать нигде (ревью #465).

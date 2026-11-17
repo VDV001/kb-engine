@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/keychain"
 	"github.com/daniil/kb-engine/internal/domain"
@@ -35,15 +36,26 @@ func runRelease(args []string, stdout, stderr io.Writer) int {
 		return releaseKey(stdout, stderr)
 	case "sign":
 		return releaseSign(args[1:], stdout, stderr)
+	case "renew":
+		return releaseRenew(args[1:], stdout, stderr)
 	}
 	fmt.Fprintln(stderr, releaseUsage)
 	return 2
 }
 
+// defaultValidDays — срок годности подписи манифеста; maxValidDays — потолок:
+// долгий срок возвращал бы «заморозку» (ревью #679).
+const (
+	defaultValidDays = 90
+	maxValidDays     = 365
+)
+
 const releaseUsage = `usage: kbengine release key
        kbengine release sign --version vX.Y.Z --out <dir> darwin-arm64=<file> windows-amd64=<file>
+       kbengine release renew --dir <dir> [--valid-days N]
 key создает ключ подписи в Связке (один раз) и печатает открытый ключ;
-sign пишет <dir>/dvk-manifest.json и .sig и печатает открытый ключ подписи`
+sign пишет <dir>/dvk-manifest.json и .sig и печатает открытый ключ подписи;
+renew продлевает срок манифеста в <dir> без пересборки (окно не верит просроченному)`
 
 type releaseKeyStore interface {
 	Get(account string) (string, error)
@@ -105,6 +117,7 @@ func releaseSign(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	version := fs.String("version", "", "release tag, vX.Y.Z")
 	out := fs.String("out", "", "directory for dvk-manifest.json and dvk-manifest.json.sig")
+	validDays := fs.Int("valid-days", defaultValidDays, "days the manifest is believed; потом — kbengine release renew")
 	if code, stop := parseFlags(fs, args); stop {
 		return code
 	}
@@ -116,7 +129,11 @@ func releaseSign(args []string, stdout, stderr io.Writer) int {
 	if assets == nil {
 		return code
 	}
-	m, err := domain.NewReleaseManifest(*version, assets...)
+	if *validDays < 1 || *validDays > maxValidDays {
+		fmt.Fprintf(stderr, "release sign: --valid-days от 1 до %d\n", maxValidDays)
+		return 2
+	}
+	m, err := domain.NewReleaseManifest(*version, time.Now().AddDate(0, 0, *validDays), assets...)
 	if err != nil {
 		fmt.Fprintln(stderr, "release sign:", err)
 		return 2
@@ -130,6 +147,51 @@ func releaseSign(args []string, stdout, stderr io.Writer) int {
 	sig := selfupdate.SignManifest(priv, manifest)
 	if err := writeRelease(*out, manifest, sig); err != nil {
 		fmt.Fprintln(stderr, "release sign:", err)
+		return 1
+	}
+	fmt.Fprintln(stdout, hex.EncodeToString(priv.Public().(ed25519.PublicKey)))
+	return 0
+}
+
+// releaseRenew signs the manifest in dir again with a later expiry: тот же
+// выпуск и файлы, без пересборки; без этого окно через срок перестает верить.
+func releaseRenew(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("release renew", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	dir := fs.String("dir", "", "directory with dvk-manifest.json")
+	validDays := fs.Int("valid-days", defaultValidDays, "days the manifest is believed")
+	if code, stop := parseFlags(fs, args); stop {
+		return code
+	}
+	if *dir == "" || *validDays < 1 || *validDays > maxValidDays {
+		fmt.Fprintln(stderr, releaseUsage)
+		return 2
+	}
+	raw, err := os.ReadFile(filepath.Join(*dir, "dvk-manifest.json"))
+	if err != nil {
+		fmt.Fprintln(stderr, "release renew:", err)
+		return 1
+	}
+	old, err := domain.ParseReleaseManifest(raw)
+	if err != nil {
+		fmt.Fprintln(stderr, "release renew:", err)
+		return 2
+	}
+	priv, err := releasePrivateKey()
+	if err != nil {
+		fmt.Fprintln(stderr, "release renew:", err)
+		return 1
+	}
+	// Манифест качался с публичной страницы: подписывать заново можно только тот,
+	// что несет подпись самого владельца (ревью безопасности #681).
+	oldSig, err := os.ReadFile(filepath.Join(*dir, "dvk-manifest.json.sig"))
+	if err != nil || !selfupdate.VerifyManifest(priv.Public().(ed25519.PublicKey), raw, oldSig) {
+		fmt.Fprintln(stderr, "release renew: прежний манифест не несет подпись вашего ключа — продлевать нечего")
+		return 1
+	}
+	manifest := old.Renewed(time.Now().AddDate(0, 0, *validDays)).JSON()
+	if err := writeRelease(*dir, manifest, selfupdate.SignManifest(priv, manifest)); err != nil {
+		fmt.Fprintln(stderr, "release renew:", err)
 		return 1
 	}
 	fmt.Fprintln(stdout, hex.EncodeToString(priv.Public().(ed25519.PublicKey)))

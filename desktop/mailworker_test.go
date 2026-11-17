@@ -431,6 +431,25 @@ func TestPhoneTurnKeepsTheChatSources(t *testing.T) {
 	}
 }
 
+// Ответ телефону несет выбор, сохраненный в окне (ревью #677, п.3): пустой —
+// тоже, это «как в окне».
+func TestPhoneAnswerCarriesStoredPick(t *testing.T) {
+	d, _, _, id := pickDesk(t)
+	if err := d.SetPhonePick(id, "llama-phone", []string{"src-b"}, false); err != nil {
+		t.Fatal(err)
+	}
+	a, err := chatAnswerer(d)(t.Context(), id, "еще?", nil, nil, nil)
+	if err != nil || a.Pick == nil || a.Pick.Model != "llama-phone" || strings.Join(a.Pick.Only, ",") != "src-b" {
+		t.Fatalf("answer pick %+v, %v", a.Pick, err)
+	}
+	if err := d.SetPhonePick(id, "", nil, true); err != nil {
+		t.Fatal(err)
+	}
+	if a, err = chatAnswerer(d)(t.Context(), id, "и?", nil, nil, nil); err != nil || a.Pick == nil || a.Pick.Model != "" || len(a.Pick.Only) != 0 {
+		t.Errorf("reset pick %+v, %v", a.Pick, err)
+	}
+}
+
 // Голос телефона настоящим кругом (#648): запись лежит в файлах ящика,
 // сообщение называет ее хешем; окно забирает, расшифровывает ключом чата,
 // распознает (Apple Speech — kb-listen --file) и удаляет.
