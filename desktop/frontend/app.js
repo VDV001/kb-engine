@@ -1397,6 +1397,7 @@ function phonesPanel(id) {
   }).join("");
   return `<div class="conn-phones">
     <p class="d">Чат с телефона: телефон пишет, задачу делает этот компьютер, переписка шифруется — ключ знают только окно и телефоны. Привязка — QR-кодом: камера телефона открывает страницу DVK, и она привязывается сама; окно увидит вход и скроет код.</p>
+    <p class="d">Новые чаты окна видны и на телефоне — со всей историей, продолжать можно оттуда. На телефоне — 50 последних чатов окна: более старый уходит с телефона, в окне остается. Чаты окна, начатые до этой версии, на телефон не уходят.</p>
     ${p.err ? `<p class="conn-check bad" role="status">✕ ${esc(p.err)}</p>` : ""}${p.done ? `<p class="conn-check ok" role="status">${esc(p.done)}</p>` : ""}${p.busy ? `<p class="conn-check" role="status">${esc(p.busy)}</p>` : ""}
     ${p.list ? (rows ? `<ul class="conn-phone-list">${rows}</ul>` : `<p class="d">Привязанных телефонов нет.</p>`) : ""}
     ${p.qr ? `<div class="conn-qr"><img src="${esc(p.qr)}" alt="QR-код привязки телефона"><p class="d">Наведите камеру телефона. В коде ключ чата: не показывайте его посторонним и скройте, когда телефон привязан.</p><button class="btn" type="button"${off} data-phone-qr-hide="${esc(id)}">Скрыть код</button></div>` : ""}

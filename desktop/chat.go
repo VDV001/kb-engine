@@ -175,7 +175,8 @@ type chatDesk struct {
 	// Удаление берет только его, а не mu на весь ход (ревью #665).
 	fmu sync.Mutex
 	// memoryNew tells the page about new facts waiting for approval (событие portrait:new).
-	memoryNew  func(portraitNews)
+	memoryNew func(portraitNews)
+	// turned — ход человека в окне сохранен: работник ящика отдаст его телефонам (#669).
 	turned     func(chatRecord)
 	portraitMu sync.Mutex
 
@@ -299,20 +300,25 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 	return d.ask(context.Background(), r, askOut{show: d.show, step: d.step})
 }
 
-// dropAskedDrafts: вопрос ушел — черновик и этого чата, и «нового» (из него чат
-// родился) не нужен, если спросил человек; вопрос с телефона черновики окна не трогает.
-func (d *chatDesk) dropAskedDrafts(out askOut, id string) {
+// personTurnDone: вопрос ушел — черновик и этого чата, и «нового» (из него чат
+// родился) не нужен, если спросил человек; вопрос с телефона черновики окна не
+// трогает. Ход человека уходит телефонам (#669); ход с телефона обратно — нет.
+func (d *chatDesk) personTurnDone(out askOut, rec chatRecord) {
 	if out.worker {
 		return
 	}
 	_ = d.DropDraft("")
-	_ = d.DropDraft(id)
+	_ = d.DropDraft(rec.ID)
+	if d.turned != nil {
+		d.turned(rec)
+	}
 }
 
 // startTurn names a new chat and tells out.began its id, до ответа модели.
 func startTurn(rec *chatRecord, question string, out askOut) {
 	if rec.ID == "" {
 		rec.ID, rec.Title = newChatID(), title(question)
+		rec.Phone = !out.worker // чат телефона и так связан с ящиком
 	}
 	if out.began != nil {
 		out.began(rec.ID)
@@ -414,7 +420,7 @@ func (d *chatDesk) ask(parent context.Context, r askReq, out askOut) (chatRecord
 	if err := d.saveLive(rec, id != ""); err != nil {
 		return chatRecord{}, err
 	}
-	d.dropAskedDrafts(out, rec.ID)
+	d.personTurnDone(out, rec)
 	rec.Notes = notes // только в ответ странице: в файл чата не пишутся
 	rec.Portrait = pnote
 	rec.CanCompress = canCompress(rec)
