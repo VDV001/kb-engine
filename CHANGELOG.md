@@ -9,6 +9,10 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 ## [Unreleased]
 
 ### Added
+- **Полоса «ищет в / спрашивает» в чате понятнее.** Подключения (Ozon,
+  MPStats) в включенном состоянии обведены цветом, как источники; выключенное
+  для чата видно без подсказки (имя зачеркнуто, значок пустой); кнопка «все»
+  стала «включить все» и получила подсказку.
 - **Подпись выпуска окна DVK (#651, шаг 1).** `kbengine release key` один
   раз создает ключ ed25519 в Связке («DVK release signing») и печатает
   открытый ключ; `kbengine release sign --version vX.Y.Z --out <папка>
