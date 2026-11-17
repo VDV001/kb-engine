@@ -98,3 +98,19 @@ func TestSetModelClearsTheSameSecond(t *testing.T) {
 		t.Errorf("model %q second %q", c.Model, c.SecondModel)
 	}
 }
+
+// Ответ телефону называет модель (#685), а состояние окна — вторую модель чата.
+func TestPhoneAnswerAndDeskTellTheModels(t *testing.T) {
+	d, _, _, id := pickDesk(t)
+	if err := d.SetSecondModel("llama-phone"); err != nil {
+		t.Fatal(err)
+	}
+	a, err := chatAnswerer(d)(t.Context(), id, "еще?", nil, nil, nil)
+	if err != nil || a.Model != "qwen3" {
+		t.Errorf("answer model %q, %v", a.Model, err)
+	}
+	st, err := phoneDesk{settings: d.settings}.State(t.Context())
+	if err != nil || st.Second != "llama-phone" {
+		t.Errorf("desk second %q, %v", st.Second, err)
+	}
+}
