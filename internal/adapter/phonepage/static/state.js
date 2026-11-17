@@ -59,6 +59,13 @@ export function take(st, m, o) {
     else st.chats[m.chat].title = p.text;
     return true;
   }
+  if (m.from === "desk" && p.kind === "asked") { // вопрос, заданный в окне (#669): заводит чат окна на телефоне
+    const c = (st.chats[m.chat] ||= { title: (p.title || "Чат").slice(0, 60), msgs: [], updated: 0 });
+    c.msgs.push({ who: "me", text: p.text || "", at, sent: true, window: true });
+    c.pending = true; // ответ окна идет следом
+    c.updated = Date.now();
+    return true;
+  }
   if (m.from === "desk" && p.kind === "heard") { // диктовка (#648): текст — в поле ввода чата
     const c = st.chats[m.chat];
     if (!c) return false;

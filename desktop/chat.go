@@ -70,6 +70,7 @@ type chatRecord struct {
 	Compressed *chatCompressed `json:"compressed,omitempty"`
 	// CanCompress — есть ли что сжимать; только в ответе, в файл не пишется.
 	CanCompress bool `json:"canCompress,omitempty"`
+	Phone       bool `json:"phone,omitempty"`
 }
 
 // chatCompressed is the summary that stands for the first Folded messages
@@ -175,6 +176,7 @@ type chatDesk struct {
 	fmu sync.Mutex
 	// memoryNew tells the page about new facts waiting for approval (событие portrait:new).
 	memoryNew  func(portraitNews)
+	turned     func(chatRecord)
 	portraitMu sync.Mutex
 
 	foundMu sync.Mutex

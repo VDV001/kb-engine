@@ -729,3 +729,5 @@ func (f *mailStateFile) Load() (mailrelay.State, error) {
 func (f *mailStateFile) Save(st mailrelay.State) error {
 	return f.write(mailStateDTO{Sender: f.senderHex, State: st})
 }
+
+func windowTurn(chatRecord) mailrelay.WindowTurn { return mailrelay.WindowTurn{} }
