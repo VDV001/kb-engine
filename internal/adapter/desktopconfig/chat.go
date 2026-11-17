@@ -77,6 +77,8 @@ type Chat struct {
 	// PhoneModels — модели, которые телефон может выбрать для своих ходов
 	// («Телефону: разрешить», #657); пусто — только модель окна.
 	PhoneModels []string `json:"phoneModels,omitempty"`
+	// SecondModel — вторая, второстепенная модель чата (#678); пусто — одна.
+	SecondModel string `json:"secondModel,omitempty"`
 }
 
 // WithDefaults fills the empty fields.

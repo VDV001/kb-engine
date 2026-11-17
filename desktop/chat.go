@@ -105,6 +105,8 @@ type askReq struct {
 	Sources  []string `json:"sources"`
 	// Portrait — как портрет идет в чат, когда не помещается: "", full, relevant.
 	Portrait string `json:"portrait"`
+	// Role — какой моделью ответить: "second" — второстепенной (#678), иначе главной.
+	Role string `json:"role"`
 	// docs — прочитанное приложенное телефоном (#650); со страницы не приходит.
 	docs []chat.Doc
 }
@@ -117,6 +119,8 @@ type chatMessage struct {
 	Uses []chat.Use `json:"uses,omitempty"`
 	// From — «phone»: вопрос задан с телефона (#646), окно так его и помечает.
 	From string `json:"from,omitempty"`
+	// Model — какой моделью сделан ответ (#678).
+	Model string `json:"model,omitempty"`
 }
 
 type chatDoc struct {
