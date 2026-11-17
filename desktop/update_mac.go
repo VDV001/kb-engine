@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -27,18 +28,8 @@ func extractZip(zipPath, dir string, limit int64) error {
 		return err
 	}
 	defer func() { _ = r.Close() }()
-	var total uint64
-	for _, f := range r.File {
-		if !filepath.IsLocal(f.Name) {
-			return fmt.Errorf("архив: путь вне папки: %q", f.Name)
-		}
-		if m := f.Mode(); !m.IsRegular() && !m.IsDir() {
-			return fmt.Errorf("архив: ссылки и устройства не берутся: %q", f.Name)
-		}
-		total += f.UncompressedSize64
-	}
-	if total > uint64(limit) {
-		return errors.New("архив: распакованное больше предела")
+	if err := checkZip(r.File, limit); err != nil {
+		return err
 	}
 	var made []string
 	fail := func(err error) error {
@@ -50,7 +41,7 @@ func extractZip(zipPath, dir string, limit int64) error {
 	var written int64
 	for _, f := range r.File {
 		dst := filepath.Join(dir, f.Name)
-		if top := strings.SplitN(filepath.ToSlash(f.Name), "/", 2)[0]; !contains(made, filepath.Join(dir, top)) {
+		if top := strings.SplitN(filepath.ToSlash(f.Name), "/", 2)[0]; !slices.Contains(made, filepath.Join(dir, top)) {
 			made = append(made, filepath.Join(dir, top))
 		}
 		if f.FileInfo().IsDir() {
@@ -75,13 +66,23 @@ func extractZip(zipPath, dir string, limit int64) error {
 	return nil
 }
 
-func contains(s []string, v string) bool {
-	for _, x := range s {
-		if x == v {
-			return true
+// checkZip refuses the whole archive before anything is written: путь вне
+// папки, ссылка или общий размер выше предела.
+func checkZip(files []*zip.File, limit int64) error {
+	var total uint64
+	for _, f := range files {
+		if !filepath.IsLocal(f.Name) {
+			return fmt.Errorf("архив: путь вне папки: %q", f.Name)
 		}
+		if m := f.Mode(); !m.IsRegular() && !m.IsDir() {
+			return fmt.Errorf("архив: ссылки и устройства не берутся: %q", f.Name)
+		}
+		total += f.UncompressedSize64
 	}
-	return false
+	if total > uint64(limit) {
+		return errors.New("архив: распакованное больше предела")
+	}
+	return nil
 }
 
 // copyEntry writes one archive file; больше max байт — отказ (заголовок мог соврать).

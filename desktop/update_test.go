@@ -298,3 +298,17 @@ func TestAppUpdateMethodsWithoutDesk(t *testing.T) {
 		t.Error("install without a desk")
 	}
 }
+
+// Просроченный манифест показывается человеку как не прошедшая проверка
+// (владельцу пора продлить подпись), а не молчит (ревью #679, п.6).
+func TestUpdateDeskAlertsOnExpiredManifest(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	sum := sha256.Sum256([]byte("x"))
+	m := fmt.Appendf(nil, `{"version":"v0.41.0","expires":"2020-01-01T00:00:00Z","assets":[{"platform":"darwin-arm64","name":"DVK-mac-arm64.zip","sha256":%q,"size":1}]}`, hex.EncodeToString(sum[:]))
+	src := fakeRelease{"download/dvk-latest/dvk-manifest.json": m, "download/dvk-latest/dvk-manifest.json.sig": selfupdate.SignManifest(priv, m)}
+	d := newUpdateDesk("v0.40.0", src, pub, "darwin-arm64", nil)
+	d.check(context.Background())
+	if st := d.State(); !st.Alert || st.Available {
+		t.Errorf("%+v", st)
+	}
+}

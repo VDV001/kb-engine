@@ -3526,6 +3526,7 @@ $("#update-btn")?.addEventListener("click", async () => {
     await native().UpdateInstall();
     const st = await native().UpdateState();
     paintUpdate(st);
+    if (st.restart) { toast("Окно обновлено", " · перезапускаюсь на новой сборке…", null, "info"); return; }
     toast("Новая сборка скачана и проверена", " · лежит в «Загрузки»: " + (st.saved || "") + ". Закройте окно и поставьте ее поверх.", null, "info");
   } catch (e) {
     toast("Обновление не поставилось", " · " + (e?.message || e), null, "bad");
