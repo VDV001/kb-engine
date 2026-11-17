@@ -32,7 +32,8 @@ type modelsView struct {
 	Recent    []modelChoice `json:"recent"`
 	All       []modelChoice `json:"all"`
 	PriceNote string        `json:"priceNote"`
-	Phone     []string      `json:"phone"` // «Телефону: разрешить» (#657)
+	Phone     []string      `json:"phone"`  // «Телефону: разрешить» (#657)
+	Second    string        `json:"second"` // вторая, второстепенная модель чата (#678)
 }
 
 // isGateway reports whether the chat address is the Vercel AI Gateway, чьи
@@ -127,7 +128,7 @@ func (d *chatDesk) Models() (modelsView, error) {
 		cancel()
 	}
 	v := modelChoices(c.Model, c.URL, calls, gw, own)
-	v.PriceNote, v.Phone = note, append([]string{}, c.PhoneModels...)
+	v.PriceNote, v.Phone, v.Second = note, append([]string{}, c.PhoneModels...), c.SecondModel
 	return v, nil
 }
 

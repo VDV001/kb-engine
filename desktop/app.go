@@ -173,6 +173,12 @@ func (a *App) SetChatPhoneModel(model string, allow bool) error {
 	return a.chat.SetPhoneModel(model, allow)
 }
 
+// SetChatSecondModel sets the secondary chat model; "" — одна модель (#678).
+func (a *App) SetChatSecondModel(model string) error { return a.chat.SetSecondModel(model) }
+
+// ChatHint advises a model for the question being typed (#678).
+func (a *App) ChatHint(question string, files int) hintView { return a.chat.Hint(question, files) }
+
 // BrowserState returns the Browser tab's controls: установленные браузеры, выбор и работает ли сервер.
 func (a *App) BrowserState() browserView { return a.browser.View() }
 

@@ -381,7 +381,7 @@ func (d *chatDesk) ask(parent context.Context, r askReq, out askOut) (chatRecord
 	}
 	r.Sources = turnSources(r, rec, out)
 	windowSources := slices.Clone(r.Sources) // выбор окна: ход телефона его не переписывает
-	c, sources, err := d.turnConfig(out, rec, r.Sources)
+	c, sources, err := d.turnConfig(out, rec, r.Sources, r.Role)
 	if err != nil {
 		return chatRecord{}, err
 	}
@@ -431,7 +431,7 @@ func (d *chatDesk) ask(parent context.Context, r askReq, out askOut) (chatRecord
 	}
 	rec.Messages = append(rec.Messages,
 		chatMessage{Role: string(chat.RoleUser), Text: strings.TrimSpace(question), From: phoneFrom(out)},
-		chatMessage{Role: string(chat.RoleAssistant), Text: turn.Answer, Docs: used, Uses: append(web, turn.Uses...)})
+		chatMessage{Role: string(chat.RoleAssistant), Text: turn.Answer, Model: c.Model, Docs: used, Uses: append(web, turn.Uses...)})
 	rec.Updated, rec.Sources = d.now(), windowSources
 	// Ход телефона на другой модели не пишет ни модель чата, ни счет токенов: окно
 	// заполнения считается по модели окна. 0 — провайдер не прислал счет: старое число не показываем.

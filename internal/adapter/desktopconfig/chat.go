@@ -129,6 +129,9 @@ func (c Chat) Check() error {
 		strings.IndexFunc(c.Voice, unicode.IsControl) >= 0 {
 		return fmt.Errorf("%w: голос %q", ErrChatSettings, c.Voice)
 	}
+	if utf8.RuneCountInString(c.SecondModel) > 200 || strings.IndexFunc(c.SecondModel, unicode.IsControl) >= 0 {
+		return fmt.Errorf("%w: вторая модель %q", ErrChatSettings, c.SecondModel)
+	}
 	if err := c.checkMemory(); err != nil {
 		return err
 	}

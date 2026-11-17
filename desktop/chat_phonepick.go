@@ -35,10 +35,10 @@ func (d *chatDesk) SetPhonePick(id, model string, only []string, all bool) error
 
 // turnConfig is the chat settings and sources of a turn: ход окна — по выбору
 // окна, ход телефона — по своему выбору, проверенному здесь же (phoneTurn).
-func (d *chatDesk) turnConfig(out askOut, rec chatRecord, sources []string) (desktopconfig.Chat, []string, error) {
+func (d *chatDesk) turnConfig(out askOut, rec chatRecord, sources []string, role string) (desktopconfig.Chat, []string, error) {
 	c := d.config()
 	if !out.worker {
-		return c, sources, nil
+		return roleModel(c, role), sources, nil
 	}
 	return d.phoneTurn(c, rec)
 }
