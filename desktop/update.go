@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"time"
@@ -36,6 +37,9 @@ type updateState struct {
 	Busy      bool   `json:"busy"`      // качается и ставится
 	Saved     string `json:"saved"`     // куда положена проверенная сборка
 	Restart   bool   `json:"restart"`   // установка прошла, окно перезапускается
+	Phase     string `json:"phase"`     // шаг установки: download, install, restart, error
+	Done      int64  `json:"done"`      // скачано байт
+	Total     int64  `json:"total"`     // размер сборки
 	Alert     bool   `json:"alert"`     // подпись не сошлась или нет сборки под платформу — человеку это видно
 	Error     string `json:"error"`
 }
@@ -47,6 +51,8 @@ type updateDesk struct {
 	apply func(ctx context.Context, path, version string) error
 	tmp   string // папка временных файлов сборки ("" — системная)
 
+	emit  func(updateState) // шаги и ход скачивания — странице (nil — тихо)
+	dir   string            // папка настроек: метка «обновилось»
 	mu    sync.Mutex
 	offer selfupdate.Offer
 	st    updateState
@@ -217,3 +223,12 @@ func (a *App) UpdateInstall() error {
 	}
 	return a.update.Install(a.ctx)
 }
+
+// заглушки до GREEN
+type updateDone struct{ From, To string }
+
+func restartCommand(service string, uid int, bundle string, pid int) *exec.Cmd {
+	return exec.Command("true")
+}
+func writeUpdateDone(dir, from, to string) error      { return nil }
+func consumeUpdateDone(dir string) (updateDone, bool) { return updateDone{}, false }
