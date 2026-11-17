@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -280,5 +281,26 @@ func TestMCP_comments(t *testing.T) {
 	})
 	if _, err := (mpstats.MCP{URL: bad.URL, Token: "t-1", HTTP: bad.Client()}).Comments(context.Background(), 1); err == nil {
 		t.Error("a date not YYYY-MM-DD accepted")
+	}
+}
+
+// Сколько вызовов ушло в MPStats, считая повтор после сбоя: окно пишет это под
+// проверкой (ревью #674).
+func TestMCP_countsTries(t *testing.T) {
+	calls := 0
+	srv := fakeMCP(t, map[string]func(map[string]any) (string, bool){
+		"ozon_sku": func(map[string]any) (string, bool) {
+			if calls++; calls == 1 {
+				return "HTTP504", false
+			}
+			return `{"niche":{"name":"Одежда/Футболки"}}`, false
+		},
+	})
+	var tries atomic.Int64
+	if _, err := (mpstats.MCP{URL: srv.URL, Token: "t-1", HTTP: srv.Client(), Tries: &tries}).Card(context.Background(), 5); err != nil {
+		t.Fatal(err)
+	}
+	if tries.Load() != 2 {
+		t.Errorf("tries %d, want 2 (сбой и повтор)", tries.Load())
 	}
 }

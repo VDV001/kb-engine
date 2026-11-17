@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/mpstats"
@@ -67,19 +68,19 @@ func (a *App) MarketsPlaces(sku string, fresh bool) (placesView, error) {
 }
 
 // ownQueries reads the card's own queries through the shared cache (ownParts,
-// общий с «Названием» и «Хештегами»); calls — запросов тарифа: 0 или 1.
-func (f *folderSettings) ownQueries(ctx context.Context, m mpstats.MCP, ck string, id int64, fresh bool, now time.Time) (ownPart, int, error) {
+// общий с «Названием» и «Хештегами»); запросы считает m.Tries.
+func (f *folderSettings) ownQueries(ctx context.Context, m mpstats.MCP, ck string, id int64, fresh bool, now time.Time) (ownPart, error) {
 	if !fresh {
 		if op, ok := f.ownParts.get(ck, now); ok {
-			return op, 0, nil
+			return op, nil
 		}
 	}
 	op := readOwn(ctx, m, id, now)
 	if op.err != nil {
-		return ownPart{}, 1, errors.New("запросы товара не прочитаны — " + mpstatsMessage(op.err))
+		return ownPart{}, errors.New("запросы товара не прочитаны — " + mpstatsMessage(op.err))
 	}
 	f.ownParts.put(ck, op, now)
-	return op, 1, nil
+	return op, nil
 }
 
 // placesCheck reads the card's own queries: из памяти «Названия» и
@@ -94,14 +95,14 @@ func (f *folderSettings) placesCheck(ctx context.Context, hc *http.Client, sku s
 	if err != nil {
 		return placesView{}, err
 	}
-	m := mpstats.MCP{URL: f.mcpBase(), Token: cl.Token, HTTP: hc}
+	var tries atomic.Int64
+	m := mpstats.MCP{URL: f.mcpBase(), Token: cl.Token, HTTP: hc, Tries: &tries}
 	ck := connID + "|" + strconv.FormatInt(id, 10)
 	v := placesView{SKU: strconv.FormatInt(id, 10), Rows: []placeRow{}, Source: "MPStats, отчет ozon_sku keywords"}
-	op, calls, err := f.ownQueries(ctx, m, ck, id, fresh, now)
+	op, err := f.ownQueries(ctx, m, ck, id, fresh, now)
 	if err != nil {
 		return placesView{}, err
 	}
-	v.Calls += calls
 	v.From, v.To = op.from.Format(time.DateOnly), op.to.Format(time.DateOnly)
 	v.Total = len(op.own)
 	for _, p := range markets.SearchPlaces(op.own, op.from, placesShown) {
@@ -112,10 +113,11 @@ func (f *folderSettings) placesCheck(ctx context.Context, hc *http.Client, sku s
 		v.Rows = append(v.Rows, r)
 	}
 	if v.Total > 0 {
+		v.Calls = int(tries.Load())
 		return v, nil
 	}
 	st, err := m.SearchStats(ctx, id, op.from, op.to)
-	v.Calls++
+	v.Calls = int(tries.Load())
 	if err != nil { // запросов нет и так; почему нет сравнения — словами (ревью #673)
 		v.Note = "сравнение с прошлыми 30 днями не прочитано — " + mpstatsMessage(err)
 		return v, nil

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/usecase/markets"
@@ -34,6 +35,9 @@ type MCP struct {
 	URL   string
 	Token string
 	HTTP  *http.Client // nil — свой, с пределом в полторы минуты
+	// Tries — считает каждый вызов инструмента, и повтор после сбоя (nil — не
+	// считать): окно пишет под проверкой, сколько ушло в MPStats (ревью #674).
+	Tries *atomic.Int64
 }
 
 // Card — карточка товара Ozon в MPStats: путь ниши, бренд, продавец,
@@ -217,6 +221,9 @@ func (m MCP) callOnce(ctx context.Context, tool string, args map[string]any, out
 	s, err := m.open(ctx)
 	if err != nil {
 		return err
+	}
+	if m.Tries != nil {
+		m.Tries.Add(1)
 	}
 	defer s.close()
 	body, _, err := s.post(map[string]any{"id": 2, "method": "tools/call", "params": map[string]any{"name": tool, "arguments": args}})

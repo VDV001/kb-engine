@@ -7233,7 +7233,7 @@ function shReviewsCard(p) {
   if (v && v.total) {
     const stars = v.ratings.map((n, i) => `${i + 1}★ ${fmt(n)}`).reverse().join(" · ");
     body = `<div class="note">${fmt(v.total)} ${plural(v.total, "отзыв", "отзыва", "отзывов")} за ${esc(shDate(v.from))} – ${esc(shDate(v.to))}, с текстом ${fmt(v.withText)}; средняя оценка ${String(v.avg).replace(".", ",")}. ${stars}</div>` +
-      `<div class="note">${esc(v.source)} · ${v.calls ? "1 запрос тарифа" : "из памяти, без запросов тарифа"}</div>`;
+      `<div class="note">${esc(v.source)} · ${v.calls ? `${fmt(v.calls)} ${plural(v.calls, "запрос", "запроса", "запросов")} тарифа` : "из памяти, без запросов тарифа"}</div>`;
     if (v.withText) body += `<button class="btn" type="button" data-sh-findings="${esc(p.sku)}"${t.fBusy ? " disabled" : ""}${mkTip("Хвалят и жалуются", `пишет модель окна из «Чат и модель»: тексты ${fmt(Math.min(v.withText, 150))} последних отзывов уйдут ее провайдеру; нужно «Чату: разрешить» у MPStats; расход — в «Статистике»`)}>${t.fBusy ? "Модель читает…" : t.f ? "Выводы еще раз" : "Хвалят и жалуются — моделью окна"}</button>`;
     if (t.fErr) body += `<div class="note">${esc(t.fErr)}</div>`;
     if (t.f) {
@@ -7241,7 +7241,7 @@ function shReviewsCard(p) {
       body += (t.f.praise.length ? `<div class="sh-title-h">Хвалят</div><ul>${t.f.praise.map(li).join("")}</ul>` : "") +
         (t.f.complaints.length ? `<div class="sh-title-h">Жалуются</div><ul>${t.f.complaints.map(li).join("")}</ul>` : "") +
         (!t.f.praise.length && !t.f.complaints.length ? `<div class="note">Модель не нашла в текстах ни похвал, ни жалоб.</div>` : "") +
-        `<div class="note">По ${fmt(t.f.used)} ${plural(t.f.used, "отзыву", "отзывам", "отзывам")} с текстом из ${fmt(t.f.total)}; выводы написала модель ${esc(t.f.model)}, число — сколько отзывов это сказали.${t.f.calls ? " Память отзывов истекла — прочитаны заново: 1 запрос тарифа MPStats." : ""}</div>`;
+        `<div class="note">По ${fmt(t.f.used)} ${plural(t.f.used, "отзыву", "отзывам", "отзывам")} с текстом из ${fmt(t.f.total)}; выводы написала модель ${esc(t.f.model)}, число — сколько отзывов это сказали.${t.f.calls ? ` Память отзывов истекла — прочитаны заново: ${fmt(t.f.calls)} ${plural(t.f.calls, "запрос", "запроса", "запросов")} тарифа MPStats.` : ""}</div>`;
     }
   }
   if (t.err) body = `<div class="note">${esc(t.err)}</div>` + body;
