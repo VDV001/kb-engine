@@ -33,6 +33,7 @@ type modelsView struct {
 	Recent    []modelChoice `json:"recent"`
 	All       []modelChoice `json:"all"`
 	PriceNote string        `json:"priceNote"`
+	Phone     []string      `json:"phone"`
 }
 
 // isGateway reports whether the chat address is the Vercel AI Gateway, чьи
@@ -143,3 +144,5 @@ func (d *chatDesk) SetModel(model string) error {
 	c.Model = model
 	return d.SetSettings(c, "")
 }
+
+func (d *chatDesk) SetPhoneModel(string, bool) error { return nil }

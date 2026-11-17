@@ -118,3 +118,26 @@ func TestPhonePickWiring(t *testing.T) {
 		t.Errorf("models %v %v", st.Models, err)
 	}
 }
+
+// «Телефону: разрешить» у модели (#657): список моделей окна знает, что
+// разрешено, и переключатель меняет только это.
+func TestSetPhoneModel(t *testing.T) {
+	d, _, _, _ := pickDesk(t)
+	if err := d.SetPhoneModel("gpt-5", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetPhoneModel("llama-phone", false); err != nil {
+		t.Fatal(err)
+	}
+	c := d.config()
+	if len(c.PhoneModels) != 1 || c.PhoneModels[0] != "gpt-5" || c.Model != "qwen3" {
+		t.Fatalf("%+v", c)
+	}
+	v, err := d.Models()
+	if err != nil || len(v.Phone) != 1 || v.Phone[0] != "gpt-5" {
+		t.Errorf("models view phone %v %v", v.Phone, err)
+	}
+	if err := d.SetPhoneModel("  ", true); err == nil {
+		t.Error("empty model accepted")
+	}
+}
