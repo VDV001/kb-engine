@@ -393,3 +393,5 @@ func clip(s string, n int) string {
 	}
 	return string(r[:n]) + "…"
 }
+
+func (m MCP) Comments(context.Context, int64) ([]markets.Review, error) { return nil, nil }

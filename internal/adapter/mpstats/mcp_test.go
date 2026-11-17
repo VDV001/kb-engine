@@ -259,3 +259,26 @@ func TestMCP_searchStats(t *testing.T) {
 		t.Fatalf("%+v, %v", st, err)
 	}
 }
+
+// comments (замер 17.11): [{date, valuation, likes, text}], текст бывает пустым.
+func TestMCP_comments(t *testing.T) {
+	srv := fakeMCP(t, map[string]func(map[string]any) (string, bool){
+		"ozon_sku": func(a map[string]any) (string, bool) {
+			if a["report"] != "comments" {
+				return "wrong arguments", true
+			}
+			return `[{"date":"2026-09-10","valuation":2,"likes":3,"text":"Маломерит"},{"date":"2026-03-01","valuation":5,"likes":0,"text":""}]`, false
+		},
+	})
+	m := mpstats.MCP{URL: srv.URL, Token: "t-1", HTTP: srv.Client()}
+	rs, err := m.Comments(context.Background(), 1234567)
+	if err != nil || len(rs) != 2 || rs[0].Rating != 2 || rs[0].Text != "Маломерит" || rs[0].Day.Format(time.DateOnly) != "2026-09-10" || rs[1].Text != "" {
+		t.Fatalf("%+v, %v", rs, err)
+	}
+	bad := fakeMCP(t, map[string]func(map[string]any) (string, bool){
+		"ozon_sku": func(map[string]any) (string, bool) { return `[{"date":"10.09.2026","valuation":2}]`, false },
+	})
+	if _, err := (mpstats.MCP{URL: bad.URL, Token: "t-1", HTTP: bad.Client()}).Comments(context.Background(), 1); err == nil {
+		t.Error("a date not YYYY-MM-DD accepted")
+	}
+}
