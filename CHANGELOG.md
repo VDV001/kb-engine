@@ -9,6 +9,10 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 ## [Unreleased]
 
 ### Added
+- **Проверка обновления окна DVK (#651, шаг 2, начало).** Окно знает
+  открытый ключ подписи владельца и умеет проверить выпуск и скачать сборку
+  потоком с проверкой подписи и sha256; ставит только по нажатию «Обновить».
+  Подключение к окну, установка на Mac и Windows и команда выпуска — дальше.
 - **Подпись выпуска окна DVK (#651, шаг 1).** `kbengine release key` один
   раз создает ключ ed25519 в Связке («DVK release signing») и печатает
   открытый ключ; `kbengine release sign --version vX.Y.Z --out <папка>
