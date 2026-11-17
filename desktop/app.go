@@ -155,7 +155,10 @@ func (a *App) Problems(fresh bool) problemsView {
 func (a *App) ChatSettings() chatSettingsView { return a.chat.Settings() }
 
 // SetChatSettings saves the chat model; key — новый ключ, пусто — прежний.
+// Разрешения телефону страница не показывает и не правит: они остаются прежними
+// (меняются переключателем «телефону» у модели, #657).
 func (a *App) SetChatSettings(c desktopconfig.Chat, key string) error {
+	c.PhoneModels = a.chat.config().PhoneModels
 	return a.chat.SetSettings(c, key)
 }
 
