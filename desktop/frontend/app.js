@@ -3530,10 +3530,14 @@ function paintUpdate(st) {
   paintVersion(st);
   if (upd.open) paintUpdateDlg();
 }
-// paintVersion shows the window's version in the settings, with a bright button when a newer one is out.
+// paintVersion shows the window's version in the settings; the bright button is only there when a newer one is out.
 function paintVersion(st) {
-  $("#ver-current").textContent = st.dev ? "сборка без версии" : st.current || "—";
-  $("#ver-build").textContent = st.build && st.build !== st.current ? "сборка " + st.build : "";
+  $("#ver-current").textContent = st.dev ? "без версии" : st.current || "—";
+  // Сборка между тегами (v0.41.1-3-gc55ea9e3) — коротко: «после тега, c55ea9e3»; на точном теге строки нет.
+  const m = /-(\d+)-g([0-9a-f]+)$/.exec(st.build || ""), build = $("#ver-build");
+  build.hidden = !m && !st.dev;
+  build.textContent = st.dev ? "сборка разработчика" : m ? "сборка " + m[2] : "";
+  build.title = st.build || "";
   const b = $("#settings-update");
   b.hidden = !st.available;
   $("#settings-update-v").textContent = st.version || "";
@@ -3590,15 +3594,6 @@ $("#upd-news")?.addEventListener("click", (e) => {
 $("#upd-go")?.addEventListener("click", async () => {
   try { await native().UpdateInstall(); } catch { /* шаг error приходит событием; ниже — состояние */ }
   native().UpdateState().then(paintUpdate).catch(() => {});
-});
-$("#ver-check")?.addEventListener("click", async () => {
-  const note = $("#ver-note");
-  note.textContent = "Проверяю…";
-  try {
-    const st = await native().UpdateCheck();
-    paintUpdate(st);
-    note.textContent = st.dev ? "Сборка без версии: обновления не ищутся." : st.available ? "Доступна " + st.version + ": нажмите «Обновить»." : st.error ? "Проверка не удалась: " + st.error : "У вас последняя версия.";
-  } catch (e) { note.textContent = "Проверка не удалась: " + errText(e); }
 });
 // Esc закрывает окно обновления раньше, чем успеет спрятаться все окно DVK.
 document.addEventListener("keydown", (e) => {
