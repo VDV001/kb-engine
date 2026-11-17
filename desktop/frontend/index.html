@@ -411,13 +411,14 @@
       <div class="settings-grp">Состояние</div>
       <button data-go="problems">Проблемы <span class="settings-dot" id="settings-dot" hidden></span></button>
       <button data-go="storage">Хранилище</button>
-      <!-- Версия окна и обновление (#651): яркая кнопка над версией, когда выпуск новее вышел. -->
+      <!-- Версия окна (#651); яркая кнопка появляется, только когда вышла новее. -->
       <div class="settings-ver" id="settings-ver">
-        <button class="upd-run" id="settings-update" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg><span>Обновить до <b id="settings-update-v"></b></span></button>
-        <div class="ver-line">DVK <b id="ver-current">—</b></div>
-        <div class="ver-build" id="ver-build"></div>
-        <button class="lnk" id="ver-check" type="button">Проверить обновление</button>
-        <div class="ver-note" id="ver-note" role="status"></div>
+        <button class="upd-run" id="settings-update" type="button" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg>
+          <span class="upd-run-t"><b>Обновить</b><small>до <span id="settings-update-v"></span></small></span>
+        </button>
+        <div class="sv-row"><span>Версия</span><b id="ver-current">—</b></div>
+        <div class="sv-build" id="ver-build" hidden></div>
       </div>
     </nav>
     <div class="settings-main">
