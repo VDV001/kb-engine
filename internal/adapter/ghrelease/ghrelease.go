@@ -42,17 +42,10 @@ func (c Client) Fetch(ctx context.Context, path string, limit int64) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
-	hc := http.Client{}
-	if c.HTTP != nil {
-		hc = *c.HTTP
+	if req.URL.Scheme != "https" {
+		return nil, fmt.Errorf("release %s: only https", req.URL.Redacted())
 	}
-	// GitHub переадресует файл на свое хранилище; только https и недолго.
-	hc.CheckRedirect = func(r *http.Request, via []*http.Request) error {
-		if r.URL.Scheme != "https" || len(via) >= 5 {
-			return fmt.Errorf("release redirect to %s refused", r.URL.Redacted())
-		}
-		return nil
-	}
+	hc := c.client()
 	resp, err := hc.Do(req)
 	if err != nil {
 		return nil, err
@@ -69,4 +62,25 @@ func (c Client) Fetch(ctx context.Context, path string, limit int64) ([]byte, er
 		return nil, fmt.Errorf("%w: %s over %d bytes", ErrTooLarge, path, limit)
 	}
 	return b, nil
+}
+
+// client is the caller's client with the release redirect policy on top.
+func (c Client) client() http.Client {
+	hc := http.Client{}
+	if c.HTTP != nil {
+		hc = *c.HTTP
+	}
+	// GitHub переадресует файл на свое хранилище; только https и недолго.
+	// Политика вызывающего остается в силе поверх этой (ревью #672).
+	own := hc.CheckRedirect
+	hc.CheckRedirect = func(r *http.Request, via []*http.Request) error {
+		if r.URL.Scheme != "https" || len(via) >= 5 {
+			return fmt.Errorf("release redirect to %s refused", r.URL.Redacted())
+		}
+		if own != nil {
+			return own(r, via)
+		}
+		return nil
+	}
+	return hc
 }

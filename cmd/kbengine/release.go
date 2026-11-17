@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/daniil/kb-engine/internal/adapter/keychain"
@@ -53,8 +54,27 @@ type releaseKeyStore interface {
 // seed ed25519 hex-ом.
 const releaseKeyAccount = "ed25519"
 
+var (
+	errNoReleaseKey  = errors.New("в Связке нет ключа подписи — сначала kbengine release key")
+	errBadReleaseKey = errors.New("ключ подписи в Связке поврежден")
+	// Связка — macOS, Диспетчер учетных данных — Windows; на Linux security нет.
+	errReleaseOS = errors.New("подпись выпуска — только на macOS или Windows, где есть хранилище ключа")
+)
+
 // releaseKeys is the owner's Связка; тесты подменяют ее, настоящую не трогают.
-var releaseKeys = func() releaseKeyStore { return keychain.Store{Service: "DVK release signing"} }
+var releaseKeys = func() releaseKeyStore {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
+		return noKeyStore{}
+	}
+	return keychain.Store{Service: "DVK release signing"}
+}
+
+// noKeyStore is where there is no keychain: каждый вызов — понятный отказ, а не
+// «security: executable file not found» (ревью #672).
+type noKeyStore struct{}
+
+func (noKeyStore) Get(string) (string, error) { return "", errReleaseOS }
+func (noKeyStore) Set(string, string) error   { return errReleaseOS }
 
 func releaseKey(stdout, stderr io.Writer) int {
 	store := releaseKeys()
@@ -140,35 +160,38 @@ func releaseAssets(pairs []string, stderr io.Writer) ([]domain.ReleaseAsset, int
 	return assets, 0
 }
 
+// writeRelease writes the manifest and its signature as a pair: обе во
+// временные файлы, затем на место. Упавшая подпись не оставит новый манифест
+// рядом со старой подписью (ревью #672).
 func writeRelease(dir string, manifest, sig []byte) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	name := filepath.Join(dir, "dvk-manifest.json")
-	if err := os.WriteFile(name, manifest, 0o644); err != nil {
+	if err := os.WriteFile(name+".new", manifest, 0o644); err != nil {
 		return err
 	}
-	return os.WriteFile(name+".sig", sig, 0o644)
+	if err := os.WriteFile(name+".sig.new", sig, 0o644); err != nil {
+		_ = os.Remove(name + ".new")
+		return err
+	}
+	if err := os.Rename(name+".sig.new", name+".sig"); err != nil {
+		return err
+	}
+	return os.Rename(name+".new", name)
 }
 
 func releasePrivateKey() (ed25519.PrivateKey, error) {
 	v, err := releaseKeys().Get(releaseKeyAccount)
 	if errors.Is(err, keychain.ErrNotFound) {
-		return nil, errors.New("в Связке нет ключа подписи — сначала kbengine release key")
+		return nil, errNoReleaseKey
 	}
 	if err != nil {
 		return nil, err
 	}
 	seed, err := hex.DecodeString(strings.TrimSpace(v))
 	if err != nil || len(seed) != ed25519.SeedSize {
-		return nil, errors.New("ключ подписи в Связке поврежден")
+		return nil, errBadReleaseKey
 	}
-	priv := ed25519.NewKeyFromSeed(seed)
-	clear(seed)
-	return priv, nil
+	return ed25519.NewKeyFromSeed(seed), nil
 }
-
-var (
-	errNoReleaseKey  = errors.New("stub")
-	errBadReleaseKey = errors.New("stub2")
-)

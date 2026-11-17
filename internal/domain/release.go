@@ -24,22 +24,23 @@ var (
 
 // MaxReleaseAsset — потолок файла выпуска: kb.app и установщик весят десятки
 // мегабайт; файл больше — не наш, и окно не станет держать его в памяти.
-const MaxReleaseAsset = 512 << 20
+const MaxReleaseAsset = 256 << 20
 
 // ReleaseVersion is the window's version, vX.Y.Z (#651). Сборка между тегами
-// (git describe: v0.40.0-11-g154839a6) считается версией последнего тега:
+// (git describe: v0.40.0-11-g154839a6, с --dirty еще и «-dirty») считается
+// версией последнего тега:
 // выпуск с тем же номером ей не предлагается, следующий — предлагается.
 type ReleaseVersion struct{ major, minor, patch int }
 
 var (
 	releaseTag      = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
-	releaseDescribe = regexp.MustCompile(`^(v[0-9.]+)-[0-9]+-g[0-9a-f]+$`)
+	releaseDescribe = regexp.MustCompile(`^(v[0-9.]+)(?:-[0-9]+-g[0-9a-f]+)?-dirty$|^(v[0-9.]+)-[0-9]+-g[0-9a-f]+$`)
 )
 
 // NewReleaseVersion reads a tag or a git describe of the build.
 func NewReleaseVersion(s string) (ReleaseVersion, error) {
 	if m := releaseDescribe.FindStringSubmatch(s); m != nil {
-		s = m[1]
+		s = m[1] + m[2]
 	}
 	return parseReleaseTag(s)
 }
@@ -149,6 +150,10 @@ func ParseReleaseManifest(b []byte) (ReleaseManifest, error) {
 	for _, r := range raw.Assets {
 		if _, dup := m.Asset(r.Platform); dup {
 			return bad("two files for " + r.Platform)
+		}
+		// Имя на странице выпуска одно на файл: второй затер бы первый (ревью #672).
+		if slices.ContainsFunc(m.assets, func(a ReleaseAsset) bool { return a.name == r.Name }) {
+			return bad("two files named " + r.Name)
 		}
 		a, err := parseReleaseAsset(r)
 		if err != nil {

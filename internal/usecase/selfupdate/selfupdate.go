@@ -19,6 +19,10 @@ type Source interface {
 }
 
 const (
+	// channel — постоянный выпуск, где лежит манифест последнего окна. Не
+	// «latest»: выпуск только сервера стал бы latest, и без манифеста все окна
+	// получили бы 404 (ревью #672). Файлы окна — в выпуске своего тега.
+	channel      = "download/dvk-latest/"
 	manifestName = "dvk-manifest.json"
 	// maxManifest — манифест на две платформы весит сотни байт.
 	maxManifest = 64 << 10
@@ -64,11 +68,11 @@ func signed(manifest []byte) []byte {
 // Check reads the latest release. Подпись проверяется до разбора манифеста;
 // выпуск не новее текущей сборки — не обновление (откат запрещен).
 func (u Updater) Check(ctx context.Context) (Offer, error) {
-	manifest, err := u.Source.Fetch(ctx, "latest/download/"+manifestName, maxManifest)
+	manifest, err := u.Source.Fetch(ctx, channel+manifestName, maxManifest)
 	if err != nil {
 		return Offer{}, err
 	}
-	sig, err := u.Source.Fetch(ctx, "latest/download/"+manifestName+".sig", ed25519.SignatureSize)
+	sig, err := u.Source.Fetch(ctx, channel+manifestName+".sig", ed25519.SignatureSize)
 	if err != nil {
 		return Offer{}, err
 	}
@@ -91,6 +95,9 @@ func (u Updater) Check(ctx context.Context) (Offer, error) {
 }
 
 // Download fetches the offered file and checks it against the signed manifest.
+// ponytail: файл целиком в памяти (до domain.MaxReleaseAsset, сборки — десятки
+// МБ); потолок — память окна на файле в сотни МБ. Путь: Source отдает поток,
+// sha256 считается на лету в os.CreateTemp.
 func (u Updater) Download(ctx context.Context, o Offer) ([]byte, error) {
 	if !o.ok {
 		return nil, ErrNoOffer

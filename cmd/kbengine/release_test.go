@@ -156,3 +156,12 @@ func (d dirReleases) Fetch(_ context.Context, path string, limit int64) ([]byte,
 	}
 	return b, err
 }
+
+func TestNoKeyStoreRefusesInWords(t *testing.T) {
+	var errb bytes.Buffer
+	withKeys(t, nil)
+	releaseKeys = func() releaseKeyStore { return noKeyStore{} }
+	if code := run([]string{"release", "key"}, &bytes.Buffer{}, &errb); code == 0 || !strings.Contains(errb.String(), "macOS") {
+		t.Errorf("code %d: %s", code, errb.String())
+	}
+}
