@@ -35,6 +35,7 @@ type updateState struct {
 	Dev       bool   `json:"dev"`       // сборка без тега: не ищем
 	Busy      bool   `json:"busy"`      // качается и ставится
 	Saved     string `json:"saved"`     // куда положена проверенная сборка
+	Alert     bool   `json:"alert"`     // подпись не сошлась или нет сборки под платформу — человеку это видно
 	Error     string `json:"error"`
 }
 

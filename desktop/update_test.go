@@ -194,3 +194,107 @@ func TestAppUpdateMethods(t *testing.T) {
 		t.Errorf("%+v", st)
 	}
 }
+
+// Сбой проверки не стирает последнее проверенное предложение: плашка не
+// мигает от одного недоступного GitHub (ревью #679, п.1).
+func TestUpdateDeskKeepsOfferOnCheckFailure(t *testing.T) {
+	pub, src := signedRelease(t, "v0.41.0", []byte("x"))
+	d := newUpdateDesk("v0.40.0", src, pub, "darwin-arm64", func(context.Context, string, string) error { return nil })
+	d.check(context.Background())
+	delete(src, "download/dvk-latest/dvk-manifest.json")
+	d.check(context.Background())
+	st := d.State()
+	if !st.Available || st.Version != "v0.41.0" || st.Error == "" {
+		t.Errorf("after a failed check %+v", st)
+	}
+	if err := d.Install(context.Background()); err != nil {
+		t.Errorf("the checked offer stays installable: %v", err)
+	}
+}
+
+// Подпись не сошлась или нет сборки под платформу — человек это видит, а не
+// «обновлений нет» (ревью #679, п.2).
+func TestUpdateDeskAlertsOnBadRelease(t *testing.T) {
+	pub, src := signedRelease(t, "v0.41.0", []byte("x"))
+	src["download/dvk-latest/dvk-manifest.json.sig"] = make([]byte, ed25519.SignatureSize)
+	d := newUpdateDesk("v0.40.0", src, pub, "darwin-arm64", nil)
+	d.check(context.Background())
+	if st := d.State(); !st.Alert || st.Available {
+		t.Errorf("bad signature %+v", st)
+	}
+	pub, src = signedRelease(t, "v0.41.0", []byte("x"))
+	d = newUpdateDesk("v0.40.0", src, pub, "linux-arm64", nil)
+	d.check(context.Background())
+	if st := d.State(); !st.Alert {
+		t.Errorf("no build for the platform %+v", st)
+	}
+	delete(src, "download/dvk-latest/dvk-manifest.json")
+	d = newUpdateDesk("v0.40.0", src, pub, "darwin-arm64", nil)
+	d.check(context.Background())
+	if st := d.State(); st.Alert || st.Error == "" {
+		t.Errorf("a network failure is not an alert %+v", st)
+	}
+}
+
+// После установки кнопка не предлагает то же снова (ревью #679, п.5).
+func TestUpdateDeskOfferIsSpentAfterInstall(t *testing.T) {
+	pub, src := signedRelease(t, "v0.41.0", []byte("x"))
+	d := newUpdateDesk("v0.40.0", src, pub, "darwin-arm64", func(context.Context, string, string) error { return nil })
+	d.check(context.Background())
+	if err := d.Install(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if st := d.State(); st.Available {
+		t.Errorf("still offered %+v", st)
+	}
+}
+
+// Сохранение не идет по симлинку на итоговом имени и не оставляет обрезок
+// (ревью #679, п.3, 4).
+func TestSaveForManualIsSafe(t *testing.T) {
+	home := t.TempDir()
+	victim := filepath.Join(t.TempDir(), "victim")
+	if err := os.WriteFile(victim, []byte("mine"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dl := filepath.Join(home, "Downloads")
+	if err := os.MkdirAll(dl, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, filepath.Join(dl, "DVK-v0.41.0.zip")); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(t.TempDir(), "dvk.zip")
+	if err := os.WriteFile(src, []byte("build"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := saveForManual(home, src, "v0.41.0"); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(victim); string(b) != "mine" {
+		t.Errorf("the symlink target was overwritten: %q", b)
+	}
+	if _, err := saveForManual(home, filepath.Join(t.TempDir(), "none.zip"), "v0.42.0"); err == nil {
+		t.Error("missing source accepted")
+	}
+	if left, _ := filepath.Glob(filepath.Join(dl, "*v0.42.0*")); len(left) != 0 {
+		t.Errorf("a stub left behind: %v", left)
+	}
+	if left, _ := filepath.Glob(filepath.Join(dl, ".dvk-*")); len(left) != 0 {
+		t.Errorf("a temp file left behind: %v", left)
+	}
+}
+
+// Окно без обновления (не собранное так) не падает на вызове страницы (ревью #679, п.8).
+func TestAppUpdateMethodsWithoutDesk(t *testing.T) {
+	a := &App{ctx: context.Background()}
+	if st := a.UpdateState(); st.Available {
+		t.Errorf("%+v", st)
+	}
+	if st := a.UpdateCheck(); st.Available {
+		t.Errorf("%+v", st)
+	}
+	if err := a.UpdateInstall(); err == nil {
+		t.Error("install without a desk")
+	}
+}
