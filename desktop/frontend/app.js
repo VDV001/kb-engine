@@ -3506,6 +3506,27 @@ if (window.runtime) window.runtime.EventsOn("phone:turn", async (t) => {
 // Работник ящика ответил телефону в чате окна (#622): список чатов — свежий,
 // открытый чат с этим ходом — тоже. Пока человек переименовывает чат, список не
 // трогаем: перерисовка затерла бы набранное имя (ревью #635).
+// Обновление окна (#651): плашка в шапке, пока есть выпуск новее; ставится только по нажатию.
+function paintUpdate(st) {
+  const cell = $("#update-cell"), btn = $("#update-btn");
+  if (!cell || !st) return;
+  cell.hidden = !st.available;
+  $("#update-label").textContent = st.busy ? "скачиваю…" : "обновить до " + (st.version || "");
+  btn.disabled = !!st.busy;
+}
+if (window.runtime) window.runtime.EventsOn("update:state", paintUpdate);
+$("#update-btn")?.addEventListener("click", async () => {
+  try {
+    await native().UpdateInstall();
+    const st = await native().UpdateState();
+    paintUpdate(st);
+    toast("Новая сборка скачана и проверена", " · лежит в «Загрузки»: " + (st.saved || "") + ". Закройте окно и поставьте ее поверх.", null, "info");
+  } catch (e) {
+    toast("Обновление не поставилось", " · " + (e?.message || e), null, "bad");
+  }
+});
+native()?.UpdateState().then(paintUpdate).catch(() => {});
+
 if (window.runtime) window.runtime.EventsOn("chats:changed", async (id) => {
   if (!chatState.renaming) await renderChatList();
   if (id && id === chatState.id && !chatState.busy) {

@@ -57,6 +57,13 @@
         <span class="tab-ink"></span>
       </nav>
       <div class="cell status-cell"><span class="pulse"></span><span id="indexed">—</span></div>
+      <div class="cell" id="update-cell" hidden>
+        <!-- Плашка обновления (#651): появляется, когда kb-сервер выпусков знает сборку новее; без нажатия ничего не ставится. -->
+        <button class="gear" id="update-btn" aria-label="Обновить окно" data-tip="Обновить" data-tip-b="Скачать и проверить подпись новой сборки">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg>
+          <span id="update-label">обновить</span>
+        </button>
+      </div>
       <div class="cell">
         <button class="gear" id="open-settings" data-tip="Источники" data-tip-k="⌘ ," data-tip-b="Папки, базы и kb-серверы, по которым идет поиск" aria-label="Источники">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h5l2 2h11v10H3z"/></svg>

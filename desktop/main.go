@@ -22,6 +22,7 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/extractcache"
+	"github.com/daniil/kb-engine/internal/adapter/ghrelease"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
 	"github.com/daniil/kb-engine/internal/adapter/weblink"
 	"github.com/wailsapp/wails/v2"
@@ -39,6 +40,10 @@ var assets embed.FS
 //
 //go:embed all:app-ui
 var appAssets embed.FS
+
+// version — тег сборки (git describe), ставится -ldflags "-X main.version=…";
+// сборка без тега ("dev") обновления не ищет (#651).
+var version = "dev"
 
 func main() {
 	if err := run(); err != nil {
@@ -123,6 +128,12 @@ func run() error {
 	}
 
 	app := newApp(idx.files, settings, idx)
+	app.update = newUpdateDesk(version, ghrelease.Client{Base: ghrelease.Releases, HTTP: &http.Client{Timeout: 5 * time.Minute}},
+		releasePublicKey(), goruntime.GOOS+"-"+goruntime.GOARCH, func(_ context.Context, path, v string) error {
+			saved, err := saveForManual(home, path, v) // ponytail: установка поверх окна — #651 шаги 2-3; пока человек ставит сам
+			app.update.noteSaved(saved)
+			return err
+		})
 	browserHost := newBrowserHost(settings.home)
 	app.browser = newBrowserDesk(settings, browserHost)
 	app.chat = newChatDesk(settings, filepath.Join(filepath.Dir(cfgPath), "chats"))

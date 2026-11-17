@@ -5,7 +5,9 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"errors"
+	"io"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -32,6 +34,7 @@ type updateState struct {
 	Available bool   `json:"available"` // есть новее — «Обновить»
 	Dev       bool   `json:"dev"`       // сборка без тега: не ищем
 	Busy      bool   `json:"busy"`      // качается и ставится
+	Saved     string `json:"saved"`     // куда положена проверенная сборка
 	Error     string `json:"error"`
 }
 
@@ -98,7 +101,7 @@ func (d *updateDesk) Install(ctx context.Context) error {
 	d.st.Busy = true
 	d.mu.Unlock()
 	defer func() { d.mu.Lock(); d.st.Busy = false; d.mu.Unlock() }()
-	f, err := os.CreateTemp(d.tmp, "dvk-update-*")
+	f, err := os.CreateTemp(d.tmp, "dvk-update-*"+filepath.Ext(o.AssetName()))
 	if err != nil {
 		return err
 	}
@@ -114,10 +117,62 @@ func (d *updateDesk) Install(ctx context.Context) error {
 	return err
 }
 
-func watchUpdates(context.Context, *updateDesk, <-chan time.Time, func(updateState)) {}
+// updateEvery is how often the window asks for a newer release.
+const updateEvery = 24 * time.Hour
 
-func saveForManual(string, string, string) (string, error) { return "", nil }
+// watchUpdates checks at once and on every tick, and tells the page each
+// outcome; ctx ends it with the window.
+func watchUpdates(ctx context.Context, d *updateDesk, tick <-chan time.Time, emit func(updateState)) {
+	for {
+		d.check(ctx)
+		emit(d.State())
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick:
+		}
+	}
+}
 
-func (a *App) UpdateState() updateState { return updateState{} }
-func (a *App) UpdateCheck() updateState { return updateState{} }
-func (a *App) UpdateInstall() error     { return nil }
+// saveForManual puts the verified build into the person's Downloads as
+// DVK-<версия><расширение>: до установки поверх окна (#651) ставит человек.
+func saveForManual(home, path, version string) (string, error) {
+	dir := filepath.Join(home, "Downloads")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	dst := filepath.Join(dir, "DVK-"+version+filepath.Ext(path))
+	in, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = in.Close() }()
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return "", err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return "", err
+	}
+	return dst, out.Close()
+}
+
+// noteSaved remembers where the build was put, for the page.
+func (d *updateDesk) noteSaved(path string) {
+	d.mu.Lock()
+	d.st.Saved = path
+	d.mu.Unlock()
+}
+
+// UpdateState is the update state for the page.
+func (a *App) UpdateState() updateState { return a.update.State() }
+
+// UpdateCheck asks the release now and returns the state.
+func (a *App) UpdateCheck() updateState {
+	a.update.check(a.ctx)
+	return a.update.State()
+}
+
+// UpdateInstall installs the offered build by the person's click.
+func (a *App) UpdateInstall() error { return a.update.Install(a.ctx) }

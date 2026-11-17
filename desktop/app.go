@@ -522,6 +522,13 @@ func (a *App) PickFolder() (string, error) {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	if a.update != nil { // проверка выпуска при запуске и раз в сутки (#651)
+		tick := time.NewTicker(updateEvery)
+		go func() {
+			defer tick.Stop()
+			watchUpdates(ctx, a.update, tick.C, func(s updateState) { runtime.EventsEmit(ctx, "update:state", s) })
+		}()
+	}
 	// Кусок уходит странице весь (она перерисовывает текст целиком), поэтому
 	// не чаще раза в 50 мс. Устаревший кусок после ответа прийти не может:
 	// событие и ответ Ask идут в одну очередь главного потока (ExecJS →

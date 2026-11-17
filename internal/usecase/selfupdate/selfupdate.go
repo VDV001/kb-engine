@@ -60,6 +60,9 @@ func (o Offer) Available() bool { return o.ok }
 // Version is the offered release's tag.
 func (o Offer) Version() domain.ReleaseVersion { return o.version }
 
+// AssetName is the offered file's name in the release.
+func (o Offer) AssetName() string { return o.asset.Name() }
+
 // SignManifest signs the manifest bytes as the release does.
 func SignManifest(key ed25519.PrivateKey, manifest []byte) []byte {
 	return ed25519.Sign(key, signed(manifest))

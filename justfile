@@ -42,7 +42,7 @@ desktop: web
     # frontend/dist встраивается в окно; прежняя копия заменяется целиком.
     find desktop/app-ui -mindepth 1 ! -name .keep -delete
     cp -R frontend/dist/. desktop/app-ui/
-    cd desktop && CGO_LDFLAGS="-framework UniformTypeIdentifiers" go build -tags desktop,production -ldflags "-s -w" -o ../bin/kb.app/Contents/MacOS/kb .
+    cd desktop && CGO_LDFLAGS="-framework UniformTypeIdentifiers" go build -tags desktop,production -ldflags "-s -w -X main.version=$(git describe --tags --always)" -o ../bin/kb.app/Contents/MacOS/kb .
     # Движок рядом с окном: кнопка «Включить» во вкладке «Браузер» запускает из него
     # kbengine browser serve (desktop/browserdesk.go ищет его рядом с окном первым).
     go build -o bin/kb.app/Contents/MacOS/kbengine ./cmd/kbengine
@@ -69,7 +69,7 @@ desktop-windows: web
     cp -R frontend/dist/. desktop/app-ui/
     cd desktop && go run ./winres -dir build/windows -syso rsrc_windows_amd64.syso -ico build/windows/dvk.ico
     find desktop/setupwin/payload -mindepth 1 ! -name .gitkeep -delete
-    cd desktop && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -tags desktop,production -ldflags "-s -w -H windowsgui" -o setupwin/payload/kb.exe .
+    cd desktop && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -tags desktop,production -ldflags "-s -w -H windowsgui -X main.version=$(git describe --tags --always)" -o setupwin/payload/kb.exe .
     cd desktop && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -H windowsgui" -o setupwin/payload/kb-listen.exe ./listenwin
     cd desktop && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -H windowsgui" -o setupwin/payload/kb-extract.exe ./extractwin
     GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o desktop/setupwin/payload/kbengine.exe ./cmd/kbengine
