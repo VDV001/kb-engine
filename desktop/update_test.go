@@ -312,3 +312,84 @@ func TestUpdateDeskAlertsOnExpiredManifest(t *testing.T) {
 		t.Errorf("%+v", st)
 	}
 }
+
+// Установка идет понятными шагами (#651, отзыв владельца 17.11: «закрылось и
+// все»): скачивание с числом байт, установка, перезапуск; каждый шаг уходит
+// странице, итог скачивания — Done == Total.
+func TestUpdateDeskReportsThePhases(t *testing.T) {
+	body := []byte(strings.Repeat("x", 200_000))
+	pub, src := signedRelease(t, "v0.41.0", body)
+	var seen []updateState
+	var d *updateDesk
+	d = newUpdateDesk("v0.40.0", src, pub, "darwin-arm64", func(context.Context, string, string) error { d.noteRestart("v0.41.0"); return nil })
+	d.emit = func(s updateState) { seen = append(seen, s) }
+	d.check(context.Background())
+	if err := d.Install(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var phases []string
+	var last updateState
+	for _, s := range seen {
+		if len(phases) == 0 || phases[len(phases)-1] != s.Phase {
+			phases = append(phases, s.Phase)
+		}
+		if s.Phase == "download" {
+			last = s
+		}
+	}
+	if strings.Join(phases, ",") != "download,install,restart" {
+		t.Errorf("phases %v", phases)
+	}
+	if last.Total != int64(len(body)) || last.Done != last.Total {
+		t.Errorf("download %d of %d — the last report is the whole file", last.Done, last.Total)
+	}
+	if st := d.State(); st.Phase != "restart" || st.Busy {
+		t.Errorf("final %+v", st)
+	}
+}
+
+// Сбой установки — шаг «error» со словами, кнопка снова доступна.
+func TestUpdateDeskReportsAFailure(t *testing.T) {
+	pub, src := signedRelease(t, "v0.41.0", []byte("new build"))
+	src["download/v0.41.0/DVK-mac-arm64.zip"] = []byte("evil build")
+	d := newUpdateDesk("v0.40.0", src, pub, "darwin-arm64", func(context.Context, string, string) error { return nil })
+	d.check(context.Background())
+	if err := d.Install(context.Background()); err == nil {
+		t.Fatal("a substituted build installed")
+	}
+	if st := d.State(); st.Phase != "error" || st.Error == "" || st.Busy || !st.Available {
+		t.Errorf("after a failure %+v — retry stays possible", st)
+	}
+}
+
+// Перезапуск под launchd — kickstart -k (помощник-потомок умирает вместе с
+// окном, замер 17.11), без launchd — open -n после выхода по pid.
+func TestRestartCommand(t *testing.T) {
+	c := restartCommand("com.daniilvdovin.kb", 501, "/Users/x/Applications/kb.app", 1234)
+	if got := strings.Join(c.Args, " "); got != "launchctl kickstart -k gui/501/com.daniilvdovin.kb" {
+		t.Errorf("under launchd: %q", got)
+	}
+	c = restartCommand("", 501, "/Users/x/Applications/kb.app", 1234)
+	if len(c.Args) < 5 || c.Args[0] != "/bin/sh" || c.Args[len(c.Args)-2] != "/Users/x/Applications/kb.app" || c.Args[len(c.Args)-1] != "1234" {
+		t.Errorf("without launchd: %q", c.Args)
+	}
+}
+
+// После перезапуска новое окно говорит, что обновилось: метка лежит рядом с
+// конфигом и читается один раз.
+func TestUpdateDoneMarker(t *testing.T) {
+	dir := t.TempDir()
+	if _, ok := consumeUpdateDone(dir); ok {
+		t.Fatal("a marker out of nothing")
+	}
+	if err := writeUpdateDone(dir, "v0.41.1", "v0.41.2"); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := consumeUpdateDone(dir)
+	if !ok || got.From != "v0.41.1" || got.To != "v0.41.2" {
+		t.Fatalf("%+v %v", got, ok)
+	}
+	if _, ok := consumeUpdateDone(dir); ok {
+		t.Error("the marker is read twice")
+	}
+}

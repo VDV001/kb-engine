@@ -2217,7 +2217,7 @@ document.addEventListener("keydown", (e) => {
 // Esc закрывает панель раньше, чем очищает поиск; ⌘, открывает ее, как в любом приложении macOS.
 document.addEventListener("keydown", (e) => {
   // Поле со своим Esc (имя телефона) отменяет правку, а не закрывает всю панель.
-  if (settingsOpen() && e.key === "Escape" && !e.target.closest?.("[data-esc-own]")) { e.stopImmediatePropagation(); closeSettings(); }
+  if (settingsOpen() && e.key === "Escape" && !e.target.closest?.("[data-esc-own]") && $("#update-dlg").hidden) { e.stopImmediatePropagation(); closeSettings(); } // окно обновления закрывается первым (#651)
   else if (modKey(e) && e.key === ",") { e.preventDefault(); e.stopImmediatePropagation(); openSettings("sources"); }
 }, true);
 
@@ -3509,34 +3509,104 @@ if (window.runtime) window.runtime.EventsOn("phone:turn", async (t) => {
 // Работник ящика ответил телефону в чате окна (#622): список чатов — свежий,
 // открытый чат с этим ходом — тоже. Пока человек переименовывает чат, список не
 // трогаем: перерисовка затерла бы набранное имя (ревью #635).
-// Обновление окна (#651): плашка в шапке, пока есть выпуск новее; ставится только по нажатию.
+// Обновление окна (#651): плашка в шапке бегущим спектром, пока есть выпуск новее;
+// нажатие открывает окно с подтверждением, шагами и ходом скачивания (отзыв
+// владельца 17.11: окно закрылось молча). Ставится только по кнопке «Обновить».
+const upd = { st: null, open: false };
+const updMB = (n) => (n / 1048576).toFixed(1).replace(".", ",");
+const UPD_STEPS = ["Скачиваю сборку", "Проверяю подпись автора и контрольную сумму", "Устанавливаю", "Перезапускаю окно"];
+const updRunning = (st) => !!st && (st.busy || st.phase === "restart");
 function paintUpdate(st) {
+  if (!st) return;
+  upd.st = st;
   const cell = $("#update-cell"), btn = $("#update-btn");
-  if (!cell || !st) return;
-  cell.hidden = !st.available && !st.alert;
-  // Подпись не сошлась или нет сборки под платформу: человек видит, что проверка не прошла, а не «обновлений нет».
-  const bad = st.alert && !st.available;
-  $("#update-label").textContent = st.busy ? "скачиваю…" : bad ? "проверка обновления не прошла" : "обновить до " + (st.version || "");
-  btn.dataset.tipB = bad ? st.error || "" : "Скачать и проверить подпись новой сборки";
-  btn.disabled = !!st.busy || bad;
+  const bad = st.alert && !st.available && !updRunning(st);
+  if (cell) {
+    cell.hidden = !(st.available || st.alert || updRunning(st));
+    cell.classList.toggle("hot", !bad && (st.available || updRunning(st)));
+    $("#update-label").textContent = updRunning(st) ? "обновляю…" : bad ? "проверка обновления не прошла" : "обновить до " + (st.version || "");
+    btn.dataset.tipB = bad ? st.error || "" : "Скачать, проверить подпись и перезапустить окно";
+  }
+  paintVersion(st);
+  if (upd.open) paintUpdateDlg();
+}
+// paintVersion shows the window's version in the settings, with a bright button when a newer one is out.
+function paintVersion(st) {
+  $("#ver-current").textContent = st.dev ? "сборка без версии" : st.current || "—";
+  $("#ver-build").textContent = st.build && st.build !== st.current ? "сборка " + st.build : "";
+  const b = $("#settings-update");
+  b.hidden = !st.available;
+  $("#settings-update-v").textContent = st.version || "";
+  b.disabled = updRunning(st);
+}
+function paintUpdateDlg() {
+  const st = upd.st || {}, running = updRunning(st), bad = st.alert && !st.available && !running, failed = st.phase === "error";
+  $("#upd-ver").innerHTML = st.version ? `Сейчас <b>${esc(st.current || "")}</b> → <b>${esc(st.version)}</b>` : `Сейчас <b>${esc(st.current || "")}</b>`;
+  const intro = $("#upd-intro");
+  intro.hidden = running;
+  intro.textContent = bad ? "Проверка обновления не прошла: окно не станет ставить то, что не удалось проверить."
+    : st.phase === "saved" ? "Сборка скачана и проверена, лежит в «Загрузки»: " + (st.saved || "") + ". Закройте окно и поставьте ее поверх."
+    : "Окно скачает новую сборку, проверит подпись автора и контрольную сумму, заменит себя и перезапустится: это займет около минуты. Ответ, который сейчас пишется, прервется. Прежняя версия останется рядом (kb.app.old) на случай, если что-то пойдет не так.";
+  const steps = $("#upd-steps"), idx = st.phase === "download" ? 0 : st.phase === "install" ? 2 : st.phase === "restart" ? 3 : -1;
+  steps.hidden = !running;
+  if (running) steps.innerHTML = UPD_STEPS.map((t, i) => `<li class="${i < idx ? "done" : i === idx ? "on" : ""}"><i></i>${esc(t)}</li>`).join("");
+  const bar = $("#upd-bar");
+  bar.hidden = !(running && st.phase === "download" && st.total > 0);
+  $("#upd-fill").style.width = st.total > 0 ? Math.min(100, (st.done / st.total) * 100) + "%" : "0";
+  const note = $("#upd-note");
+  note.className = "upd-note" + (bad || failed ? " bad" : "");
+  note.textContent = failed || bad ? st.error || "Не получилось: подробностей нет."
+    : st.phase === "download" ? `Скачано ${updMB(st.done)} из ${updMB(st.total)} МБ`
+    : st.phase === "install" ? "Подменяю окно новой сборкой…"
+    : st.phase === "restart" ? "Готово. Окно перезапустится само через несколько секунд: не закрывайте его."
+    : "";
+  const go = $("#upd-go");
+  go.hidden = running || bad || st.phase === "saved" || !st.available;
+  go.textContent = failed ? "Повторить" : "Обновить";
+  const later = $("#upd-later");
+  later.hidden = running;
+  later.textContent = failed || bad || st.phase === "saved" ? "Закрыть" : "Позже";
+  $("#upd-news").hidden = !st.version;
+}
+function openUpdateDlg() {
+  upd.open = true;
+  $("#update-dlg").hidden = false;
+  paintUpdateDlg();
+  ($("#upd-go").hidden ? $("#upd-later") : $("#upd-go")).focus();
+}
+function closeUpdateDlg() {
+  if (updRunning(upd.st)) return; // идет установка: закрыть нельзя, иначе человек не увидит конец
+  upd.open = false;
+  $("#update-dlg").hidden = true;
 }
 if (window.runtime) window.runtime.EventsOn("update:state", paintUpdate);
-$("#update-btn")?.addEventListener("click", async () => {
-  const btn = $("#update-btn");
-  btn.disabled = true; // второе нажатие во время скачивания получило бы «нового выпуска нет»
-  $("#update-label").textContent = "скачиваю…";
-  try {
-    await native().UpdateInstall();
-    const st = await native().UpdateState();
-    paintUpdate(st);
-    if (st.restart) { toast("Окно обновлено", " · перезапускаюсь на новой сборке…", null, "info"); return; }
-    toast("Новая сборка скачана и проверена", " · лежит в «Загрузки»: " + (st.saved || "") + ". Закройте окно и поставьте ее поверх.", null, "info");
-  } catch (e) {
-    toast("Обновление не поставилось", " · " + (e?.message || e), null, "bad");
-    native().UpdateState().then(paintUpdate).catch(() => {});
-  }
+$("#update-btn")?.addEventListener("click", openUpdateDlg);
+$("#settings-update")?.addEventListener("click", openUpdateDlg);
+$("#upd-later")?.addEventListener("click", closeUpdateDlg);
+$("#upd-news")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  if (upd.st && upd.st.version && window.runtime && window.runtime.BrowserOpenURL) window.runtime.BrowserOpenURL("https://github.com/VDV001/kb-engine/releases/tag/" + upd.st.version);
 });
+$("#upd-go")?.addEventListener("click", async () => {
+  try { await native().UpdateInstall(); } catch { /* шаг error приходит событием; ниже — состояние */ }
+  native().UpdateState().then(paintUpdate).catch(() => {});
+});
+$("#ver-check")?.addEventListener("click", async () => {
+  const note = $("#ver-note");
+  note.textContent = "Проверяю…";
+  try {
+    const st = await native().UpdateCheck();
+    paintUpdate(st);
+    note.textContent = st.dev ? "Сборка без версии: обновления не ищутся." : st.available ? "Доступна " + st.version + ": нажмите «Обновить»." : st.error ? "Проверка не удалась: " + st.error : "У вас последняя версия.";
+  } catch (e) { note.textContent = "Проверка не удалась: " + errText(e); }
+});
+// Esc закрывает окно обновления раньше, чем успеет спрятаться все окно DVK.
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && upd.open) { e.preventDefault(); e.stopImmediatePropagation(); closeUpdateDlg(); }
+}, true);
 native()?.UpdateState().then(paintUpdate).catch(() => {});
+// После перезапуска на новой сборке — сказать, что обновилось (метка читается один раз).
+native()?.UpdateDone?.().then((d) => { if (d && d.to) toast("Окно обновлено", ` · было ${d.from || "?"}, стало ${d.to}`, null, "info"); }).catch(() => {});
 
 if (window.runtime) window.runtime.EventsOn("chats:changed", async (id) => {
   if (!chatState.renaming) await renderChatList();

@@ -540,7 +540,9 @@ func (a *App) startup(ctx context.Context) {
 		tick := time.NewTicker(updateEvery)
 		go func() {
 			defer tick.Stop()
-			watchUpdates(ctx, a.update, tick.C, func(s updateState) { runtime.EventsEmit(ctx, "update:state", s) })
+			emit := func(s updateState) { runtime.EventsEmit(ctx, "update:state", s) }
+			a.update.emit = emit
+			watchUpdates(ctx, a.update, tick.C, emit)
 		}()
 	}
 	// Кусок уходит странице весь (она перерисовывает текст целиком), поэтому

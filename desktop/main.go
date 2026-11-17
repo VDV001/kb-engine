@@ -130,6 +130,7 @@ func run() error {
 	app := newApp(idx.files, settings, idx)
 	app.update = newUpdateDesk(version, ghrelease.Client{Base: ghrelease.Releases, HTTP: &http.Client{Timeout: 5 * time.Minute}},
 		releasePublicKey(), goruntime.GOOS+"-"+goruntime.GOARCH, applyBuild(app, home))
+	app.update.dir = filepath.Dir(cfgPath) // метка «окно обновилось» рядом с настройками
 	browserHost := newBrowserHost(settings.home)
 	app.browser = newBrowserDesk(settings, browserHost)
 	app.chat = newChatDesk(settings, filepath.Join(filepath.Dir(cfgPath), "chats"))
