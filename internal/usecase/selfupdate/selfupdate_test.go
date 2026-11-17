@@ -60,8 +60,8 @@ var setup = []byte("windows setup v0.41.0")
 
 func manifest(version string, body []byte) []byte {
 	s := sha256.Sum256(body)
-	return fmt.Appendf(nil, `{"version":%q,"expires":"2099-01-01T00:00:00Z","assets":[{"platform":"windows-amd64","name":"DVK-Setup.exe","sha256":%q,"size":%d}]}`,
-		version, hex.EncodeToString(s[:]), len(body))
+	return fmt.Appendf(nil, `{"version":%q,"expires":%q,"assets":[{"platform":"windows-amd64","name":"DVK-Setup.exe","sha256":%q,"size":%d}]}`,
+		version, time.Now().AddDate(0, 0, 60).UTC().Format(time.RFC3339), hex.EncodeToString(s[:]), len(body))
 }
 
 func key(t *testing.T) (ed25519.PublicKey, ed25519.PrivateKey) {

@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
+	"strconv"
 	"time"
 
 	wr "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -25,7 +26,8 @@ func applyBuild(app *App, home string) func(context.Context, string, string) err
 					return err
 				}
 				app.update.noteRestart()
-				restartLater(app, exec.Command("/bin/sh", "-c", `sleep 1; /usr/bin/open -n "$0"`, bundle))
+				// Ждем выхода этого окна по pid, а не по времени: open -n раньше выхода дал бы второй экземпляр.
+				restartLater(app, exec.Command("/bin/sh", "-c", `while kill -0 "$1" 2>/dev/null; do sleep 0.2; done; /usr/bin/open -n "$0"`, bundle, strconv.Itoa(os.Getpid())))
 				return nil
 			}
 		case "windows":

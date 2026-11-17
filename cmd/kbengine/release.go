@@ -182,6 +182,13 @@ func releaseRenew(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "release renew:", err)
 		return 1
 	}
+	// Манифест качался с публичной страницы: подписывать заново можно только тот,
+	// что несет подпись самого владельца (ревью безопасности #681).
+	oldSig, err := os.ReadFile(filepath.Join(*dir, "dvk-manifest.json.sig"))
+	if err != nil || !selfupdate.VerifyManifest(priv.Public().(ed25519.PublicKey), raw, oldSig) {
+		fmt.Fprintln(stderr, "release renew: прежний манифест не несет подпись вашего ключа — продлевать нечего")
+		return 1
+	}
 	manifest := old.Renewed(time.Now().AddDate(0, 0, *validDays)).JSON()
 	if err := writeRelease(*dir, manifest, selfupdate.SignManifest(priv, manifest)); err != nil {
 		fmt.Fprintln(stderr, "release renew:", err)

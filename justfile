@@ -89,6 +89,7 @@ desktop-windows: web
 # 90 дней; продлить без пересборки — just window-renew.
 window-release tag:
     @test "$(git describe --tags --exact-match)" = "{{tag}}" || { echo "HEAD не на теге {{tag}}"; exit 1; }
+    @git diff --quiet HEAD || { echo "в дереве есть неподтвержденные правки: подписывать нечего"; exit 1; }
     just desktop
     just desktop-windows
     rm -rf dist/window && mkdir -p dist/window/manifest
@@ -103,7 +104,7 @@ window-release tag:
 # канала, подписывает заново и кладет обратно.
 window-renew days="90":
     rm -rf dist/window-renew && mkdir -p dist/window-renew
-    gh release download dvk-latest -R VDV001/kb-engine --dir dist/window-renew --pattern 'dvk-manifest.json'
+    gh release download dvk-latest -R VDV001/kb-engine --dir dist/window-renew --pattern 'dvk-manifest.json*'
     go run ./cmd/kbengine release renew --dir dist/window-renew --valid-days {{days}}
     gh release upload dvk-latest dist/window-renew/dvk-manifest.json dist/window-renew/dvk-manifest.json.sig --clobber -R VDV001/kb-engine
 

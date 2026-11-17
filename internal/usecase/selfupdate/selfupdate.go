@@ -31,6 +31,8 @@ const (
 	manifestName = "dvk-manifest.json"
 	// maxManifest — манифест на две платформы весит сотни байт.
 	maxManifest = 64 << 10
+	// maxExpiryDays — дальше этого срока окно манифесту не верит (sign не выдает больше 365).
+	maxExpiryDays = 400
 	// signedPrefix отделяет подпись манифеста от любой другой подписи тем же
 	// ключом: подписанное для чего-то еще за манифест не сойдет.
 	signedPrefix = "dvk-release-manifest-v1\n"
@@ -70,6 +72,11 @@ func SignManifest(key ed25519.PrivateKey, manifest []byte) []byte {
 	return ed25519.Sign(key, signed(manifest))
 }
 
+// VerifyManifest reports whether sig is the owner's signature of the manifest.
+func VerifyManifest(pub ed25519.PublicKey, manifest, sig []byte) bool {
+	return len(pub) == ed25519.PublicKeySize && len(sig) == ed25519.SignatureSize && ed25519.Verify(pub, signed(manifest), sig)
+}
+
 func signed(manifest []byte) []byte {
 	return append([]byte(signedPrefix), manifest...)
 }
@@ -85,8 +92,7 @@ func (u Updater) Check(ctx context.Context) (Offer, error) {
 	if err != nil {
 		return Offer{}, err
 	}
-	if len(u.PublicKey) != ed25519.PublicKeySize || len(sig) != ed25519.SignatureSize ||
-		!ed25519.Verify(u.PublicKey, signed(manifest), sig) {
+	if !VerifyManifest(u.PublicKey, manifest, sig) {
 		return Offer{}, domain.ErrReleaseSignature
 	}
 	m, err := domain.ParseReleaseManifest(manifest)
@@ -99,6 +105,9 @@ func (u Updater) Check(ctx context.Context) (Offer, error) {
 	}
 	if m.Expired(now()) { // подпись верна, но манифест устарел: подсунуть старый нельзя
 		return Offer{}, domain.ErrReleaseExpired
+	}
+	if m.Expires().After(now().AddDate(0, 0, maxExpiryDays)) { // срок в 9999 году свел бы защиту на нет
+		return Offer{}, fmt.Errorf("%w: expires is further than %d days", domain.ErrBadReleaseManifest, maxExpiryDays)
 	}
 	if !m.Version().Newer(u.Current) {
 		return Offer{}, nil
