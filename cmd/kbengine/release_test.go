@@ -216,3 +216,39 @@ func TestReleaseRenew(t *testing.T) {
 		t.Errorf("an absurd validity accepted: %d", code)
 	}
 }
+
+// renew не подписывает чужое: прежний манифест обязан нести подпись ключа
+// владельца (ревью безопасности #681, п.1).
+func TestReleaseRenewChecksTheOldSignature(t *testing.T) {
+	withKeys(t, fakeKeys{})
+	if code := run([]string{"release", "key"}, &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
+		t.Fatal("key")
+	}
+	dir := t.TempDir()
+	win := filepath.Join(dir, "DVK-Setup.exe")
+	_ = os.WriteFile(win, []byte("windows setup"), 0o600)
+	out := filepath.Join(dir, "out")
+	if code := run([]string{"release", "sign", "--version", "v0.41.0", "--out", out, "windows-amd64=" + win}, &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
+		t.Fatal("sign")
+	}
+	manifest := filepath.Join(out, "dvk-manifest.json")
+	raw, _ := os.ReadFile(manifest)
+	forged := bytes.Replace(raw, []byte(`"size": 13`), []byte(`"size": 14`), 1)
+	if bytes.Equal(forged, raw) {
+		t.Fatalf("the test did not forge anything: %s", raw)
+	}
+	if err := os.WriteFile(manifest, forged, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var errb bytes.Buffer
+	if code := run([]string{"release", "renew", "--dir", out}, &bytes.Buffer{}, &errb); code == 0 {
+		t.Fatal("a manifest with a foreign signature was re-signed")
+	}
+	if got, _ := os.ReadFile(manifest); !bytes.Equal(got, forged) {
+		t.Error("renew rewrote the files although the signature did not match")
+	}
+	_ = os.Remove(filepath.Join(out, "dvk-manifest.json.sig"))
+	if code := run([]string{"release", "renew", "--dir", out}, &bytes.Buffer{}, &bytes.Buffer{}); code == 0 {
+		t.Error("renew without a signature file accepted")
+	}
+}

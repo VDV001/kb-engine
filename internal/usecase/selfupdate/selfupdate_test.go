@@ -232,3 +232,19 @@ func manifestExpiring(version string, body []byte, expires string) []byte {
 	return fmt.Appendf(nil, `{"version":%q,"expires":%q,"assets":[{"platform":"windows-amd64","name":"DVK-Setup.exe","sha256":%q,"size":%d}]}`,
 		version, expires, hex.EncodeToString(s[:]), len(body))
 }
+
+// Срок дальше года окно не верит: подпись с датой в 9999 годе сводила бы защиту
+// от заморозки на нет (ревью безопасности #681, п.2).
+func TestCheckRefusesAbsurdExpiry(t *testing.T) {
+	pub, priv := key(t)
+	m := manifestExpiring("v0.41.0", setup, "9999-01-01T00:00:00Z")
+	u := updater(t, release(m, selfupdate.SignManifest(priv, m)), pub, "v0.40.0")
+	if _, err := u.Check(t.Context()); !errors.Is(err, domain.ErrBadReleaseManifest) {
+		t.Errorf("%v", err)
+	}
+	ok := manifestExpiring("v0.41.0", setup, time.Now().AddDate(0, 0, 300).UTC().Format(time.RFC3339))
+	u = updater(t, release(ok, selfupdate.SignManifest(priv, ok)), pub, "v0.40.0")
+	if o, err := u.Check(t.Context()); err != nil || !o.Available() {
+		t.Errorf("300 days: %v %v", o.Available(), err)
+	}
+}
