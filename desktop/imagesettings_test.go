@@ -87,3 +87,34 @@ func (r refDraw) Generate(_ context.Context, _ string, refs [][]byte) (imagegen.
 	*r.refs = refs
 	return r.img, nil
 }
+
+// Ключ не переезжает на другой хост сам: сменил адрес — введи ключ заново
+// (ревью #683, п.2); тот же хост — ключ остается.
+func TestImageKeyDoesNotFollowANewHost(t *testing.T) {
+	s, tok, _ := newServerSettings(t)
+	if err := s.setImageSettings("https://gw-a.example/v1", "m", "k-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.setImageSettings("https://gw-a.example/v2", "m2", ""); err != nil {
+		t.Errorf("the same host keeps the key: %v", err)
+	}
+	if err := s.setImageSettings("https://gw-b.example/v1", "m", ""); err == nil {
+		t.Error("the old key would go to another host")
+	}
+	if got := s.imageSettings(); got.URL != "https://gw-a.example/v2" || tok.m[imageKeyAccount] != "k-a" {
+		t.Errorf("a refused save changed things: %+v key %q", got, tok.m[imageKeyAccount])
+	}
+	if err := s.setImageSettings("https://gw-b.example/v1", "m", "k-b"); err != nil || tok.m[imageKeyAccount] != "k-b" {
+		t.Errorf("a new host with a new key: %v %q", err, tok.m[imageKeyAccount])
+	}
+}
+
+// Задание — не мегабайты текста по платному ключу (ревью #683, п.9).
+func TestOwnInfographicLimitsThePrompt(t *testing.T) {
+	s, oz, cab, _, _ := studioFake(t, 0, 0)
+	var seen string
+	draw := imageDesk{draw: refDraw{refs: new([][]byte), img: imagegen.Image{Data: []byte("p"), MIME: "image/png"}}, model: "m"}
+	if _, err := s.ownInfographic(context.Background(), nil, oz, cab, "1234567", strings.Repeat("а", 8001), draw, fakeFetch(&seen)); err == nil {
+		t.Error("a huge prompt accepted")
+	}
+}
