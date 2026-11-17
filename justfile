@@ -93,7 +93,7 @@ window-release tag:
     just desktop
     just desktop-windows
     rm -rf dist/window && mkdir -p dist/window/manifest
-    ditto -c -k --keepParent bin/kb.app dist/window/DVK-mac-arm64.zip
+    ditto -c -k --keepParent --norsrc --noextattr --noqtn --noacl bin/kb.app dist/window/DVK-mac-arm64.zip  # без ._* и xattr: AppleDouble в бандле лишний
     cp bin/windows/DVK-Setup.exe dist/window/DVK-Setup.exe
     go run ./cmd/kbengine release sign --version {{tag}} --out dist/window/manifest darwin-arm64=dist/window/DVK-mac-arm64.zip windows-amd64=dist/window/DVK-Setup.exe
     gh release upload {{tag}} dist/window/DVK-mac-arm64.zip dist/window/DVK-Setup.exe --clobber -R VDV001/kb-engine
