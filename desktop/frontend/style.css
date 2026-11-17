@@ -970,6 +970,10 @@ body:not(.no-fin-src) .fin-src-name { background: var(--sp-cool); -webkit-backgr
 .chat-note { padding: 0 12px 10px; font-size: 11px; }
 .chat-offer { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 10px; margin-bottom: 6px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg-3); font-size: 12px; color: var(--z-ink-2); }
 .chat-offer[hidden] { display: none; }
+/* Подсказка модели при вводе (#678): тонкая строка над полем, не карточка. */
+.chat-hint { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 0 2px 4px; font: 11px var(--z-font); color: var(--z-muted); }
+.chat-hint[hidden] { display: none; }
+.chat-hint b { font-weight: 500; color: var(--z-ink); }
 .chat-offer > span { flex: 1 1 220px; }
 .chat-offer .btn { height: 24px; padding: 0 10px; font-size: 11px; }
 .chat-fold { align-self: stretch; margin: 2px 0; padding: 6px 0; border-top: 1px dashed var(--z-rule); border-bottom: 1px dashed var(--z-rule); text-align: center; font-size: 11px; color: var(--z-muted); }
