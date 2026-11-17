@@ -74,6 +74,11 @@ type Chat struct {
 	ContextWindow int `json:"contextWindow,omitempty"`
 	// MemoryQuiet — новое ждет в портрете, в чате не предлагается.
 	MemoryQuiet bool `json:"memoryQuiet,omitempty"`
+	// PhoneModels — модели, которые телефон может выбрать для своих ходов
+	// («Телефону: разрешить», #657); пусто — только модель окна.
+	PhoneModels []string `json:"phoneModels,omitempty"`
+	// SecondModel — вторая, второстепенная модель чата (#678); пусто — одна.
+	SecondModel string `json:"secondModel,omitempty"`
 }
 
 // WithDefaults fills the empty fields.
@@ -98,6 +103,22 @@ func (c Chat) checkMemory() error {
 		return fmt.Errorf("%w: kb-сервер портрета %q", ErrChatSettings, c.MemoryServer)
 	}
 	return nil
+}
+
+// checkSecondModel: вторая модель (#678) — пусто или имя без управляющих символов.
+func (c Chat) checkSecondModel() error {
+	if utf8.RuneCountInString(c.SecondModel) > 200 || strings.IndexFunc(c.SecondModel, unicode.IsControl) >= 0 {
+		return fmt.Errorf("%w: вторая модель %q", ErrChatSettings, c.SecondModel)
+	}
+	return nil
+}
+
+// checkModel: вторая модель и размер контекста.
+func (c Chat) checkModel() error {
+	if err := c.checkSecondModel(); err != nil {
+		return err
+	}
+	return c.checkContextWindow()
 }
 
 // checkContextWindow: 0 — не задан, иначе в границах.
@@ -127,7 +148,7 @@ func (c Chat) Check() error {
 	if err := c.checkMemory(); err != nil {
 		return err
 	}
-	if err := c.checkContextWindow(); err != nil {
+	if err := c.checkModel(); err != nil {
 		return err
 	}
 	switch c.Accent {

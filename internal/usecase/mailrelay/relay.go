@@ -90,6 +90,20 @@ type Payload struct {
 	// Attach — файл к вопросу телефона (#650): куски в файлах ящика по порядку.
 	Attach  *Attachment `json:"attach,omitempty"`
 	History []Exchange  `json:"history,omitempty"`
+	// Pick — выбор телефона для его ходов в чате (#657): в вопросе — если
+	// меняли, в ответе — подтвержденный окном.
+	Pick *Pick `json:"pick,omitempty"`
+}
+
+// Pick is the phone's choice for its turns in a chat (#657).
+type Pick struct {
+	Model string   `json:"model,omitempty"`
+	Only  []string `json:"only,omitempty"`
+}
+
+// Picker applies the phone's choice to a window chat.
+type Picker interface {
+	SetPick(ctx context.Context, chat string, p Pick) (Pick, error)
 }
 
 // Attachment is a file the phone attached to a question: имя, тип, длина
@@ -150,6 +164,7 @@ type Hearer interface {
 // названия источников и подключений чата.
 type DeskState struct {
 	Model   string       `json:"model"`
+	Models  []string     `json:"models,omitempty"`
 	Sources []DeskSource `json:"sources"`
 	// Hear — кто распознает голос телефона (#648): HearDevice, HearApple,
 	// HearCloud, HearServer; пусто — голоса нет. Телефон говорит это человеку:
@@ -303,6 +318,8 @@ type Answer struct {
 	Context    *ContextFill
 	// Only — источники чата после хода (#647); пусто — все.
 	Only []string
+	// Pick — выбор телефона, сохраненный в окне (#657); nil — окно его не знает.
+	Pick *Pick
 }
 
 // SourcedAsker is an Asker that also tells where the answer came from.
@@ -454,6 +471,8 @@ type Relay struct {
 	Open FileOpener
 	// Chats — переименование и удаление чатов окна с телефона (#649); nil — отказ.
 	Chats ChatEditor
+	// Picker — выбор модели и источников с телефона (#657); nil — выбор мимо.
+	Picker Picker
 	// Turns — ходы человека в окне для телефонов (#669).
 	Turns []WindowTurn
 	// HistoryOf reads a window chat's exchanges when the mailbox opens it
@@ -625,6 +644,40 @@ func (r Relay) now() time.Time {
 // ask runs the model turn in the window's chat of this mailbox chat.
 // question runs a phone question, with its file when attached (#650).
 func (r Relay) question(ctx context.Context, st *State, chat string, req Payload) Payload {
+	// Выбор телефона (#657) — до хода, в чате, который окно уже знает: в новом
+	// выбирать не из чего. Отказ окна — словами и без хода.
+	applied, refusal := r.applyPick(ctx, st, chat, req.Pick)
+	if refusal != nil {
+		return *refusal
+	}
+	return confirmed(r.questionTurn(ctx, st, chat, req), applied)
+}
+
+// confirmed tells the phone the choice the window applied (#657): телефон
+// снимает «ушло» только по нему; выбор из ответа окна — после хода, он точнее.
+func confirmed(reply Payload, applied *Pick) Payload {
+	if reply.Kind == KindAnswer && reply.Pick == nil {
+		reply.Pick = applied
+	}
+	return reply
+}
+
+// applyPick sets the phone's choice in the window's chat before a turn and
+// returns what the window saved; отказ окна — словами, без хода.
+func (r Relay) applyPick(ctx context.Context, st *State, chat string, pick *Pick) (*Pick, *Payload) {
+	w := st.Chats[chat]
+	if pick == nil || w == "" || r.Picker == nil {
+		return nil, nil
+	}
+	applied, err := r.Picker.SetPick(ctx, w, *pick)
+	if err != nil {
+		return nil, &Payload{Kind: KindError, Text: err.Error()}
+	}
+	return &applied, nil
+}
+
+// questionTurn runs the phone's question, with its file if any.
+func (r Relay) questionTurn(ctx context.Context, st *State, chat string, req Payload) Payload {
 	if req.Attach == nil {
 		return r.ask(ctx, st, chat, req.Text, nil)
 	}
@@ -734,7 +787,7 @@ func (r Relay) ask(ctx context.Context, st *State, chat, question string, files 
 		touchShared(st, chat)
 	}
 	r.pendingTitle(ctx, st, chat)
-	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources, Context: a.Context, Only: a.Only}
+	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources, Context: a.Context, Only: a.Only, Pick: a.Pick}
 }
 
 // minPostGap — предел частоты отправки окна в ящик (сервер: раз в секунду).
@@ -1118,7 +1171,11 @@ func (r Relay) voice(ctx context.Context, st *State, chat string, req Payload) P
 	case text == "": // тишина вопроса — свой код: «heard» — ответ диктовке (повторное ревью #660)
 		return Payload{Kind: KindError, Text: VoiceSilent}
 	}
-	reply := r.ask(ctx, st, chat, text, nil)
+	applied, refusal := r.applyPick(ctx, st, chat, req.Pick)
+	if refusal != nil {
+		return *refusal
+	}
+	reply := confirmed(r.ask(ctx, st, chat, text, nil), applied)
 	reply.Heard = text
 	return reply
 }

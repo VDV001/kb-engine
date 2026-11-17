@@ -111,6 +111,7 @@ export function take(st, m, o) {
       if (p.context?.used > 0) c.context = { used: p.context.used, window: p.context.window || 0 };
       else if (p.kind === "answer") delete c.context;
       if (p.kind === "answer") c.only = p.only?.length ? p.only : undefined; // источники чата — от окна (#647); нет — все
+      if (p.kind === "answer" && p.pick) confirmPick(c, p.pick); // выбор телефона подтвержден окном (#657)
     }
   } else {
     const mine = who === hex(st.sender);
@@ -235,18 +236,60 @@ function desked(st, m, p) {
   if (m.from === "desk" && p.kind === "desk") {
     st.desk = p.desk || null;
     st.deskAt = Date.now();
+    for (const c of Object.values(st.chats || {})) dropRevoked(c, st.desk);
   }
   return false;
 }
 
-// choiceView is what the phone shows of chat c's model and sources (#647):
-// модель окна — она одна на все чаты (ревью #656), и источники чата, которые
-// окно знает; источники не выбраны — все. Без состояния окна — нечего показать.
+// dropRevoked resets the phone's model in chat c when the window no longer
+// offers it (#657): «как в окне» видно сразу, а сброс уходит с ближайшим
+// вопросом — окно хранит прежний выбор и иначе откажет ходу.
+function dropRevoked(c, desk) {
+  const cur = c.pickLocal || c.pick;
+  if (!desk?.models || !cur?.model || desk.models.includes(cur.model)) return;
+  c.pickLocal = { model: "", only: [...(cur.only || [])] };
+}
+
+// choiceView is what the phone shows of chat c's model and sources (#647, #657):
+// модели — окна и разрешенные «Телефону: разрешить»; источники — те, что окно
+// дает чату (c.only от окна; нет — все). Выбор телефона — свой (pickLocal ждет
+// окна, pick — подтвержден); модель, которую окно перестало разрешать, —
+// модель окна. Без состояния окна — нечего показать.
 export function choiceView(c, desk) {
   if (!desk) return null;
   const all = desk.sources || [], only = Array.isArray(c.only) ? c.only : null;
-  const shown = only ? all.filter((x) => only.includes(x.id)) : all;
-  return { model: desk.model || "", on: shown.length, total: all.length, names: shown.map((x) => x.name) };
+  const allowed = only ? all.filter((x) => only.includes(x.id)) : all;
+  const models = desk.models?.length ? desk.models : [desk.model || ""];
+  const cur = c.pickLocal || c.pick || { model: "", only: [] };
+  const picked = (cur.only || []).filter((id) => allowed.some((x) => x.id === id));
+  const choices = allowed.map((x) => ({ ...x, on: !picked.length || picked.includes(x.id) }));
+  const shown = choices.filter((x) => x.on);
+  return { model: cur.model && models.includes(cur.model) ? cur.model : desk.model || "", models, choices, pending: !!c.pickLocal,
+    on: shown.length, total: all.length, names: shown.map((x) => x.name) };
+}
+
+// setPick keeps the phone's choice for chat c until the window confirms it
+// (#657): модель ("" — как в окне) и источники (пусто — все, что дает окно).
+export function setPick(c, pick) {
+  c.pickLocal = { model: pick.model || "", only: [...(pick.only || [])] };
+  if (samePick(c.pickLocal, c.pick || { model: "", only: [] })) delete c.pickLocal; // вернулся к подтвержденному — ждать нечего
+}
+
+// pickToSend is the choice to send with the next question: только измененный.
+export function pickToSend(c) {
+  return c.pickLocal && !samePick(c.pickLocal, c.pick || { model: "", only: [] }) ? c.pickLocal : null;
+}
+
+// confirmPick applies the window's confirmation: «ждет окна» снимается, только
+// если подтвержден тот же выбор — более поздний выбор телефона остается.
+function confirmPick(c, pick) {
+  c.pick = { model: pick.model || "", only: pick.only || [] };
+  if (c.pickLocal && samePick(c.pickLocal, c.pick)) delete c.pickLocal;
+}
+
+function samePick(a, b) {
+  const sa = [...(a.only || [])].sort().join("|"), sb = [...(b.only || [])].sort().join("|");
+  return (a.model || "") === (b.model || "") && sa === sb;
 }
 
 // found applies the desk's answer to a search: выдача, документ или отказ.

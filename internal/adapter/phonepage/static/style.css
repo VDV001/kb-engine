@@ -173,6 +173,9 @@ button { font: inherit; color: inherit; }
    на 390 px обрезаются. Свой класс: .chip — метки «взято» ответа. */
 .cmp .opts { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; } /* файл, модель и источники (#650) — в две строки, а не обрезанными */
 .cmp .opts:not(:has(.opt:not([hidden]))) { display: none; }
+.cmp .pick { display: grid; gap: 6px; } /* выбор модели и источников (#657): ряды кнопок на 390 px */
+.cmp .pick .meta { margin: 0; font-size: 12px; color: var(--z-muted); }
+.cmp .opt[aria-pressed="true"] { color: var(--z-ink); border-color: var(--z-accent); }
 .cmp .opt { flex: 0 1 auto; min-width: 0; min-height: 32px; padding: 0 10px; border: 1px solid var(--z-rule-2); border-radius: 999px; background: none; color: var(--z-muted); font: inherit; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Голос (#648): диктовка и вопрос голосом; нажата — идет запись. */
 .cmp .mic { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid var(--z-rule-2); border-radius: 999px; background: none; color: var(--z-muted); cursor: pointer; }

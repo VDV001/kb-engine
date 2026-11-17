@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	goruntime "runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -203,6 +204,9 @@ func (w *mailWorker) tickServer(ctx context.Context, id string, notes []mailrela
 	relay.Open = mailOpener{c.key} // файлы с телефона (#650)
 	if w.chats != nil {
 		relay.Chats = w.chats
+		if p, ok := w.chats.(mailrelay.Picker); ok { // выбор модели и источников с телефона (#657)
+			relay.Picker = p
+		}
 	}
 	if w.hear != nil { // без распознавания — отказ кодом, не интерфейс с nil внутри
 		relay.Hear = phoneHearer{key: c.key, hear: w.hear}
@@ -250,24 +254,42 @@ func (d phoneDesk) State(context.Context) (mailrelay.DeskState, error) {
 	cfg := d.settings.cfg
 	d.settings.mu.Unlock()
 	c := cfg.Chat.WithDefaults()
-	st := mailrelay.DeskState{Model: c.Model, Sources: []mailrelay.DeskSource{}}
+	// Модели телефона: модель окна первой, затем разрешенные «Телефону: разрешить» (#657).
+	st := mailrelay.DeskState{Model: c.Model, Models: append([]string{c.Model}, slices.DeleteFunc(slices.Clone(c.PhoneModels), func(m string) bool { return m == c.Model })...), Sources: phoneSources(cfg)}
 	if d.hear != nil {
 		st.Hear = d.hear()
 	}
+	return st, nil
+}
+
+// phoneSources are what a chat searches, as the phone sees them (#656, #657):
+// включенные источники, которые окно читает, и подключения, разрешенные чату,
+// — только когда чат их спрашивает (режим инструментов, ревью #656).
+func phoneSources(cfg desktopconfig.Config) []mailrelay.DeskSource {
+	out := []mailrelay.DeskSource{}
 	for _, s := range cfg.WithSources().Sources {
 		if s.Enabled && searched(cfg, s) {
-			st.Sources = append(st.Sources, mailrelay.DeskSource{ID: s.ID, Name: sourceLabel(s)})
+			out = append(out, mailrelay.DeskSource{ID: s.ID, Name: sourceLabel(s)})
 		}
 	}
-	if chatMode(c) != chat.ModeTools {
-		return st, nil
+	if chatMode(cfg.Chat.WithDefaults()) != chat.ModeTools {
+		return out
 	}
 	for _, c := range cfg.Connections {
 		if name, ok := chatConnKinds[c.Kind]; ok && c.Enabled && c.Share {
-			st.Sources = append(st.Sources, mailrelay.DeskSource{ID: c.ID, Name: name + " · " + cmp.Or(c.Name, name), Conn: true})
+			out = append(out, mailrelay.DeskSource{ID: c.ID, Name: name + " · " + cmp.Or(c.Name, name), Conn: true})
 		}
 	}
-	return st, nil
+	return out
+}
+
+// phoneSourceIDs are the ids of phoneSources.
+func phoneSourceIDs(cfg desktopconfig.Config) []string {
+	var ids []string
+	for _, s := range phoneSources(cfg) {
+		ids = append(ids, s.ID)
+	}
+	return ids
 }
 
 // searched reports whether the window searches source s: вид, записанный
@@ -617,7 +639,8 @@ func chatAnswerer(d *chatDesk) answerFn {
 		}
 		// Источники чата — телефону для показа (#647); пусто — все.
 		a := mailrelay.Answer{Chat: rec.ID, Sources: answerSources(rec), Only: rec.Sources}
-		a.Context = (*mailrelay.ContextFill)(rec.Context) // круг контекста на телефоне (#647); та же форма
+		a.Pick = &mailrelay.Pick{Model: rec.PhonePick, Only: rec.PhoneOnly} // выбор телефона, как его хранит окно (#657)
+		a.Context = (*mailrelay.ContextFill)(rec.Context)                   // круг контекста на телефоне (#647); та же форма
 		if n := len(rec.Messages); n > 0 {
 			a.Text = rec.Messages[n-1].Text
 		}
@@ -816,4 +839,14 @@ func (w *mailWorker) keepTurns(id string, q []mailrelay.WindowTurn) {
 		w.keptTurns = map[string][]mailrelay.WindowTurn{}
 	}
 	w.keptTurns[id] = append(q, w.keptTurns[id]...)
+}
+
+// SetPick applies the phone's choice for its turns in chat id (#657): пустой
+// список источников — как в окне.
+func (c phoneChats) SetPick(_ context.Context, id string, p mailrelay.Pick) (mailrelay.Pick, error) {
+	if err := c.d.SetPhonePick(id, p.Model, p.Only, len(p.Only) == 0); err != nil {
+		return mailrelay.Pick{}, err
+	}
+	rec, err := c.d.load(id)
+	return mailrelay.Pick{Model: rec.PhonePick, Only: rec.PhoneOnly}, err
 }

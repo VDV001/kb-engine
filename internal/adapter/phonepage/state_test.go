@@ -380,6 +380,53 @@ const st28c = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: {
 s.take(st28c, { seq: 1, chat: "e", from: "desk" }, dk14(1, { kind: "delete", text: "evicted" }));
 s.take(st28c, { seq: 2, chat: "f", from: "desk" }, dk14(2, { kind: "delete", text: "evicted" }));
 want(st28c.chats.e && st28c.outbox.filter((o) => !o.drop).length === 1 && !st28c.chats.f, "evicted keeps a chat with an unsent question, drops an idle one");
+// 29. Выбор модели и источников с телефона (#657): только из разрешенного,
+// отправка — только измененного, «ждет окна» снимает подтверждение; ответ
+// без выбора не затирает более поздний выбор телефона.
+want(typeof s.setPick === "function" && typeof s.pickToSend === "function", "pick helpers exported");
+if (typeof s.setPick === "function") {
+  const desk29 = { model: "qwen3", models: ["qwen3", "llama-phone"], sources: [{ id: "a", name: "A" }, { id: "b", name: "B" }, { id: "c", name: "C" }] };
+  const c29 = { title: "Чат", msgs: [], updated: 1, only: ["a", "b"] }; // окно дает чату a и b
+  let v29 = s.choiceView(c29, desk29);
+  want(v29.models.length === 2 && v29.model === "qwen3" && v29.choices.map((x) => x.id).join() === "a,b" && v29.choices.every((x) => x.on), "choices are the window's chat sources, all on");
+  want(s.pickToSend(c29) === null, "nothing to send without a change");
+  s.setPick(c29, { model: "llama-phone", only: ["b"] });
+  v29 = s.choiceView(c29, desk29);
+  want(v29.model === "llama-phone" && v29.pending && v29.choices.find((x) => x.id === "b").on && !v29.choices.find((x) => x.id === "a").on, "a local pick shows as waiting");
+  want(s.pickToSend(c29)?.model === "llama-phone" && s.pickToSend(c29).only.join() === "b", "the change goes with the next question");
+  const st29 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { p: c29 } };
+  s.take(st29, { seq: 1, chat: "p", from: "desk" }, dk14(1, { kind: "answer", text: "ранний ответ", only: ["a", "b"] }));
+  want(s.choiceView(c29, desk29).pending && s.choiceView(c29, desk29).model === "llama-phone", "an answer without the pick keeps the phone's later choice");
+  s.take(st29, { seq: 2, chat: "p", from: "desk" }, dk14(2, { kind: "answer", text: "ответ", only: ["a", "b"], pick: { model: "llama-phone", only: ["b"] } }));
+  v29 = s.choiceView(c29, desk29);
+  want(!v29.pending && v29.model === "llama-phone" && s.pickToSend(c29) === null, "the window's confirmation clears «waiting»");
+  s.setPick(c29, { model: "", only: [] }); // как в окне
+  want(s.pickToSend(c29) && s.pickToSend(c29).model === "" && (s.pickToSend(c29).only || []).length === 0, "back to the window's choice is a change too");
+  // Модель, которую окно перестало разрешать, не показывается выбранной.
+  want(s.choiceView({ msgs: [], pick: { model: "gone-model" } }, desk29).model === "qwen3", "a revoked model falls back to the window's");
+}
+// 30. Ревью #677: п.1 — выбор, вернувшийся к подтвержденному, не «ждет окна»;
+// п.2 — модель, которую окно отозвало, сбрасывается и уходит сбросом;
+// п.3 — сохраненное в окне (сброс, другой телефон) телефон берет из ответа.
+if (typeof s.setPick === "function") {
+  const desk30 = { model: "qwen3", models: ["qwen3", "llama-phone"], sources: [{ id: "a", name: "A" }, { id: "b", name: "B" }] };
+  const c30 = { title: "Чат", msgs: [], updated: 1, pick: { model: "llama-phone", only: ["b"] } };
+  s.setPick(c30, { model: "", only: [] });
+  s.setPick(c30, { model: "llama-phone", only: ["b"] });
+  want(!c30.pickLocal && !s.choiceView(c30, desk30).pending, "a pick back at the confirmed one is not waiting");
+  const c30b = { title: "Чат", msgs: [], updated: 1, pick: { model: "gone-model", only: [] } };
+  const st30 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { p: c30b } };
+  s.take(st30, { seq: 1, chat: s.deskChat(st30), from: "desk" }, dk14(1, { kind: "desk", desk: desk30 }));
+  want(s.pickToSend(c30b)?.model === "" && s.choiceView(c30b, desk30).model === "qwen3", "a revoked model is reset and the reset goes with the next question");
+  const c30c = { title: "Чат", msgs: [], updated: 1, pickLocal: { model: "llama-phone", only: [] } };
+  const st30c = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { p: c30c } };
+  s.take(st30c, { seq: 1, chat: "p", from: "desk" }, dk14(1, { kind: "answer", text: "ок", pick: {} }));
+  want(s.choiceView(c30c, desk30).pending && c30c.pick.model === "", "an answer's empty pick is the window's «as in the window», a later local pick stays");
+  const c30d = { title: "Чат", msgs: [], updated: 1, pick: { model: "llama-phone", only: ["b"] } };
+  const st30d = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { p: c30d } };
+  s.take(st30d, { seq: 1, chat: "p", from: "desk" }, dk14(1, { kind: "answer", text: "ок", pick: {} }));
+  want(s.choiceView(c30d, desk30).model === "qwen3" && s.pickToSend(c30d) === null, "the window's reset shows on the phone");
+}
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 
