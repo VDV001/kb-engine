@@ -30,8 +30,10 @@ func TestPlacesView(t *testing.T) {
 		case name == "ozon_sku" && a["report"] == "full":
 			return titleCard, false
 		case name == "ozon_sku" && a["report"] == "keywords" && a["sku"] == float64(1234567):
-			return `[{"query":"футболка оверсайз","count":40,"avg_position":12,"positions":[10,null,14]},` +
-				`{"query":"футболка женская","count":900,"avg_position":30,"positions":[25,31,null]}]`, false
+			// 31 место по дням, как в настоящем ответе (замер 17.11).
+			pad := strings.Repeat(",null", 28)
+			return `[{"query":"футболка оверсайз","count":40,"avg_position":12,"positions":[10,null,14` + pad + `]},` +
+				`{"query":"футболка женская","count":900,"avg_position":30,"positions":[25,31,null` + pad + `]}]`, false
 		case name == "ozon_sku" && a["report"] == "keywords":
 			return "", false // товар не находят ни по одному запросу
 		case name == "ozon_sku" && a["report"] == "search_stats":
@@ -53,7 +55,7 @@ func TestPlacesView(t *testing.T) {
 	if v.From != "2026-10-17" || v.To != "2026-11-16" || v.Total != 2 || len(v.Rows) != 2 || v.Rows[0].Query != "футболка женская" {
 		t.Fatalf("view %+v", v)
 	}
-	if r := v.Rows[0]; r.Last != 31 || r.LastDay != "2026-10-18" || r.Seen != 2 || r.Days != 3 || r.Avg != 30 {
+	if r := v.Rows[0]; r.Last != 31 || r.LastDay != "2026-10-18" || r.Seen != 2 || r.Days != 31 || r.Avg != 30 {
 		t.Errorf("row %+v", r)
 	}
 	if v.Calls != 1 || !strings.Contains(v.Source, "MPStats") {

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -85,10 +86,10 @@ func (m MCP) CardQueries(ctx context.Context, sku int64, from, to time.Time) ([]
 	}
 	out := make([]markets.OwnQuery, 0, len(rows))
 	for _, r := range rows {
-		q := markets.OwnQuery{Text: r.Query, Count: r.Count, Position: int(r.Position), Days: make([]int, len(r.Positions))}
+		q := markets.OwnQuery{Text: r.Query, Count: r.Count, Position: int(math.Round(r.Position)), Days: make([]int, len(r.Positions))}
 		for i, p := range r.Positions {
 			if p != nil {
-				q.Days[i] = int(*p)
+				q.Days[i] = int(math.Round(*p))
 			}
 		}
 		out = append(out, q)
@@ -110,10 +111,10 @@ func (m MCP) SearchStats(ctx context.Context, sku int64, from, to time.Time) (ma
 	}
 	st := markets.SearchStats{Words: int(raw.Words), WordsBefore: int(raw.WordsBefore)}
 	if raw.Avg != nil {
-		st.Avg = int(*raw.Avg)
+		st.Avg = int(math.Round(*raw.Avg))
 	}
 	if raw.AvgBefore != nil {
-		st.AvgBefore = int(*raw.AvgBefore)
+		st.AvgBefore = int(math.Round(*raw.AvgBefore))
 	}
 	return st, nil
 }
