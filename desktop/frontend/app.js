@@ -4105,7 +4105,7 @@ function paintHint() {
   box.hidden = !h;
   if (!h) return;
   const second = h.role === "second", applied = chatState.role === "second";
-  box.innerHTML = `<span>${applied ? "Отвечу" : "Подойдет"} <b>${esc(h.model)}</b>${applied ? "" : " — " + esc(h.reason)}</span>` +
+  box.innerHTML = `<span>${applied ? "Отвечу" : "Подойдет"} <b>${esc(h.model)}</b>${applied ? "" : " · " + esc(h.reason)}</span>` +
     (second ? `<button class="lnk" type="button" data-hint-apply>${applied ? "вернуть основную" : "ответить ей"}</button>` : "");
 }
 $("#chat-hint").addEventListener("click", (e) => {

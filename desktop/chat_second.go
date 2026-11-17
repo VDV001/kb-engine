@@ -17,11 +17,11 @@ type hintView struct {
 
 // hintReasons — слова подсказки; домен отдает причину кодом.
 var hintReasons = map[domain.HintReason]string{
-	domain.ReasonShort:    "короткий простой вопрос — хватит быстрой модели",
-	domain.ReasonLong:     "длинный запрос — лучше основная модель",
-	domain.ReasonCode:     "в вопросе код — лучше основная модель",
-	domain.ReasonAnalysis: "анализ или сравнение — лучше основная модель",
-	domain.ReasonFiles:    "приложены файлы — лучше основная модель",
+	domain.ReasonShort:    "короткий простой вопрос, хватит быстрой модели",
+	domain.ReasonLong:     "длинный запрос, лучше основная модель",
+	domain.ReasonCode:     "в вопросе код, лучше основная модель",
+	domain.ReasonAnalysis: "анализ или сравнение, лучше основная модель",
+	domain.ReasonFiles:    "приложены файлы, лучше основная модель",
 }
 
 // SetSecondModel sets the second, secondary chat model (#678); пусто — одна модель.

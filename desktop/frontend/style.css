@@ -1404,7 +1404,7 @@ body:not(.no-mm-meter) .mm-meter i { background: var(--sp-all); }
 .chat-ctx-pop[data-tone="warn"] { border-left-color: var(--z-lvl-warn); } .chat-ctx-pop[data-tone="bad"] { border-left-color: var(--z-bad); }
 .chat-ctx-pop p { margin: 0; line-height: 1.5; }
 /* Быстрый выбор модели (#584): над полем, как окошко контекста. */
-.chat-mdl-pop { position: absolute; left: 10px; bottom: calc(100% + 8px); width: min(440px, calc(100% - 20px)); max-height: 360px; display: flex; flex-direction: column; background: var(--z-bg); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); box-shadow: 0 8px 28px #0004; font-size: 13px; z-index: 6; overflow: hidden; }
+.chat-mdl-pop { position: absolute; left: 10px; bottom: calc(100% + 8px); width: min(520px, calc(100% - 20px)); max-height: 360px; display: flex; flex-direction: column; background: var(--z-bg); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); box-shadow: 0 8px 28px #0004; font-size: 13px; z-index: 6; overflow: hidden; }
 .chat-mdl-pop input { margin: 8px; padding: 7px 9px; font: 13px var(--z-font); color: var(--z-ink); background: var(--z-bg-2); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); outline: 0; }
 .chat-mdl-pop input:focus { border-color: var(--z-accent); }
 .chat-mdl-pop .md-list { overflow: auto; padding: 0 4px 4px; }
