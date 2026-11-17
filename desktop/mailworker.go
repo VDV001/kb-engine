@@ -842,6 +842,7 @@ func (w *mailWorker) keepTurns(id string, q []mailrelay.WindowTurn) {
 
 // SetPick applies the phone's choice for its turns in chat id (#657): пустой
 // список источников — как в окне.
-func (c phoneChats) SetPick(_ context.Context, id string, p mailrelay.Pick) error {
-	return c.d.SetPhonePick(id, p.Model, p.Only, len(p.Only) == 0)
+func (c phoneChats) SetPick(_ context.Context, id string, p mailrelay.Pick) (mailrelay.Pick, error) {
+	err := c.d.SetPhonePick(id, p.Model, p.Only, len(p.Only) == 0)
+	return p, err
 }

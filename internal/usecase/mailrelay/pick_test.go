@@ -12,14 +12,18 @@ import (
 type picker struct {
 	set    []string
 	refuse error
+	narrow []string // что окно сохранило вместо просимого
 }
 
-func (p *picker) SetPick(_ context.Context, chat string, pk mailrelay.Pick) error {
+func (p *picker) SetPick(_ context.Context, chat string, pk mailrelay.Pick) (mailrelay.Pick, error) {
 	if p.refuse != nil {
-		return p.refuse
+		return mailrelay.Pick{}, p.refuse
 	}
 	p.set = append(p.set, chat+"="+pk.Model)
-	return nil
+	if p.narrow != nil { // окно сузило до того, что разрешено
+		pk.Only = p.narrow
+	}
+	return pk, nil
 }
 
 // Выбор модели и источников с телефона (#657): применяется до хода, отказ окна
@@ -63,5 +67,26 @@ func TestRelayAppliesThePhonesPick(t *testing.T) {
 	}
 	if len(pk.set) != 1 {
 		t.Errorf("pick applied to a chat the window does not have: %v", pk.set)
+	}
+}
+
+// Подтверждение — то, что окно сохранило, а не эхо запроса (ревью #677, п.4).
+func TestRelayConfirmsWhatTheWindowSaved(t *testing.T) {
+	b, s := &box{}, &store{}
+	b.phone("c-1", "A", 1, q("привет"))
+	r := newRelay(b, &asker{}, s)
+	pk := &picker{narrow: []string{"src-b"}}
+	r.Picker = pk
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	b.phone("c-1", "A", 2, mailrelay.Payload{Kind: mailrelay.KindQuestion, Text: "дальше", Pick: &mailrelay.Pick{Model: "m", Only: []string{"src-a", "src-b"}}})
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	ps := payloads(t, b)
+	last := ps[len(ps)-1]
+	if last.Pick == nil || len(last.Pick.Only) != 1 || last.Pick.Only[0] != "src-b" {
+		t.Errorf("confirmed %+v", last.Pick)
 	}
 }

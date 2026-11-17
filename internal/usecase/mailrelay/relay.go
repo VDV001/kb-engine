@@ -103,7 +103,7 @@ type Pick struct {
 
 // Picker applies the phone's choice to a window chat.
 type Picker interface {
-	SetPick(ctx context.Context, chat string, p Pick) error
+	SetPick(ctx context.Context, chat string, p Pick) (Pick, error)
 }
 
 // Attachment is a file the phone attached to a question: имя, тип, длина
@@ -646,10 +646,11 @@ func (r Relay) question(ctx context.Context, st *State, chat string, req Payload
 	// выбирать не из чего. Отказ окна — словами и без хода.
 	var picked *Pick
 	if w := st.Chats[chat]; req.Pick != nil && w != "" && r.Picker != nil {
-		if err := r.Picker.SetPick(ctx, w, *req.Pick); err != nil {
+		applied, err := r.Picker.SetPick(ctx, w, *req.Pick)
+		if err != nil {
 			return Payload{Kind: KindError, Text: err.Error()}
 		}
-		picked = req.Pick
+		picked = &applied
 	}
 	reply := r.questionTurn(ctx, st, chat, req)
 	if reply.Kind == KindAnswer {

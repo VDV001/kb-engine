@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"errors"
+	"slices"
+	"sync"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/chat"
 	"github.com/daniil/kb-engine/internal/usecase/mailrelay"
 )
 
@@ -100,14 +103,14 @@ func TestPhonePickSources(t *testing.T) {
 func TestPhonePickWiring(t *testing.T) {
 	d, _, _, id := pickDesk(t)
 	pc := phoneChats{d: d, changed: func(string) {}}
-	if err := pc.SetPick(context.Background(), id, mailrelay.Pick{Model: "llama-phone", Only: []string{"src-a"}}); err != nil {
+	if _, err := pc.SetPick(context.Background(), id, mailrelay.Pick{Model: "llama-phone", Only: []string{"src-a"}}); err != nil {
 		t.Fatal(err)
 	}
 	rec, err := d.load(id)
 	if err != nil || rec.PhonePick != "llama-phone" || len(rec.PhoneOnly) != 1 {
 		t.Fatalf("%+v %v", rec, err)
 	}
-	if err := pc.SetPick(context.Background(), id, mailrelay.Pick{}); err != nil {
+	if _, err := pc.SetPick(context.Background(), id, mailrelay.Pick{}); err != nil {
 		t.Fatal(err)
 	}
 	if rec, _ := d.load(id); rec.PhonePick != "" || rec.PhoneOnly != nil {
@@ -151,5 +154,97 @@ func TestChatSettingsKeepPhoneModels(t *testing.T) {
 	}
 	if c := d.config(); len(c.PhoneModels) != 1 || c.PhoneModels[0] != "llama-phone" {
 		t.Errorf("page save dropped the phone's models: %v", c.PhoneModels)
+	}
+}
+
+// Модель окна телефону всегда доступна (ревью #677, п.7): телефон показывает ее
+// первой, и ход на ней не отказывает, даже если ее нет в «Телефону: разрешить».
+func TestPhonePickWindowModelAlwaysAllowed(t *testing.T) {
+	d, _, _, id := pickDesk(t)
+	if err := d.SetPhonePick(id, "llama-phone", nil, true); err != nil {
+		t.Fatal(err)
+	}
+	c := d.config()
+	c.Model, c.PhoneModels = "llama-phone", nil
+	if err := d.SetSettings(c, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := phoneAsk(d, id); err != nil {
+		t.Errorf("phone turn on the window's own model: %v", err)
+	}
+	if err := d.SetPhonePick(id, "llama-phone", nil, true); err != nil {
+		t.Errorf("picking the window's own model: %v", err)
+	}
+}
+
+// Ход телефона не переписывает модель чата и не выдает счет токенов чужой
+// модели за заполнение окна модели окна (ревью #677, п.8).
+func TestPhoneTurnKeepsWindowModelAndContext(t *testing.T) {
+	d, m, _, id := pickDesk(t)
+	m.usage = chat.Usage{In: 500, Counted: true}
+	if err := d.SetPhonePick(id, "llama-phone", nil, true); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := phoneAsk(d, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.Model != "qwen3" || rec.ContextUsed != 0 {
+		t.Errorf("model %q, context used %d — ход другой модели не пишет ни модель, ни счет окна", rec.Model, rec.ContextUsed)
+	}
+	if rec, err = d.ask(context.Background(), askReq{ID: id, Question: "из окна"}, askOut{}); err != nil || rec.Model != "qwen3" || rec.ContextUsed != 500 {
+		t.Errorf("window turn: model %q, used %d, %v", rec.Model, rec.ContextUsed, err)
+	}
+}
+
+// Явный выбор «все источники окна» — это «как в окне»: новые источники окна
+// телефон видит (ревью #677, п.9).
+func TestPhonePickAllSourcesIsAsInWindow(t *testing.T) {
+	d, _, _, id := pickDesk(t)
+	if err := d.SetPhonePick(id, "", []string{"src-a", "src-b"}, false); err != nil {
+		t.Fatal(err)
+	}
+	if rec, _ := d.load(id); rec.PhoneOnly != nil {
+		t.Errorf("explicit all stored as %v", rec.PhoneOnly)
+	}
+}
+
+// SetPick возвращает то, что окно сохранило, а не то, что просили (ревью #677, п.4).
+func TestPhoneChatsReturnsApplied(t *testing.T) {
+	d, _, _, id := pickDesk(t)
+	pc := phoneChats{d: d, changed: func(string) {}}
+	got, err := pc.SetPick(context.Background(), id, mailrelay.Pick{Model: "llama-phone", Only: []string{"src-b", "src-x"}})
+	if err != nil || got.Model != "llama-phone" || len(got.Only) != 1 || got.Only[0] != "src-b" {
+		t.Errorf("applied %+v, %v", got, err)
+	}
+}
+
+// Два переключателя «телефону» разом не теряют друг друга (ревью #677, п.6).
+func TestSetPhoneModelConcurrent(t *testing.T) {
+	d, _, _, _ := pickDesk(t)
+	models := []string{"m1", "m2", "m3", "m4", "m5", "m6"}
+	var wg sync.WaitGroup
+	for _, m := range models {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := d.SetPhoneModel(m, true); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	for _, m := range models {
+		if !slices.Contains(d.config().PhoneModels, m) {
+			t.Errorf("%s lost: %v", m, d.config().PhoneModels)
+		}
+	}
+}
+
+// Пустая модель — доменная ошибка, errors.Is (ревью #677, п.10).
+func TestSetPhoneModelEmptyIsDomainError(t *testing.T) {
+	d, _, _, _ := pickDesk(t)
+	if err := d.SetPhoneModel(" ", true); !errors.Is(err, domain.ErrNoChatModel) {
+		t.Errorf("%v", err)
 	}
 }
