@@ -88,7 +88,8 @@ type Payload struct {
 	// Heard — что окно расслышало в голосовом вопросе (#648, ответ на KindVoice).
 	Heard string `json:"heard,omitempty"`
 	// Attach — файл к вопросу телефона (#650): куски в файлах ящика по порядку.
-	Attach *Attachment `json:"attach,omitempty"`
+	Attach  *Attachment `json:"attach,omitempty"`
+	History []Exchange  `json:"history,omitempty"`
 }
 
 // Attachment is a file the phone attached to a question: имя, тип, длина
@@ -229,6 +230,10 @@ const (
 	ChatEditFailed = "chaterr"
 	// KindAsked — вопрос, заданный в окне (#669): Text — вопрос, Title — название чата.
 	KindAsked = "asked"
+	// KindHistory — история чата окна пачкой (#669): History, Title.
+	KindHistory = "history"
+	// DeleteEvicted — Text у KindDelete: чат окна выпал из MaxSharedChats.
+	DeleteEvicted = "evicted"
 	// KindRemember — окно предлагает запомнить факты о человеке (#647, Facts).
 	KindRemember = "remember"
 	// KindMemory — решение телефона по факту (Text yes/no, Facts[0]) и ответ окна
@@ -384,7 +389,8 @@ const MaxSharedChats = 50
 
 // Exchange is one turn of a chat: вопрос и ответ.
 type Exchange struct {
-	Question, Answer string
+	Question string `json:"q"`
+	Answer   string `json:"a"`
 }
 
 // WindowTurn is a turn the person made in the window (#669): Chat — чат окна,

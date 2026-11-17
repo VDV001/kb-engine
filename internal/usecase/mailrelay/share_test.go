@@ -3,6 +3,8 @@ package mailrelay_test
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/domain"
@@ -44,12 +46,14 @@ func TestRelaySharesANewWindowChat(t *testing.T) {
 		t.Fatal(err)
 	}
 	chats, ps := deskPosts(t, b)
-	if len(ps) != 4 || ps[0].Kind != mailrelay.KindAsked || ps[0].Text != "вопрос 1" || ps[0].Title != "Поставки" ||
-		ps[1].Kind != mailrelay.KindAnswer || ps[1].Text != "ответ 1" || ps[2].Text != "вопрос 2" || ps[3].Text != "ответ 2" {
+	// История — одним сообщением history, а не по два на ход: предел отправки
+	// сервера — раз в секунду (ревью #675).
+	if len(ps) != 1 || ps[0].Kind != mailrelay.KindHistory || ps[0].Title != "Поставки" || len(ps[0].History) != 2 ||
+		ps[0].History[0].Question != "вопрос 1" || ps[0].History[1].Answer != "ответ 2" {
 		t.Fatalf("posted %+v", ps)
 	}
 	mc := chats[0]
-	if err := domain.ValidateMailChat(mc); err != nil || s.st.Chats[mc] != "w-7" || chats[3] != mc {
+	if err := domain.ValidateMailChat(mc); err != nil || s.st.Chats[mc] != "w-7" {
 		t.Fatalf("chat %q (%v), mapping %v", mc, err, s.st.Chats)
 	}
 	r.Turns = []mailrelay.WindowTurn{{Chat: "w-7", Title: "Поставки", New: true, History: exchanges(3)}}
@@ -57,8 +61,8 @@ func TestRelaySharesANewWindowChat(t *testing.T) {
 		t.Fatal(err)
 	}
 	chats, ps = deskPosts(t, b)
-	if len(ps) != 6 || ps[4].Text != "вопрос 3" || ps[5].Text != "ответ 3" || chats[5] != mc {
-		t.Fatalf("second turn %+v", ps[4:])
+	if len(ps) != 3 || ps[1].Kind != mailrelay.KindAsked || ps[1].Text != "вопрос 3" || ps[2].Text != "ответ 3" || chats[2] != mc {
+		t.Fatalf("second turn %+v", ps[1:])
 	}
 }
 
@@ -103,7 +107,7 @@ func TestRelayKeepsTheLast50WindowChats(t *testing.T) {
 	}
 	chats, ps := deskPosts(t, b)
 	last := ps[len(ps)-1]
-	if last.Kind != mailrelay.KindDelete || chats[len(chats)-1] != chats[0] {
+	if last.Kind != mailrelay.KindDelete || last.Text != mailrelay.DeleteEvicted || chats[len(chats)-1] != chats[0] {
 		t.Fatalf("the oldest is not deleted on the phone: %+v in %s", last, chats[len(chats)-1])
 	}
 	for mc, wc := range s.st.Chats {
@@ -117,7 +121,95 @@ func TestRelayKeepsTheLast50WindowChats(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, ps2 := deskPosts(t, b)
-	if got := ps2[len(ps):]; len(got) != 5 || got[0].Text != "вопрос 1" || got[4].Kind != mailrelay.KindDelete {
+	if got := ps2[len(ps):]; len(got) != 2 || got[0].Kind != mailrelay.KindHistory || len(got[0].History) != 2 || got[1].Kind != mailrelay.KindDelete {
 		t.Fatalf("came back %+v", got)
+	}
+}
+
+// Длинная история — пачками в предел сообщения, по порядку; длинный ответ
+// укорочен, а не роняет пачку.
+func TestRelayPacksLongHistory(t *testing.T) {
+	b, s := &box{}, &store{}
+	r := newRelay(b, &asker{}, s)
+	r.MaxText = 400
+	h := exchanges(10)
+	h[3].Answer = strings.Repeat("я", 2000)
+	r.Turns = []mailrelay.WindowTurn{{Chat: "w-1", Title: "т", New: true, History: h}}
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	_, ps := deskPosts(t, b)
+	var got []mailrelay.Exchange
+	for _, p := range ps {
+		if p.Kind != mailrelay.KindHistory {
+			t.Fatalf("not history: %+v", p)
+		}
+		if raw, _ := json.Marshal(p.History); len(raw) > r.MaxText {
+			t.Errorf("pack of %d bytes over %d", len(raw), r.MaxText)
+		}
+		got = append(got, p.History...)
+	}
+	if len(ps) < 2 || len(ps) > 6 || len(got) != 10 || got[0].Question != "вопрос 1" || got[9].Question != "вопрос 10" || len(got[3].Answer) >= 2000 {
+		t.Fatalf("%d packs, %d exchanges", len(ps), len(got))
+	}
+}
+
+// Удаление в том же круге — ход не заводит чат заново; переименование того
+// же круга — название пачки (ревью #675).
+func TestRelayShareHonorsSameRoundEdits(t *testing.T) {
+	b, s := &box{}, &store{}
+	r := newRelay(b, &asker{}, s)
+	r.Notes = []mailrelay.Note{{Chat: "w-del", Payload: mailrelay.Payload{Kind: mailrelay.KindDelete, Text: "chat"}},
+		{Chat: "w-ren", Payload: mailrelay.Payload{Kind: mailrelay.KindRename, Text: "Новое"}}}
+	r.Turns = []mailrelay.WindowTurn{{Chat: "w-del", Title: "т", New: true, History: exchanges(1)},
+		{Chat: "w-ren", Title: "старое", New: true, History: exchanges(1)}}
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	_, ps := deskPosts(t, b)
+	if len(ps) != 1 || ps[0].Title != "Новое" {
+		t.Fatalf("posted %+v", ps)
+	}
+	for _, wc := range s.st.Chats {
+		if wc == "w-del" {
+			t.Error("deleted chat linked again")
+		}
+	}
+}
+
+// Вопрос с телефона освежает место чата окна; выпавший из 50 чат не помечен
+// удаленным — неотправленный вопрос телефона получит ответ (ревью #675).
+func TestRelayPhoneKeepsSharedChatFresh(t *testing.T) {
+	b, s := &box{}, &store{}
+	a := &asker{}
+	r := newRelay(b, a, s)
+	r.Turns = []mailrelay.WindowTurn{{Chat: "w-first", Title: "т", New: true, History: exchanges(1)}}
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	first := s.st.Shared[0]
+	for i := range mailrelay.MaxSharedChats - 1 {
+		r.Turns = []mailrelay.WindowTurn{{Chat: fmt.Sprintf("w-%d", i), Title: "т", New: true, History: exchanges(1)}}
+		if err := r.Tick(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b.phone(first, "A", 1, q("еще вопрос"))
+	r.Turns = nil
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if s.st.Shared[len(s.st.Shared)-1] != first {
+		t.Fatalf("phone question did not refresh %s: %v", first, s.st.Shared[len(s.st.Shared)-5:])
+	}
+	r.Turns = []mailrelay.WindowTurn{{Chat: "w-new", Title: "т", New: true, History: exchanges(1)}}
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(s.st.Shared, first) {
+		t.Fatal("the fresh chat was evicted")
+	}
+	if len(s.st.Deleted) != 0 {
+		t.Errorf("evicted chat marked deleted %v — вопрос телефона в нем пропадет", s.st.Deleted)
 	}
 }
