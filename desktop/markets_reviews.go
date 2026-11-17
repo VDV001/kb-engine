@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/mpstats"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/markets"
@@ -45,7 +46,9 @@ type reviewFindingsView struct {
 var (
 	errNoReviewsConsent = errors.New("выводы делает модель окна: тексты отзывов уйдут ее провайдеру — нужно согласие")
 	errNoReviewTexts    = errors.New("у отзывов нет текстов — делать выводы не по чему")
-	errReviewsNotShared = errors.New("stub")
+	// Тексты отзывов — данные подключения MPStats: к модели — только с тем же
+	// разрешением, что у чата (решение владельца 17.11).
+	errReviewsNotShared = errors.New("выводам моделью нужно «Чату: разрешить» у подключения MPStats: Настройки → Подключения")
 )
 
 // MarketsReviews shows the reviews of card sku; fresh — мимо памяти.
@@ -66,11 +69,7 @@ func (a *App) MarketsReviewFindings(sku string, consent bool) (reviewFindingsVie
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, 2*time.Minute)
 	defer cancel()
-	rs, _, err := a.settings.readReviews(ctx, nil, sku, false, time.Now())
-	if err != nil {
-		return reviewFindingsView{}, err
-	}
-	return a.chat.modelReviews(rs, true)
+	return a.settings.reviewFindings(ctx, nil, a.chat, sku, true, time.Now())
 }
 
 // readReviews reads the card's reviews: память на 10 минут или один отчет
@@ -139,10 +138,29 @@ func (d *chatDesk) modelReviews(rs []markets.Review, consent bool) (reviewFindin
 	return reviewFindingsView{Praise: rows(f.Praise), Complaints: rows(f.Complaints), Used: n, Model: reply.Model}, nil
 }
 
+// reviewFindings reads the reviews and asks the model; без разрешения чату у
+// подключения MPStats — отказ до вызова модели.
 func (f *folderSettings) reviewFindings(ctx context.Context, hc *http.Client, cd *chatDesk, sku string, consent bool, now time.Time) (reviewFindingsView, error) {
+	if !consent {
+		return reviewFindingsView{}, errNoReviewsConsent
+	}
+	if !f.mpstatsShared() {
+		return reviewFindingsView{}, errReviewsNotShared
+	}
 	rs, _, err := f.readReviews(ctx, hc, sku, false, now)
 	if err != nil {
 		return reviewFindingsView{}, err
 	}
 	return cd.modelReviews(rs, consent)
+}
+
+// mpstatsShared reports whether the first enabled MPStats connection — та, из
+// которой читаются отзывы (mpstatsFirst), — разрешена чату.
+func (f *folderSettings) mpstatsShared() bool {
+	for _, c := range f.snapshot().cfg.Connections {
+		if c.Kind == desktopconfig.ConnMPStats && c.Enabled {
+			return c.Share
+		}
+	}
+	return false
 }
