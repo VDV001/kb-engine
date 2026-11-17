@@ -8,6 +8,8 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+## [0.41.1] — 2026-11-17
+
 ### Fixed
 - **Выпуск окна без `._*` в архиве.** `just window-release` собирал zip через
   `ditto` с настройками по умолчанию, и в `kb.app` попадали файлы AppleDouble
