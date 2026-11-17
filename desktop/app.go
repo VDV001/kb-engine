@@ -155,7 +155,10 @@ func (a *App) Problems(fresh bool) problemsView {
 func (a *App) ChatSettings() chatSettingsView { return a.chat.Settings() }
 
 // SetChatSettings saves the chat model; key — новый ключ, пусто — прежний.
+// Разрешения телефону страница не показывает и не правит: они остаются прежними
+// (меняются переключателем «телефону» у модели, #657).
 func (a *App) SetChatSettings(c desktopconfig.Chat, key string) error {
+	c.PhoneModels = a.chat.config().PhoneModels
 	return a.chat.SetSettings(c, key)
 }
 
@@ -164,6 +167,17 @@ func (a *App) ChatModels() (modelsView, error) { return a.chat.Models() }
 
 // SetChatModel switches the chat model from the quick picker; остальное не трогает.
 func (a *App) SetChatModel(model string) error { return a.chat.SetModel(model) }
+
+// SetChatPhoneModel allows or forbids a model to the phone (#657).
+func (a *App) SetChatPhoneModel(model string, allow bool) error {
+	return a.chat.SetPhoneModel(model, allow)
+}
+
+// SetChatSecondModel sets the secondary chat model; "" — одна модель (#678).
+func (a *App) SetChatSecondModel(model string) error { return a.chat.SetSecondModel(model) }
+
+// ChatHint advises a model for the question being typed (#678).
+func (a *App) ChatHint(question string, files int) hintView { return a.chat.Hint(question, files) }
 
 // BrowserState returns the Browser tab's controls: установленные браузеры, выбор и работает ли сервер.
 func (a *App) BrowserState() browserView { return a.browser.View() }
