@@ -900,6 +900,9 @@ body:not(.no-fin-src) .fin-src-name { background: var(--sp-cool); -webkit-backgr
 .chat-src i { width: 7px; height: 7px; border-radius: 50%; background: var(--c, var(--z-faint)); flex: none; opacity: .45; }
 .chat-src[aria-pressed="true"] { color: var(--z-ink); border-color: var(--c, var(--z-rule-2)); }
 .chat-src[aria-pressed="true"] i { opacity: 1; }
+/* Выключенное для этого чата видно без подсказки: имя зачеркнуто, значок пустой. */
+.chat-src[aria-pressed="false"] .t { text-decoration: line-through; }
+.chat-src[aria-pressed="false"] i { background: none; border: 1px solid var(--c, var(--z-faint)); }
 .chat-src.bad { border-style: dashed; }
 .chat-src.bad::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--z-lvl-error); }
 .chat-src:hover { color: var(--z-ink); }
