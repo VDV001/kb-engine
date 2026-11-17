@@ -8,6 +8,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/daniil/kb-engine/internal/domain"
 )
@@ -16,6 +17,7 @@ import (
 // (latest/download/<имя> или download/<тег>/<имя>); больше limit байт — отказ.
 type Source interface {
 	Fetch(ctx context.Context, path string, limit int64) ([]byte, error)
+	Open(ctx context.Context, path string, limit int64) (io.ReadCloser, error)
 }
 
 const (
@@ -95,10 +97,16 @@ func (u Updater) Check(ctx context.Context) (Offer, error) {
 }
 
 // Download fetches the offered file and checks it against the signed manifest.
-// ponytail: файл целиком в памяти (до domain.MaxReleaseAsset, сборки — десятки
-// МБ); потолок — память окна на файле в сотни МБ. Путь: Source отдает поток,
-// sha256 считается на лету в os.CreateTemp.
-func (u Updater) Download(ctx context.Context, o Offer) ([]byte, error) {
+func (u Updater) Download(ctx context.Context, o Offer, dst io.Writer) error {
+	b, err := u.download(ctx, o)
+	if err != nil {
+		return err
+	}
+	_, err = dst.Write(b)
+	return err
+}
+
+func (u Updater) download(ctx context.Context, o Offer) ([]byte, error) {
 	if !o.ok {
 		return nil, ErrNoOffer
 	}

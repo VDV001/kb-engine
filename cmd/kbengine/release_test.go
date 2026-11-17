@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -88,8 +89,9 @@ func TestReleaseSignPassesTheWindowsCheck(t *testing.T) {
 	if err != nil || !offer.Available() {
 		t.Fatalf("window check: %v %v", offer.Available(), err)
 	}
-	if b, err := u.Download(t.Context(), offer); err != nil || string(b) != "windows setup" {
-		t.Errorf("download: %q %v", b, err)
+	var b bytes.Buffer
+	if err := u.Download(t.Context(), offer, &b); err != nil || b.String() != "windows setup" {
+		t.Errorf("download: %q %v", b.String(), err)
 	}
 }
 
@@ -148,6 +150,14 @@ func TestReleaseSignRefusals(t *testing.T) {
 
 // dirReleases is a release on disk: путь выпуска → файл.
 type dirReleases map[string]string
+
+func (d dirReleases) Open(ctx context.Context, path string, limit int64) (io.ReadCloser, error) {
+	b, err := d.Fetch(ctx, path, limit)
+	if err != nil {
+		return nil, err
+	}
+	return io.NopCloser(bytes.NewReader(b)), nil
+}
 
 func (d dirReleases) Fetch(_ context.Context, path string, limit int64) ([]byte, error) {
 	b, err := os.ReadFile(d[path])

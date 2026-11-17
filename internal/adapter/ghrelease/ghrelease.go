@@ -84,3 +84,5 @@ func (c Client) client() http.Client {
 	}
 	return hc
 }
+
+func (c Client) Open(context.Context, string, int64) (io.ReadCloser, error) { return nil, ErrBadPath }

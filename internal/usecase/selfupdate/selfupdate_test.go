@@ -1,12 +1,14 @@
 package selfupdate_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/domain"
@@ -15,9 +17,19 @@ import (
 
 // fakeReleases is GitHub Releases in memory: путь → файл; asked — что спросили.
 type fakeReleases struct {
-	files map[string][]byte
-	asked []string
-	err   error
+	files  map[string][]byte
+	asked  []string
+	opened []string // через Open — потоком
+	err    error
+}
+
+func (f *fakeReleases) Open(ctx context.Context, path string, limit int64) (io.ReadCloser, error) {
+	f.opened = append(f.opened, path)
+	b, err := f.Fetch(ctx, path, limit)
+	if err != nil {
+		return nil, err
+	}
+	return io.NopCloser(bytes.NewReader(b)), nil
 }
 
 func (f *fakeReleases) Fetch(_ context.Context, path string, limit int64) ([]byte, error) {
@@ -85,12 +97,16 @@ func TestCheckAndDownload(t *testing.T) {
 	if !offer.Available() || offer.Version().String() != "v0.41.0" {
 		t.Fatalf("offer %v %s", offer.Available(), offer.Version())
 	}
-	got, err := u.Download(t.Context(), offer)
-	if err != nil {
+	// Файл идет потоком в dst (у окна — временный файл), не в память (ревью #672).
+	var got bytes.Buffer
+	if err := u.Download(t.Context(), offer, &got); err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != string(setup) {
-		t.Errorf("downloaded %q", got)
+	if got.String() != string(setup) {
+		t.Errorf("downloaded %q", got.String())
+	}
+	if len(src.opened) != 1 || src.opened[0] != setupPath {
+		t.Errorf("opened %v — сборка читается потоком через Open", src.opened)
 	}
 	want := []string{manifestPath, sigPath, setupPath}
 	if fmt.Sprint(src.asked) != fmt.Sprint(want) {
@@ -166,9 +182,10 @@ func TestDownloadRejectsSubstitutedFile(t *testing.T) {
 			t.Fatal(err)
 		}
 		src.files[setupPath] = body
-		got, err := u.Download(t.Context(), offer)
-		if got != nil || err == nil {
-			t.Errorf("%s: %d bytes, %v", name, len(got), err)
+		var got bytes.Buffer
+		err = u.Download(t.Context(), offer, &got)
+		if err == nil {
+			t.Errorf("%s: accepted %d bytes", name, got.Len())
 		}
 		if len(body) <= len(setup) && !errors.Is(err, domain.ErrReleaseAssetMismatch) {
 			t.Errorf("%s: %v, want ErrReleaseAssetMismatch", name, err)
@@ -179,7 +196,7 @@ func TestDownloadRejectsSubstitutedFile(t *testing.T) {
 func TestDownloadWithoutOffer(t *testing.T) {
 	pub, _ := key(t)
 	src := release(nil, nil)
-	if _, err := updater(t, src, pub, "v0.40.0").Download(t.Context(), selfupdate.Offer{}); err == nil || len(src.asked) != 0 {
+	if err := updater(t, src, pub, "v0.40.0").Download(t.Context(), selfupdate.Offer{}, io.Discard); err == nil || len(src.asked) != 0 {
 		t.Errorf("zero offer: %v, asked %v", err, src.asked)
 	}
 }

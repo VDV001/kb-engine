@@ -2,6 +2,7 @@ package ghrelease_test
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -86,5 +87,26 @@ func TestFetchRefusals(t *testing.T) {
 		if _, err := c.Fetch(t.Context(), p, 10); !errors.Is(err, ghrelease.ErrBadPath) {
 			t.Errorf("path %q: %v", p, err)
 		}
+	}
+}
+
+// Open streams the file and cuts it at the limit (ревью #672: сборка — потоком).
+func TestOpenStreamsWithinTheLimit(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(strings.Repeat("a", 20)))
+	}))
+	defer srv.Close()
+	c := ghrelease.Client{Base: srv.URL + "/r/", HTTP: srv.Client()}
+	rc, err := c.Open(t.Context(), "big", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rc.Close()
+	b, err := io.ReadAll(rc)
+	if !errors.Is(err, ghrelease.ErrTooLarge) || len(b) > 10 {
+		t.Errorf("read %d bytes, %v — want ErrTooLarge past 10", len(b), err)
+	}
+	if _, err := c.Open(t.Context(), "../x", 10); !errors.Is(err, ghrelease.ErrBadPath) {
+		t.Errorf("bad path: %v", err)
 	}
 }
