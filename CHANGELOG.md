@@ -8,6 +8,15 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+### Fixed
+- **Окно не искало обновления из-за тега канала.** `gh release create dvk-latest`
+  создает в репозитории git-тег `dvk-latest`, и `git describe --tags` стал
+  отдавать `dvk-latest-1-g…` вместо `v0.41.1-…`: окно считало себя сборкой без
+  версии и не проверяло выпуск. Сборки `just desktop`, `just desktop-windows` и
+  установщик берут версию из `git describe --tags --match 'v[0-9]*'`. Выпуск
+  окна по тегу (`just window-release`) этим не затрагивался: на точном теге
+  версия верна.
+
 ## [0.41.2] — 2026-11-17
 
 ### Added
