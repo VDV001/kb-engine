@@ -388,7 +388,7 @@ function paintPick(c, v) {
     return;
   }
   const opt = (attr, id, label, on) => `<button type="button" class="opt" ${attr}="${esc(id)}" aria-pressed="${on}">${esc(label)}</button>`;
-  box.innerHTML = `<p class="meta">Модель для вопросов с телефона</p><div class="opts">${v.models.map((id, i) => opt("data-pick-model", i ? id : "", id + (i ? "" : " · как в окне"), (i ? id : "") === (v.model === v.models[0] ? "" : v.model))).join("")}</div>` +
+  box.innerHTML = `<p class="meta">Модель для вопросов с телефона</p><div class="opts">${v.models.map((id, i) => opt("data-pick-model", i ? id : "", id + (i ? "" : " · как в окне") + (id === v.second ? " · вторая" : ""), (i ? id : "") === (v.model === v.models[0] ? "" : v.model))).join("")}</div>` +
     (v.choices.length ? `<p class="meta">Где искать</p><div class="opts">${v.choices.map((x) => opt("data-pick-src", x.id, x.name, x.on)).join("")}</div>` : "") +
     (v.pending ? '<p class="meta">Выбор уйдет окну со следующим вопросом.</p>' : "");
 }
@@ -430,6 +430,12 @@ function paintChat(c, follow) {
       li.className = "desk";
       paintText(li, m.text);
       if (m.sources?.length) li.append(chips(m.sources));
+      if (m.model) { // какой моделью написан ответ (#685): как под ответом в окне
+        const tag = document.createElement("span");
+        tag.className = "meta";
+        tag.textContent = m.model.split("/").pop();
+        li.append(tag);
+      }
     } else {
       li.className = m.who + (m.who === "me" && m.sent === false ? " unsent" : "");
       li.textContent = m.text;
