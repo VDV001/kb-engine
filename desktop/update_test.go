@@ -43,7 +43,7 @@ func signedRelease(t *testing.T, version string, body []byte) (ed25519.PublicKey
 	t.Helper()
 	pub, priv, _ := ed25519.GenerateKey(nil)
 	sum := sha256.Sum256(body)
-	m := fmt.Appendf(nil, `{"version":%q,"assets":[{"platform":"darwin-arm64","name":"DVK-mac-arm64.zip","sha256":%q,"size":%d},{"platform":"windows-amd64","name":"DVK-Setup.exe","sha256":%q,"size":%d}]}`,
+	m := fmt.Appendf(nil, `{"version":%q,"expires":"2099-01-01T00:00:00Z","assets":[{"platform":"darwin-arm64","name":"DVK-mac-arm64.zip","sha256":%q,"size":%d},{"platform":"windows-amd64","name":"DVK-Setup.exe","sha256":%q,"size":%d}]}`,
 		version, hex.EncodeToString(sum[:]), len(body), hex.EncodeToString(sum[:]), len(body))
 	return pub, fakeRelease{
 		"download/dvk-latest/dvk-manifest.json":      m,
