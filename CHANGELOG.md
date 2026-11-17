@@ -8,6 +8,8 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+## [0.41.0] — 2026-11-17
+
 ### Added
 - **Клиент модели изображений (#678, часть 2, основа).** `internal/adapter/imagegen`:
   рисует через OpenAI-совместимый шлюз (`chat/completions`, модальности текст и
