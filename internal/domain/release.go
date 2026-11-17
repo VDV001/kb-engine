@@ -191,13 +191,34 @@ func (m ReleaseManifest) Asset(platform string) (ReleaseAsset, bool) {
 	return ReleaseAsset{}, false
 }
 
-// NewReleaseAsset describes a built file for the manifest.
-func NewReleaseAsset(string, string, []byte) (ReleaseAsset, error) { return ReleaseAsset{}, nil }
-
-// NewReleaseManifest builds the manifest the release signs.
-func NewReleaseManifest(string, ...ReleaseAsset) (ReleaseManifest, error) {
-	return ReleaseManifest{}, nil
+// NewReleaseAsset describes a built file for the manifest, по тем же правилам,
+// по которым окно его прочтет.
+func NewReleaseAsset(platform, name string, body []byte) (ReleaseAsset, error) {
+	s := sha256.Sum256(body)
+	a, err := parseReleaseAsset(releaseAssetJSON{Platform: platform, Name: name, SHA256: hex.EncodeToString(s[:]), Size: int64(len(body))})
+	if err != nil {
+		return ReleaseAsset{}, fmt.Errorf("%w: %w", ErrBadReleaseManifest, err)
+	}
+	return a, nil
 }
 
-// JSON is the manifest as published.
-func (m ReleaseManifest) JSON() []byte { return nil }
+// NewReleaseManifest builds the manifest the release signs.
+func NewReleaseManifest(version string, assets ...ReleaseAsset) (ReleaseManifest, error) {
+	m, err := ParseReleaseManifest(manifestJSON(version, assets))
+	if err != nil {
+		return ReleaseManifest{}, err
+	}
+	return m, nil
+}
+
+// JSON is the manifest as published: эти байты и подписываются.
+func (m ReleaseManifest) JSON() []byte { return manifestJSON(m.version.String(), m.assets) }
+
+func manifestJSON(version string, assets []ReleaseAsset) []byte {
+	raw := releaseManifestJSON{Version: version, Assets: []releaseAssetJSON{}}
+	for _, a := range assets {
+		raw.Assets = append(raw.Assets, releaseAssetJSON{Platform: a.platform, Name: a.name, SHA256: hex.EncodeToString(a.sha256[:]), Size: a.size})
+	}
+	b, _ := json.MarshalIndent(raw, "", "  ") // строки и числа: ошибки не бывает
+	return append(b, '\n')
+}
