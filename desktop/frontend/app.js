@@ -3987,9 +3987,15 @@ function renderModelPick() {
   const price = (m) => (m.typed ? "вписать" : m.in ? `$${m.in} / $${m.out}` : "цена неизвестна");
   const tip = (m) => (m.typed ? "модель с таким именем у адреса чата; окно его не проверяет — проверит первый ответ"
     : m.in ? `за миллион токенов: $${m.in} на входе, $${m.out} на выходе${m.own ? " · своя цена из «Статистики»" : " · цена шлюза"}` : "цены нет ни у шлюза, ни своей в «Статистике»");
+  // «телефону» (#657): модель, которую телефон может выбрать для своих ходов; модель окна телефон видит всегда.
+  const ph = (m) => {
+    if (m.typed) return "";
+    const on = (mdl.v.phone || []).includes(m.id);
+    return `<button class="md-ph" type="button" data-mdl-phone="${esc(m.id)}" aria-pressed="${on}"${mkTip(on ? "Телефону: разрешено" : "Телефону: разрешить", on ? "телефон может выбрать эту модель для своих ходов; нажмите, чтобы запретить" : "телефон сможет выбрать эту модель для своих ходов в чате; модель окна он видит всегда")}>телефону</button>`;
+  };
   $("#md-list").innerHTML = items.map(({ cap, m }, i) => (cap ? `<div class="md-cap">${cap}</div>` : "") +
-    `<button class="md-it" type="button" role="option" data-mdl="${esc(m.id)}" aria-selected="${i === mdl.sel}" data-tip="${esc(m.id)}" data-tip-b="${esc(tip(m))}">` +
-    `<span class="dot">${m.id === cur ? "●" : ""}</span><span class="id">${esc(m.id)}</span><span class="pr">${price(m)}</span></button>`).join("");
+    `<div class="md-row"><button class="md-it" type="button" role="option" data-mdl="${esc(m.id)}" aria-selected="${i === mdl.sel}" data-tip="${esc(m.id)}" data-tip-b="${esc(tip(m))}">` +
+    `<span class="dot">${m.id === cur ? "●" : ""}</span><span class="id">${esc(m.id)}</span><span class="pr">${price(m)}</span></button>${ph(m)}</div>`).join("");
   const s = $("#md-list").querySelector('[aria-selected="true"]'); if (s) s.scrollIntoView({ block: "nearest" });
 }
 async function chooseModel(id) {
@@ -4009,6 +4015,16 @@ $("#chat-mdl-pop").addEventListener("keydown", (e) => {
 });
 $("#chat-mdl-pop").addEventListener("click", (e) => {
   if (e.target.closest("#md-set")) { closeModelPick(); openSettings("chat"); return; }
+  const p = e.target.closest("[data-mdl-phone]");
+  if (p) { // разрешение телефону — не выбор модели окна
+    hideTip();
+    const id = p.dataset.mdlPhone, on = p.getAttribute("aria-pressed") !== "true";
+    native().SetChatPhoneModel(id, on).then(() => {
+      mdl.v.phone = on ? [...(mdl.v.phone || []), id] : (mdl.v.phone || []).filter((x) => x !== id);
+      renderModelPick();
+    }).catch((err) => showChatNote("Разрешение телефону не сохранено: " + errText(err)));
+    return;
+  }
   const b = e.target.closest("[data-mdl]"); if (b) { hideTip(); chooseModel(b.dataset.mdl); }
 });
 document.addEventListener("click", (e) => { if (!$("#chat-mdl-pop").hidden && !e.target.closest("#chat-mdl-pop, #chat-model-chip")) closeModelPick(); });
