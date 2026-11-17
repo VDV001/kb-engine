@@ -7069,9 +7069,9 @@ function shInfoCard(p) {
 // Платно по его ключу; цена шлюза у каждой модели своя, окно ее заранее не знает,
 // поэтому кнопка говорит об этом прямо, а итог вызова виден в «Статистике».
 function shOwnCard(t, sku) {
-  if (!shImg.asked && native() && native().ImageSettings) { shImg.asked = true; loadImageSettings().then(() => shCard()); }
+  if (!shImg.asked && native() && native().ImageSettings) { shImg.asked = true; loadImageSettings().then(() => { if (sh.v) shCard(); }); }
   if (!shImg.on) return `<div class="note">Своя модель изображений: подключите в «Чат и модель» — адрес, имя и ключ.</div>`;
-  const empty = !(t.ownPrompt || t.prompt || "").trim();
+  const empty = !(t.ownPrompt ?? t.prompt ?? "").trim();
   return `<div class="sh-title-h">Своя модель · ${esc(shImg.model)}</div>` +
     `<textarea class="sh-info-prompt" data-sh-own-prompt rows="4" placeholder="Что нарисовать: фон, 3–4 преимущества товара крупным текстом">${esc(t.ownPrompt ?? t.prompt ?? "")}</textarea>` +
     `<button class="btn mk-main" type="button" data-sh-own="gen" data-sku="${sku}"${t.ownBusy || empty ? " disabled" : ""}${mkTip("Нарисовать своей моделью", "платно: спишется по Вашему ключу, цену кадра назначает шлюз и окно ее заранее не знает; итог виден в «Статистике»; главное фото карточки уйдет модели как образец")}>${t.ownBusy ? "Рисую…" : "Нарисовать своей моделью"}</button>` +

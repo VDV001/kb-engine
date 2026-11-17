@@ -6,14 +6,28 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/filelock"
 	"github.com/daniil/kb-engine/internal/adapter/imagegen"
 )
+
+// maxImagePrompt — предел задания: платный вызов по ключу человека не должен
+// уносить мегабайты текста.
+const maxImagePrompt = 8000
+
+// hostOf is the host of a gateway address, for «тот же шлюз»; кривой адрес — он сам.
+func hostOf(raw string) string {
+	if u, err := url.Parse(raw); err == nil && u.Host != "" {
+		return strings.ToLower(u.Host)
+	}
+	return raw
+}
 
 // imageKeyAccount — учетка ключа модели изображений в Связке ключей окна (#678).
 const imageKeyAccount = "images"
@@ -46,13 +60,13 @@ func (f *folderSettings) setImageSettings(url, model, key string) error {
 	if err := im.Check(); err != nil {
 		return err
 	}
-	if key = strings.TrimSpace(key); key != "" && im.On() {
-		if err := f.tokens.Set(imageKeyAccount, key); err != nil {
-			return fmt.Errorf("ключ не сохранен в Связке ключей: %w", err)
-		}
-	}
+	key = strings.TrimSpace(key)
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	// Ключ не переезжает на другой хост сам: сменил адрес — введи ключ заново (ревью #683).
+	if im.On() && key == "" && f.cfg.Images.On() && hostOf(f.cfg.Images.URL) != hostOf(im.URL) {
+		return errors.New("адрес шлюза другой: введите ключ этого шлюза, прежний на него не уйдет")
+	}
 	next := f.cfg
 	next.Images = im
 	if err := filelock.With(f.path, func() error {
@@ -64,6 +78,11 @@ func (f *folderSettings) setImageSettings(url, model, key string) error {
 		return nil
 	}); err != nil {
 		return err
+	}
+	if key != "" && im.On() { // после конфига: сбой записи не оставит новый ключ при старом адресе
+		if err := f.tokens.Set(imageKeyAccount, key); err != nil {
+			return fmt.Errorf("ключ не сохранен в Связке ключей: %w", err)
+		}
 	}
 	if !im.On() {
 		_ = f.tokens.Delete(imageKeyAccount) // отключили — ключ не лежит без дела
@@ -90,6 +109,9 @@ func (f *folderSettings) imageClient() (imagegen.Client, error) {
 func (f *folderSettings) ownInfographic(ctx context.Context, hc *http.Client, base, cab, sku, prompt string, draw imageDesk, fetch func(context.Context, string) ([]byte, error)) (ownImage, error) {
 	if prompt = strings.TrimSpace(prompt); prompt == "" {
 		return ownImage{}, errors.New("пустое задание — напишите его или попросите модель окна")
+	}
+	if utf8.RuneCountInString(prompt) > maxImagePrompt {
+		return ownImage{}, fmt.Errorf("задание длиннее %d знаков: сократите его", maxImagePrompt)
 	}
 	id, err := strconv.ParseInt(strings.TrimSpace(sku), 10, 64)
 	if err != nil || id <= 0 {

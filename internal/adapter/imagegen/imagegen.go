@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 )
 
@@ -86,10 +87,12 @@ func (c Client) Generate(ctx context.Context, prompt string, refs [][]byte) (Ima
 	}
 	req.Header.Set("Authorization", "Bearer "+c.Key)
 	req.Header.Set("Content-Type", "application/json")
-	h := c.HTTP
-	if h == nil {
-		h = http.DefaultClient
+	// Редирект не идет: ключ и фото не уходят ни на чужой хост, ни на тот же по http (ревью #683).
+	h := http.Client{}
+	if c.HTTP != nil {
+		h = *c.HTTP
 	}
+	h.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := h.Do(req)
 	if err != nil {
 		return Image{}, errors.New("шлюз не ответил: " + redactKey(err.Error(), c.Key))
@@ -103,8 +106,11 @@ func (c Client) Generate(ctx context.Context, prompt string, refs [][]byte) (Ima
 		return Image{}, err
 	}
 	var r reply
-	if json.Unmarshal(raw, &r) != nil || len(r.Choices) == 0 || len(r.Choices[0].Message.Images) == 0 {
+	if json.Unmarshal(raw, &r) != nil {
 		return Image{}, ErrNoImage
+	}
+	if len(r.Choices) == 0 || len(r.Choices[0].Message.Images) == 0 {
+		return Image{Cost: r.cost()}, ErrNoImage // шлюз мог списать за вызов без картинки: цена — в журнал
 	}
 	img, err := parseDataURL(r.Choices[0].Message.Images[0].ImageURL.URL)
 	img.Cost = r.cost()
@@ -154,16 +160,20 @@ func readLimited(r io.Reader, limit int64) ([]byte, error) {
 	return raw, nil
 }
 
+// rasterTypes — типы, которые принимает окно; всё остальное (svg, gif) — не картинка модели.
+var rasterTypes = []string{"image/png", "image/jpeg", "image/webp"}
+
 // parseDataURL reads data:<mime>;base64,<...>: ссылка на чужой адрес не
 // скачивается — окно не ходит по адресам из ответа модели.
 func parseDataURL(u string) (Image, error) {
 	head, b64, ok := strings.Cut(u, ",")
 	mime, enc, _ := strings.Cut(strings.TrimPrefix(head, "data:"), ";")
-	if !ok || !strings.HasPrefix(head, "data:image/") || enc != "base64" {
+	if !ok || !slices.Contains(rasterTypes, mime) || enc != "base64" {
 		return Image{}, ErrNoImage
 	}
 	data, err := base64.StdEncoding.DecodeString(b64)
-	if err != nil || len(data) == 0 {
+	// Байты — то, чем названы: svg и html под видом картинки не принимаются (ревью #683).
+	if err != nil || len(data) == 0 || http.DetectContentType(data) != mime {
 		return Image{}, ErrNoImage
 	}
 	return Image{Data: data, MIME: mime}, nil
