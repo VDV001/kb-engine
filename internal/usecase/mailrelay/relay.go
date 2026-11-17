@@ -26,6 +26,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -386,7 +387,10 @@ type Exchange struct {
 	Question, Answer string
 }
 
-// WindowTurn is a turn the person made in the window (#669).
+// WindowTurn is a turn the person made in the window (#669): Chat — чат окна,
+// History — все ходы чата, последний — только что сделанный. New — чат заведен
+// окном после выкатки #669: без связи с ящиком он заводится в ящике целиком.
+// Старые чаты окна (New = false) на телефон не уходят (решение владельца 17.11).
 type WindowTurn struct {
 	Chat    string
 	Title   string
@@ -491,6 +495,9 @@ func (r Relay) start(ctx context.Context) (State, error) {
 		return st, err
 	}
 	if err := r.offer(&st); err != nil {
+		return st, err
+	}
+	if err := r.share(&st); err != nil {
 		return st, err
 	}
 	return st, r.flush(ctx, &st)
@@ -763,6 +770,55 @@ func (r Relay) offer(st *State) error {
 	return nil
 }
 
+// share queues the window's turns for the phones (#669): связанный чат — только
+// новый ход; новый чат окна без связи — заводится в ящике со всей историей. Чатов
+// окна в ящике — MaxSharedChats последних: самый старый уходит с телефонов
+// удалением, в окне остается.
+func (r Relay) share(st *State) error {
+	if len(r.Turns) == 0 {
+		return nil
+	}
+	for _, t := range r.Turns {
+		if len(t.History) == 0 {
+			continue
+		}
+		chat, send := mailChat(st, t.Chat), t.History[len(t.History)-1:]
+		if chat == "" {
+			if !t.New {
+				continue
+			}
+			chat, send = newShareChat(), t.History
+			if st.Chats == nil {
+				st.Chats = map[string]string{}
+			}
+			st.Chats[chat] = t.Chat
+			st.Shared = append(st.Shared, chat)
+		} else if i := slices.Index(st.Shared, chat); i >= 0 { // чат окна — свежий, в конец
+			st.Shared = append(slices.Delete(st.Shared, i, i+1), chat)
+		}
+		for _, x := range send {
+			r.queueDesk(st, chat, Payload{Kind: KindAsked, Text: x.Question, Title: t.Title})
+			r.queueDesk(st, chat, Payload{Kind: KindAnswer, Text: x.Answer})
+		}
+		for len(st.Shared) > MaxSharedChats {
+			old := st.Shared[0]
+			r.queueDesk(st, old, Payload{Kind: KindDelete, Text: "chat"})
+			forgetChat(st, old)
+		}
+	}
+	if err := r.Store.Save(*st); err != nil {
+		return fmt.Errorf("mailrelay: state: %w", err)
+	}
+	return nil
+}
+
+// newShareChat is a mailbox chat for a window chat: 16 hex, как у телефона.
+func newShareChat() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b) // crypto/rand.Read не возвращает ошибку с Go 1.24
+	return hex.EncodeToString(b)
+}
+
 // mailChat is the mailbox chat of window chat w; "" — телефон его не заводил.
 func mailChat(st *State, w string) string {
 	for mc, wc := range st.Chats {
@@ -1024,6 +1080,7 @@ func forgetChat(st *State, chat string) {
 	delete(st.Chats, chat)
 	delete(st.Offered, chat)
 	delete(st.Titles, chat)
+	st.Shared = slices.DeleteFunc(st.Shared, func(c string) bool { return c == chat })
 	if st.Deleted == nil {
 		st.Deleted = map[string]bool{}
 	}
