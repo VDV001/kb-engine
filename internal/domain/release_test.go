@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
 )
@@ -78,7 +79,7 @@ func TestReleaseVersionNewer(t *testing.T) {
 func sum(b []byte) string { s := sha256.Sum256(b); return hex.EncodeToString(s[:]) }
 
 func manifestJSON(version string, assets ...string) []byte {
-	return fmt.Appendf(nil, `{"version":%q,"assets":[%s]}`, version, strings.Join(assets, ","))
+	return fmt.Appendf(nil, `{"version":%q,"expires":"2099-01-01T00:00:00Z","assets":[%s]}`, version, strings.Join(assets, ","))
 }
 
 func assetJSON(platform, name string, body []byte) string {
@@ -161,7 +162,7 @@ func TestNewReleaseManifestRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := domain.NewReleaseManifest("v0.41.0", a1, a2)
+	m, err := domain.NewReleaseManifest("v0.41.0", time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC), a1, a2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,8 +204,34 @@ func TestNewReleaseManifestRefusals(t *testing.T) {
 		"no assets":          {"v0.41.0", nil},
 		"duplicate platform": {"v0.41.0", []domain.ReleaseAsset{a, b}},
 	} {
-		if _, err := domain.NewReleaseManifest(c.version, c.assets...); err == nil {
+		if _, err := domain.NewReleaseManifest(c.version, time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC), c.assets...); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+}
+
+// Манифест несет срок годности: без него или с негодным — отказ; подпись
+// навсегда дала бы «заморозку» на старом выпуске (ревью #679, п.6).
+func TestParseReleaseManifestExpires(t *testing.T) {
+	a := assetJSON("darwin-arm64", "DVK-mac-arm64.zip", []byte("mac"))
+	with := func(exp string) []byte {
+		return fmt.Appendf(nil, `{"version":"v0.41.0","expires":%s,"assets":[%s]}`, exp, a)
+	}
+	for name, b := range map[string][]byte{
+		"missing":    fmt.Appendf(nil, `{"version":"v0.41.0","assets":[%s]}`, a),
+		"not a date": with(`"завтра"`),
+		"date only":  with(`"2027-01-01"`),
+		"number":     with(`1790000000`),
+	} {
+		if _, err := domain.ParseReleaseManifest(b); !errors.Is(err, domain.ErrBadReleaseManifest) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	m, err := domain.ParseReleaseManifest(with(`"2027-01-01T00:00:00+03:00"`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := time.Date(2026, 12, 31, 21, 0, 0, 0, time.UTC); !m.Expires().Equal(want) {
+		t.Errorf("expires %v, want %v", m.Expires(), want)
 	}
 }

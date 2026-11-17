@@ -35,6 +35,7 @@ type updateState struct {
 	Dev       bool   `json:"dev"`       // сборка без тега: не ищем
 	Busy      bool   `json:"busy"`      // качается и ставится
 	Saved     string `json:"saved"`     // куда положена проверенная сборка
+	Restart   bool   `json:"restart"`   // установка прошла, окно перезапускается
 	Alert     bool   `json:"alert"`     // подпись не сошлась или нет сборки под платформу — человеку это видно
 	Error     string `json:"error"`
 }
@@ -73,7 +74,7 @@ func (d *updateDesk) check(ctx context.Context) {
 	defer d.mu.Unlock()
 	if err != nil { // сбой проверки не стирает прежнее проверенное предложение (ревью #679)
 		d.st.Error = err.Error()
-		d.st.Alert = errors.Is(err, domain.ErrReleaseSignature) || errors.Is(err, domain.ErrNoReleaseAsset)
+		d.st.Alert = errors.Is(err, domain.ErrReleaseSignature) || errors.Is(err, domain.ErrNoReleaseAsset) || errors.Is(err, domain.ErrReleaseExpired)
 		return
 	}
 	d.offer, d.st.Error, d.st.Alert = o, "", false
@@ -176,6 +177,13 @@ func saveForManual(home, path, version string) (string, error) {
 		return "", err
 	}
 	return dst, nil
+}
+
+// noteRestart tells the page the window is about to restart on the new build.
+func (d *updateDesk) noteRestart() {
+	d.mu.Lock()
+	d.st.Restart = true
+	d.mu.Unlock()
 }
 
 // noteSaved remembers where the build was put, for the page.
