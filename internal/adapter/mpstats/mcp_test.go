@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/mpstats"
 )
@@ -107,10 +108,10 @@ func TestMCP_queries(t *testing.T) {
 				`"words":[{"count":1406,"word":"женская","words":["женская","женский"],"keys":[]}]}`, false
 		},
 		"ozon_sku": func(a map[string]any) (string, bool) {
-			if a["report"] != "keywords" {
+			if a["report"] != "keywords" || a["d1"] != "2026-10-17" || a["d2"] != "2026-11-16" {
 				return "wrong arguments", true
 			}
-			return `[{"query":"сиреневая футболка женская","count":49,"total":0,"avg_position":7,"positions":[7,null]}]`, false
+			return `[{"query":"сиреневая футболка женская","count":49,"total":0,"avg_position":7,"positions":[7,null,3]}]`, false
 		},
 	})
 	m := mpstats.MCP{URL: srv.URL, Token: "t-1", HTTP: srv.Client()}
@@ -119,9 +120,14 @@ func TestMCP_queries(t *testing.T) {
 		len(ws) != 1 || ws[0].Word != "женская" || len(ws[0].Forms) != 2 {
 		t.Fatalf("niche queries = %+v %+v, %v", qs, ws, err)
 	}
-	own, err := m.CardQueries(context.Background(), 1234567)
+	from, to := time.Date(2026, 10, 17, 0, 0, 0, 0, time.UTC), time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
+	own, err := m.CardQueries(context.Background(), 1234567, from, to)
 	if err != nil || len(own) != 1 || own[0].Text != "сиреневая футболка женская" || own[0].Position != 7 || own[0].Count != 49 {
 		t.Fatalf("card queries = %+v, %v", own, err)
+	}
+	// Место по дням (замер 17.11: 31 значение на d1..d2, null — не в выдаче).
+	if d := own[0].Days; len(d) != 3 || d[0] != 7 || d[1] != 0 || d[2] != 3 {
+		t.Errorf("days %v", own[0].Days)
 	}
 }
 
@@ -233,5 +239,23 @@ func TestMCP_productsAndPhoto(t *testing.T) {
 	c, err := m.Card(context.Background(), 11)
 	if err != nil || c.Photo != "https://ir.ozone.ru/m.jpg" || c.Photos != 6 {
 		t.Fatalf("card %+v, %v", c, err)
+	}
+}
+
+// search_stats (замер 17.11): запросов и среднее место за период и за прошлый.
+func TestMCP_searchStats(t *testing.T) {
+	srv := fakeMCP(t, map[string]func(map[string]any) (string, bool){
+		"ozon_sku": func(a map[string]any) (string, bool) {
+			if a["report"] != "search_stats" || a["d1"] != "2026-10-17" {
+				return "wrong arguments", true
+			}
+			return `{"search_words_count":0,"search_words_count_previous":237,"search_position_avg":null,"search_position_avg_previous":17.4,` +
+				`"search_visibility":0,"search_visibility_previous":1520,"oz_count":0,"oz_count_previous":12}`, false
+		},
+	})
+	m := mpstats.MCP{URL: srv.URL, Token: "t-1", HTTP: srv.Client()}
+	st, err := m.SearchStats(context.Background(), 1234567, time.Date(2026, 10, 17, 0, 0, 0, 0, time.UTC), time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC))
+	if err != nil || st.Words != 0 || st.WordsBefore != 237 || st.Avg != 0 || st.AvgBefore != 17 {
+		t.Fatalf("%+v, %v", st, err)
 	}
 }

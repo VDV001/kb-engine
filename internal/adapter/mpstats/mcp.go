@@ -72,7 +72,7 @@ func (m MCP) Card(ctx context.Context, sku int64) (Card, error) {
 }
 
 // CardQueries reads the queries sku is found by in 30 days to yesterday (ozon_sku report=keywords).
-func (m MCP) CardQueries(ctx context.Context, sku int64) ([]markets.OwnQuery, error) {
+func (m MCP) CardQueries(ctx context.Context, sku int64, _, _ time.Time) ([]markets.OwnQuery, error) {
 	var rows []struct {
 		Query    string  `json:"query"`
 		Count    int     `json:"count"`
@@ -360,4 +360,8 @@ func clip(s string, n int) string {
 		return string(r)
 	}
 	return string(r[:n]) + "…"
+}
+
+func (m MCP) SearchStats(context.Context, int64, time.Time, time.Time) (markets.SearchStats, error) {
+	return markets.SearchStats{}, nil
 }

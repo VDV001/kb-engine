@@ -210,7 +210,7 @@ func readParts(ctx context.Context, m mpstats.MCP, id int64, cp *cardPart, np *n
 	defer cancel()
 	var wg sync.WaitGroup
 	if own {
-		wg.Go(func() { cp.own, cp.ownErr = m.CardQueries(ctx, id) })
+		wg.Go(func() { cp.own, cp.ownErr = m.CardQueries(ctx, id, time.Time{}, time.Time{}) })
 	}
 	if niche {
 		wg.Go(func() {
