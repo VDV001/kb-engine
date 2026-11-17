@@ -402,6 +402,7 @@ type WindowTurn struct {
 	Title   string
 	New     bool
 	History []Exchange
+	Last    Exchange
 }
 
 // maxTitles bounds State.Titles: названия чатов, которых окно еще не знает.
@@ -454,7 +455,9 @@ type Relay struct {
 	// Chats — переименование и удаление чатов окна с телефона (#649); nil — отказ.
 	Chats ChatEditor
 	// Turns — ходы человека в окне для телефонов (#669).
-	Turns []WindowTurn
+	Turns     []WindowTurn
+	HistoryOf func(chat string) ([]Exchange, error)
+	Shared    func()
 }
 
 // Notifier tells the phones an answer is waiting (kb-сервер, /api/mail/notify).
