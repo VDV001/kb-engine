@@ -90,7 +90,9 @@ type Payload struct {
 	// Attach — файл к вопросу телефона (#650): куски в файлах ящика по порядку.
 	Attach  *Attachment `json:"attach,omitempty"`
 	History []Exchange  `json:"history,omitempty"`
-	Pick    *Pick       `json:"pick,omitempty"`
+	// Pick — выбор телефона для его ходов в чате (#657): в вопросе — если
+	// меняли, в ответе — подтвержденный окном.
+	Pick *Pick `json:"pick,omitempty"`
 }
 
 // Pick is the phone's choice for its turns in a chat (#657).
@@ -465,7 +467,8 @@ type Relay struct {
 	// Open — расшифровка кусков файлов (#650); nil — отказ DeskUnsupported.
 	Open FileOpener
 	// Chats — переименование и удаление чатов окна с телефона (#649); nil — отказ.
-	Chats  ChatEditor
+	Chats ChatEditor
+	// Picker — выбор модели и источников с телефона (#657); nil — выбор мимо.
 	Picker Picker
 	// Turns — ходы человека в окне для телефонов (#669).
 	Turns []WindowTurn
@@ -638,6 +641,24 @@ func (r Relay) now() time.Time {
 // ask runs the model turn in the window's chat of this mailbox chat.
 // question runs a phone question, with its file when attached (#650).
 func (r Relay) question(ctx context.Context, st *State, chat string, req Payload) Payload {
+	// Выбор телефона (#657) — до хода, в чате, который окно уже знает: в новом
+	// выбирать не из чего. Отказ окна — словами и без хода.
+	var picked *Pick
+	if w := st.Chats[chat]; req.Pick != nil && w != "" && r.Picker != nil {
+		if err := r.Picker.SetPick(ctx, w, *req.Pick); err != nil {
+			return Payload{Kind: KindError, Text: err.Error()}
+		}
+		picked = req.Pick
+	}
+	reply := r.questionTurn(ctx, st, chat, req)
+	if reply.Kind == KindAnswer {
+		reply.Pick = picked // подтверждение: телефон снимает «ушло» только по нему
+	}
+	return reply
+}
+
+// questionTurn runs the phone's question, with its file if any.
+func (r Relay) questionTurn(ctx context.Context, st *State, chat string, req Payload) Payload {
 	if req.Attach == nil {
 		return r.ask(ctx, st, chat, req.Text, nil)
 	}
