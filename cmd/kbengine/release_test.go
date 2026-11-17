@@ -1,0 +1,129 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"crypto/ed25519"
+	"encoding/hex"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/daniil/kb-engine/internal/adapter/keychain"
+	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/selfupdate"
+)
+
+// fakeKeys is the Связка in memory: настоящую тест не трогает.
+type fakeKeys map[string]string
+
+func (k fakeKeys) Get(account string) (string, error) {
+	if v, ok := k[account]; ok {
+		return v, nil
+	}
+	return "", keychain.ErrNotFound
+}
+
+func (k fakeKeys) Set(account, secret string) error { k[account] = secret; return nil }
+
+func withKeys(t *testing.T, k fakeKeys) {
+	t.Helper()
+	prev := releaseKeys
+	releaseKeys = func() releaseKeyStore { return k }
+	t.Cleanup(func() { releaseKeys = prev })
+}
+
+func TestReleaseKeyCreatesOnce(t *testing.T) {
+	keys := fakeKeys{}
+	withKeys(t, keys)
+	var out, errb bytes.Buffer
+	if code := run([]string{"release", "key"}, &out, &errb); code != 0 {
+		t.Fatalf("code %d: %s", code, errb.String())
+	}
+	pub, err := hex.DecodeString(strings.TrimSpace(out.String()))
+	if err != nil || len(pub) != ed25519.PublicKeySize {
+		t.Fatalf("printed %q, want the public key in hex", out.String())
+	}
+	seed := keys[releaseKeyAccount]
+	if seed == "" || strings.Contains(out.String()+errb.String(), seed) {
+		t.Fatal("the private key is not in the store or was printed")
+	}
+	out.Reset()
+	errb.Reset()
+	if code := run([]string{"release", "key"}, &out, &errb); code == 0 || keys[releaseKeyAccount] != seed {
+		t.Errorf("second key: code %d, replaced %v", code, keys[releaseKeyAccount] != seed)
+	}
+}
+
+// Подписанный выпуск проходит ту же проверку, что делает окно.
+func TestReleaseSignPassesTheWindowsCheck(t *testing.T) {
+	keys := fakeKeys{}
+	withKeys(t, keys)
+	var keyOut bytes.Buffer
+	if code := run([]string{"release", "key"}, &keyOut, &bytes.Buffer{}); code != 0 {
+		t.Fatal("key")
+	}
+	pub, _ := hex.DecodeString(strings.TrimSpace(keyOut.String()))
+	dir := t.TempDir()
+	mac, win := filepath.Join(dir, "DVK-mac-arm64.zip"), filepath.Join(dir, "DVK-Setup.exe")
+	_ = os.WriteFile(mac, []byte("mac zip"), 0o600)
+	_ = os.WriteFile(win, []byte("windows setup"), 0o600)
+	out := filepath.Join(dir, "out")
+	var stdout, errb bytes.Buffer
+	code := run([]string{"release", "sign", "--version", "v0.41.0", "--out", out, "darwin-arm64=" + mac, "windows-amd64=" + win}, &stdout, &errb)
+	if code != 0 {
+		t.Fatalf("code %d: %s", code, errb.String())
+	}
+	if strings.TrimSpace(stdout.String()) != hex.EncodeToString(pub) {
+		t.Errorf("sign printed %q, want the public key", stdout.String())
+	}
+	src := dirReleases{"latest/download/dvk-manifest.json": filepath.Join(out, "dvk-manifest.json"),
+		"latest/download/dvk-manifest.json.sig": filepath.Join(out, "dvk-manifest.json.sig"),
+		"download/v0.41.0/DVK-Setup.exe":        win}
+	cur, _ := domain.NewReleaseVersion("v0.40.0")
+	u := selfupdate.Updater{Source: src, PublicKey: pub, Current: cur, Platform: "windows-amd64"}
+	offer, err := u.Check(t.Context())
+	if err != nil || !offer.Available() {
+		t.Fatalf("window check: %v %v", offer.Available(), err)
+	}
+	if b, err := u.Download(t.Context(), offer); err != nil || string(b) != "windows setup" {
+		t.Errorf("download: %q %v", b, err)
+	}
+}
+
+func TestReleaseSignRefusals(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "a.zip")
+	_ = os.WriteFile(f, []byte("x"), 0o600)
+	cases := map[string][]string{
+		"no key in the store": {"--version", "v0.41.0", "--out", dir, "darwin-arm64=" + f},
+		"describe version":    {"--version", "v0.41.0-1-gabc", "--out", dir, "darwin-arm64=" + f},
+		"no files":            {"--version", "v0.41.0", "--out", dir},
+		"pair without =":      {"--version", "v0.41.0", "--out", dir, f},
+		"missing file":        {"--version", "v0.41.0", "--out", dir, "darwin-arm64=" + f + ".nope"},
+		"unknown platform":    {"--version", "v0.41.0", "--out", dir, "linux-amd64=" + f},
+		"no --out":            {"--version", "v0.41.0", "darwin-arm64=" + f},
+	}
+	for name, args := range cases {
+		withKeys(t, fakeKeys{})
+		var errb bytes.Buffer
+		if code := run(append([]string{"release", "sign"}, args...), &bytes.Buffer{}, &errb); code == 0 {
+			t.Errorf("%s: accepted", name)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "dvk-manifest.json")); err == nil {
+			t.Fatalf("%s: manifest written", name)
+		}
+	}
+}
+
+// dirReleases is a release on disk: путь выпуска → файл.
+type dirReleases map[string]string
+
+func (d dirReleases) Fetch(_ context.Context, path string, limit int64) ([]byte, error) {
+	b, err := os.ReadFile(d[path])
+	if err == nil && int64(len(b)) > limit {
+		return nil, os.ErrInvalid
+	}
+	return b, err
+}

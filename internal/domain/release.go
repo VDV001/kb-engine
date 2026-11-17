@@ -190,3 +190,14 @@ func (m ReleaseManifest) Asset(platform string) (ReleaseAsset, bool) {
 	}
 	return ReleaseAsset{}, false
 }
+
+// NewReleaseAsset describes a built file for the manifest.
+func NewReleaseAsset(string, string, []byte) (ReleaseAsset, error) { return ReleaseAsset{}, nil }
+
+// NewReleaseManifest builds the manifest the release signs.
+func NewReleaseManifest(string, ...ReleaseAsset) (ReleaseManifest, error) {
+	return ReleaseManifest{}, nil
+}
+
+// JSON is the manifest as published.
+func (m ReleaseManifest) JSON() []byte { return nil }

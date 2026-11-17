@@ -143,3 +143,62 @@ func TestReleaseAssetMatches(t *testing.T) {
 		}
 	}
 }
+
+// Манифест, собранный при выпуске, читается окном тем же разбором.
+func TestNewReleaseManifestRoundTrip(t *testing.T) {
+	mac, win := []byte("mac zip"), []byte("windows setup")
+	a1, err := domain.NewReleaseAsset("darwin-arm64", "DVK-mac-arm64.zip", mac)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a2, err := domain.NewReleaseAsset("windows-amd64", "DVK-Setup.exe", win)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := domain.NewReleaseManifest("v0.41.0", a1, a2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := domain.ParseReleaseManifest(m.JSON())
+	if err != nil {
+		t.Fatalf("%s: %v", m.JSON(), err)
+	}
+	if back.Version().String() != "v0.41.0" {
+		t.Errorf("version %s", back.Version())
+	}
+	for platform, body := range map[string][]byte{"darwin-arm64": mac, "windows-amd64": win} {
+		a, ok := back.Asset(platform)
+		if !ok || a.Matches(body) != nil {
+			t.Errorf("%s: %v %v", platform, ok, a.Matches(body))
+		}
+	}
+}
+
+func TestNewReleaseManifestRefusals(t *testing.T) {
+	body := []byte("x")
+	for name, c := range map[string]struct{ platform, file string }{
+		"path in name":     {"darwin-arm64", "../a.zip"},
+		"unknown platform": {"linux-amd64", "a.zip"},
+	} {
+		if _, err := domain.NewReleaseAsset(c.platform, c.file, body); !errors.Is(err, domain.ErrBadReleaseManifest) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if _, err := domain.NewReleaseAsset("darwin-arm64", "a.zip", nil); !errors.Is(err, domain.ErrBadReleaseManifest) {
+		t.Errorf("empty file: %v", err)
+	}
+	a, _ := domain.NewReleaseAsset("darwin-arm64", "a.zip", body)
+	b, _ := domain.NewReleaseAsset("darwin-arm64", "b.zip", body)
+	for name, c := range map[string]struct {
+		version string
+		assets  []domain.ReleaseAsset
+	}{
+		"describe version":   {"v0.41.0-1-gabc", []domain.ReleaseAsset{a}},
+		"no assets":          {"v0.41.0", nil},
+		"duplicate platform": {"v0.41.0", []domain.ReleaseAsset{a, b}},
+	} {
+		if _, err := domain.NewReleaseManifest(c.version, c.assets...); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
