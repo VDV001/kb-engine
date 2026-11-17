@@ -45,6 +45,7 @@ type reviewFindingsView struct {
 var (
 	errNoReviewsConsent = errors.New("выводы делает модель окна: тексты отзывов уйдут ее провайдеру — нужно согласие")
 	errNoReviewTexts    = errors.New("у отзывов нет текстов — делать выводы не по чему")
+	errReviewsNotShared = errors.New("stub")
 )
 
 // MarketsReviews shows the reviews of card sku; fresh — мимо памяти.
@@ -136,4 +137,12 @@ func (d *chatDesk) modelReviews(rs []markets.Review, consent bool) (reviewFindin
 		return out
 	}
 	return reviewFindingsView{Praise: rows(f.Praise), Complaints: rows(f.Complaints), Used: n, Model: reply.Model}, nil
+}
+
+func (f *folderSettings) reviewFindings(ctx context.Context, hc *http.Client, cd *chatDesk, sku string, consent bool, now time.Time) (reviewFindingsView, error) {
+	rs, _, err := f.readReviews(ctx, hc, sku, false, now)
+	if err != nil {
+		return reviewFindingsView{}, err
+	}
+	return cd.modelReviews(rs, consent)
 }

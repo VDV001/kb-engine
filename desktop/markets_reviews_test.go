@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -77,5 +78,30 @@ func TestModelReviews(t *testing.T) {
 	}
 	if !strings.Contains(prompt.String(), "Ткань плотная") {
 		t.Errorf("prompt:\n%s", prompt.String())
+	}
+}
+
+// Тексты отзывов уходят модели только при «Чату: разрешить» у подключения
+// MPStats — как у чата (решение владельца 17.11).
+func TestReviewFindingsNeedShare(t *testing.T) {
+	cd, m := localChat(t)
+	m.reply = `{"praise":[{"point":"ткань","reviews":[1]}],"complaints":[]}`
+	for _, share := range []bool{false, true} {
+		s, _, _ := newServerSettings(t)
+		srv := titleMCP(t, func(name string, a map[string]any) (string, bool) {
+			return `[{"date":"2026-07-15","valuation":5,"likes":0,"text":"Ткань плотная"}]`, false
+		})
+		s.mpstatsURL, s.mcpURL = srv.URL, srv.URL+"/mcp"
+		if _, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1", share); err != nil {
+			t.Fatal(err)
+		}
+		before := m.n
+		f, err := s.reviewFindings(context.Background(), srv.Client(), cd, "1234567", true, time.Now())
+		if !share && (!errors.Is(err, errReviewsNotShared) || m.n != before) {
+			t.Errorf("no share: %v, model calls %d", err, m.n-before)
+		}
+		if share && (err != nil || len(f.Praise) != 1) {
+			t.Errorf("share: %+v %v", f, err)
+		}
 	}
 }
