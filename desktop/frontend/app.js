@@ -6940,7 +6940,7 @@ function shCard() {
     ["Рейтинг", `${shVal("rating", p)} · отзывов ${fmt(p.reviews)}`, shHint("rating")]];
   const gone = shOzon() ? ["ABC по сумме", "Возвращено", "Индекс цен", "ДРР", "Рейтинг"] : ["Отказ при получении", "Выкуплено на"];
   $("#sh-card").innerHTML = `<div class="mk-card-h"><h3>${esc(p.name)}</h3></div><dl>${rows.filter((r) => !gone.includes(r[0])).map(([k, v, t]) => `<dt${t ? mkTip(k, t) : ""}>${k}</dt><dd>${k === "SKU" ? shOzonSKU(p.sku) : k === "Артикул" && p.article ? esc(v) + shCopyBtn(p.article) : esc(v)}</dd>`).join("")}</dl>` +
-    shMoneyCard(p) + shTitleCard(p) + shTagsCard(p) + shPlacesCard(p) + shReviewsCard(p) + shDescCard(p) + shPhotosCard(p) + shInfoCard(p) + `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
+    shMoneyCard(p) + shTitleCard(p) + shTagsCard(p) + shPlacesCard(p) + shReviewsCard(p) + shDescCard(p) + shRichCard(p) + shPhotosCard(p) + shInfoCard(p) + `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
 }
 // «Название» в карточке (#607): главный запрос ниши MPStats и что добавить или
 // убрать; ответ хранится по SKU, чтобы перерисовка таблицы его не стирала.
@@ -7269,6 +7269,54 @@ document.addEventListener("click", async (e) => {
     catch (err) { shReviews.set(key, { ...shReviews.get(key), busy: false, err: "Отзывы не прочитаны: " + errText(err) }); }
   }
   if (sh.v && sh.v.products[sh.sel] && sh.v.products[sh.sel].sku === sku) shCard();
+});
+// «Рич-контент» (#671): варианты моделью окна по названию, описанию и выводам
+// из отзывов (если сделаны); фото — карточки. JSON — в форме, которую Ozon
+// принимает в «Rich-контент JSON»: сохранить файлом или скопировать.
+const shRich = new Map(); // кабинет|SKU → { busy, v, err }
+function shRichCard(p) {
+  if (!shOzon() || !/^\d+$/.test(p.sku || "")) return "";
+  const key = shTagsKey(p), t = shRich.get(key) || {}, f = (shReviews.get(key) || {}).f;
+  const btn = `<button class="btn" type="button" data-sh-rich="${esc(p.sku)}"${t.busy ? " disabled" : ""}${mkTip("Рич-контент", `пишет модель окна из «Чат и модель»: название, описание карточки${f ? " и выводы из отзывов" : ""} уйдут ее провайдеру; фото — карточки; расход — в «Статистике»`)}>${t.busy ? "Модель пишет…" : t.v ? "Варианты еще раз" : "Варианты рич-контента — моделью окна"}</button>`;
+  let body = t.err ? `<div class="note">${esc(t.err)}</div>` : "";
+  if (t.v) {
+    body += t.v.variants.map((v, i) => `<div class="sh-title-h">${esc(v.name || "Вариант " + (i + 1))} ` +
+      `<button type="button" class="lnk" data-sh-rich-save="${i}"${mkTip("Сохранить JSON", "файл для «Rich-контент JSON» в кабинете Ozon")}>сохранить</button> ` +
+      `<button type="button" class="lnk" data-sh-rich-copy="${i}"${mkTip("Скопировать JSON", "вставить в «Rich-контент JSON» в кабинете Ozon")}>скопировать</button></div>` +
+      `<ul>${v.blocks.map((b) => `<li><b>${esc(b.title)}</b>${b.text ? " — " + esc(b.text) : ""} <span class="muted">· фото ${fmt(b.photo)}</span></li>`).join("")}</ul>` +
+      (v.photosFixed ? `<div class="note">Модель назвала фото, которого у карточки нет, — окно поставило незанятое.</div>` : "")).join("") +
+      `<div class="note">Написала модель ${esc(t.v.model)}: прочитайте тексты перед вставкой. Фото — карточки, по одному на блок.</div>`;
+  }
+  return `<h4 class="sh-money-h">Рич-контент</h4>${btn}${body}`;
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-sh-rich], [data-sh-rich-save], [data-sh-rich-copy]");
+  if (!b) return;
+  hideTip();
+  const p = sh.v && sh.v.products[sh.sel];
+  if (!p) return;
+  const key = shTagsKey(p), t = shRich.get(key) || {};
+  if (!native() || !native().MarketsRich) { shRich.set(key, { err: "Рич-контент предлагается в окне приложения." }); return shCard(); }
+  if (b.dataset.shRichCopy !== undefined) { // по номеру: JSON не лежит в атрибуте и не показывается в подсказке (ревью #676)
+    const v = t.v && t.v.variants[+b.dataset.shRichCopy];
+    if (!v) return;
+    try { await navigator.clipboard.writeText(v.json); toast("Скопировано", ` · «${v.name || "вариант"}» — вставьте в «Rich-контент JSON» в кабинете`); }
+    catch { toast("Не скопировано", " · буфер обмена недоступен — сохраните вариант файлом", null, "bad"); }
+    return;
+  }
+  if (b.dataset.shRichSave !== undefined) {
+    const v = t.v && t.v.variants[+b.dataset.shRichSave];
+    if (!v) return;
+    try { const path = await native().MarketsRichSave(p.sku, v.name || "", v.json); if (path) toast("Сохранено", " · " + path); }
+    catch (err) { toast("Не сохранено", " · " + errText(err), null, "bad"); }
+    return;
+  }
+  if (b.dataset.shRich !== p.sku || t.busy) return;
+  const f = (shReviews.get(key) || {}).f; // выводы из отзывов, если уже сделаны (#612)
+  shRich.set(key, { ...t, busy: true, err: "" }); shCard();
+  try { shRich.set(key, { busy: false, v: await native().MarketsRich(sh.v.path, p.sku, f ? f.praise.map((x) => x.text) : [], f ? f.complaints.map((x) => x.text) : [], true) }); }
+  catch (err) { shRich.set(key, { ...shRich.get(key), busy: false, err: "Варианты не написаны: " + errText(err) }); }
+  if (sh.v && sh.v.products[sh.sel] && sh.v.products[sh.sel].sku === p.sku) shCard();
 });
 document.addEventListener("click", async (e) => {
   const b = e.target.closest("[data-sh-places]");
