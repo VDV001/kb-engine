@@ -226,6 +226,8 @@ const (
 	KindEdited = "edited"
 	// ChatEditFailed — код: окно не смогло переименовать или удалить чат.
 	ChatEditFailed = "chaterr"
+	// KindAsked — вопрос, заданный в окне (#669): Text — вопрос, Title — название чата.
+	KindAsked = "asked"
 	// KindRemember — окно предлагает запомнить факты о человеке (#647, Facts).
 	KindRemember = "remember"
 	// KindMemory — решение телефона по факту (Text yes/no, Facts[0]) и ответ окна
@@ -372,6 +374,24 @@ type State struct {
 	// ponytail: по записи на удаленный чат (id ~16 байт); станет заметно —
 	// забывать старше срока ящика.
 	Deleted map[string]bool `json:"deleted,omitempty"`
+	// Shared — чаты ящика, заведенные окном (#669), старые первыми.
+	Shared []string `json:"shared,omitempty"`
+}
+
+// MaxSharedChats — сколько чатов окна держит ящик (решение владельца 17.11).
+const MaxSharedChats = 50
+
+// Exchange is one turn of a chat: вопрос и ответ.
+type Exchange struct {
+	Question, Answer string
+}
+
+// WindowTurn is a turn the person made in the window (#669).
+type WindowTurn struct {
+	Chat    string
+	Title   string
+	New     bool
+	History []Exchange
 }
 
 // maxTitles bounds State.Titles: названия чатов, которых окно еще не знает.
@@ -423,6 +443,8 @@ type Relay struct {
 	Open FileOpener
 	// Chats — переименование и удаление чатов окна с телефона (#649); nil — отказ.
 	Chats ChatEditor
+	// Turns — ходы человека в окне для телефонов (#669).
+	Turns []WindowTurn
 }
 
 // Notifier tells the phones an answer is waiting (kb-сервер, /api/mail/notify).
