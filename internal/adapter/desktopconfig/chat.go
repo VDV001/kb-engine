@@ -113,6 +113,14 @@ func (c Chat) checkSecondModel() error {
 	return nil
 }
 
+// checkModel: вторая модель и размер контекста.
+func (c Chat) checkModel() error {
+	if err := c.checkSecondModel(); err != nil {
+		return err
+	}
+	return c.checkContextWindow()
+}
+
 // checkContextWindow: 0 — не задан, иначе в границах.
 func (c Chat) checkContextWindow() error {
 	if c.ContextWindow != 0 && (c.ContextWindow < MinContextWindow || c.ContextWindow > MaxContextWindow) {
@@ -137,13 +145,10 @@ func (c Chat) Check() error {
 		strings.IndexFunc(c.Voice, unicode.IsControl) >= 0 {
 		return fmt.Errorf("%w: голос %q", ErrChatSettings, c.Voice)
 	}
-	if err := c.checkSecondModel(); err != nil {
-		return err
-	}
 	if err := c.checkMemory(); err != nil {
 		return err
 	}
-	if err := c.checkContextWindow(); err != nil {
+	if err := c.checkModel(); err != nil {
 		return err
 	}
 	switch c.Accent {
