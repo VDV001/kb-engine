@@ -71,13 +71,15 @@ func (d *updateDesk) check(ctx context.Context) {
 	o, err := d.u.Check(ctx)
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.offer, d.st.Error = o, ""
+	if err != nil { // сбой проверки не стирает прежнее проверенное предложение (ревью #679)
+		d.st.Error = err.Error()
+		d.st.Alert = errors.Is(err, domain.ErrReleaseSignature) || errors.Is(err, domain.ErrNoReleaseAsset)
+		return
+	}
+	d.offer, d.st.Error, d.st.Alert = o, "", false
 	d.st.Available, d.st.Version = o.Available(), ""
 	if o.Available() {
 		d.st.Version = o.Version().String()
-	}
-	if err != nil {
-		d.st.Error = err.Error()
 	}
 }
 
@@ -99,7 +101,7 @@ func (d *updateDesk) Install(ctx context.Context) error {
 		d.mu.Unlock()
 		return errNoUpdate
 	}
-	d.st.Busy = true
+	d.st.Busy, d.st.Saved = true, ""
 	d.mu.Unlock()
 	defer func() { d.mu.Lock(); d.st.Busy = false; d.mu.Unlock() }()
 	f, err := os.CreateTemp(d.tmp, "dvk-update-*"+filepath.Ext(o.AssetName()))
@@ -114,7 +116,12 @@ func (d *updateDesk) Install(ctx context.Context) error {
 	if err == nil && d.apply != nil {
 		err = d.apply(ctx, path, o.Version().String())
 	}
-	_ = os.Remove(path) // установка уже взяла свое; подмененный файл — не нужен
+	_ = os.Remove(path)               // установка уже взяла свое; подмененный файл — не нужен
+	if err == nil && d.apply != nil { // предложение потрачено: кнопка не предложит то же снова
+		d.mu.Lock()
+		d.offer, d.st.Available = selfupdate.Offer{}, false
+		d.mu.Unlock()
+	}
 	return err
 }
 
@@ -142,21 +149,33 @@ func saveForManual(home, path, version string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	dst := filepath.Join(dir, "DVK-"+version+filepath.Ext(path))
 	in, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = in.Close() }()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	// Во временный файл (O_EXCL) и переименование: симлинк на итоговом имени не
+	// читается как цель записи, обрезок на нем не остается (ревью #679).
+	tmp, err := os.CreateTemp(dir, ".dvk-*"+filepath.Ext(path))
 	if err != nil {
 		return "", err
 	}
-	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close()
+	_, err = io.Copy(tmp, in)
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Chmod(tmp.Name(), 0o644)
+	}
+	dst := filepath.Join(dir, "DVK-"+version+filepath.Ext(path))
+	if err == nil {
+		err = os.Rename(tmp.Name(), dst)
+	}
+	if err != nil {
+		_ = os.Remove(tmp.Name())
 		return "", err
 	}
-	return dst, out.Close()
+	return dst, nil
 }
 
 // noteSaved remembers where the build was put, for the page.
@@ -167,13 +186,26 @@ func (d *updateDesk) noteSaved(path string) {
 }
 
 // UpdateState is the update state for the page.
-func (a *App) UpdateState() updateState { return a.update.State() }
+func (a *App) UpdateState() updateState {
+	if a.update == nil {
+		return updateState{Dev: true}
+	}
+	return a.update.State()
+}
 
 // UpdateCheck asks the release now and returns the state.
 func (a *App) UpdateCheck() updateState {
+	if a.update == nil {
+		return updateState{Dev: true}
+	}
 	a.update.check(a.ctx)
 	return a.update.State()
 }
 
 // UpdateInstall installs the offered build by the person's click.
-func (a *App) UpdateInstall() error { return a.update.Install(a.ctx) }
+func (a *App) UpdateInstall() error {
+	if a.update == nil {
+		return errNoUpdate
+	}
+	return a.update.Install(a.ctx)
+}

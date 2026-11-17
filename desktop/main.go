@@ -131,7 +131,9 @@ func run() error {
 	app.update = newUpdateDesk(version, ghrelease.Client{Base: ghrelease.Releases, HTTP: &http.Client{Timeout: 5 * time.Minute}},
 		releasePublicKey(), goruntime.GOOS+"-"+goruntime.GOARCH, func(_ context.Context, path, v string) error {
 			saved, err := saveForManual(home, path, v) // ponytail: установка поверх окна — #651 шаги 2-3; пока человек ставит сам
-			app.update.noteSaved(saved)
+			if err == nil {
+				app.update.noteSaved(saved)
+			}
 			return err
 		})
 	browserHost := newBrowserHost(settings.home)

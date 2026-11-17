@@ -3510,9 +3510,12 @@ if (window.runtime) window.runtime.EventsOn("phone:turn", async (t) => {
 function paintUpdate(st) {
   const cell = $("#update-cell"), btn = $("#update-btn");
   if (!cell || !st) return;
-  cell.hidden = !st.available;
-  $("#update-label").textContent = st.busy ? "скачиваю…" : "обновить до " + (st.version || "");
-  btn.disabled = !!st.busy;
+  cell.hidden = !st.available && !st.alert;
+  // Подпись не сошлась или нет сборки под платформу: человек видит, что проверка не прошла, а не «обновлений нет».
+  const bad = st.alert && !st.available;
+  $("#update-label").textContent = st.busy ? "скачиваю…" : bad ? "проверка обновления не прошла" : "обновить до " + (st.version || "");
+  btn.dataset.tipB = bad ? st.error || "" : "Скачать и проверить подпись новой сборки";
+  btn.disabled = !!st.busy || bad;
 }
 if (window.runtime) window.runtime.EventsOn("update:state", paintUpdate);
 $("#update-btn")?.addEventListener("click", async () => {
