@@ -8,6 +8,8 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+## [0.41.2] — 2026-11-17
+
 ### Added
 - **Телефон: модель под ответом и вторая модель в выборе (#685).** Ответ окна
   несет модель, которая его написала (`model` в ответе ящика), и телефон
