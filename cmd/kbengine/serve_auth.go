@@ -163,8 +163,20 @@ func listenAndServe(srv *http.Server) error {
 	return srv.ListenAndServe()
 }
 
+// shutdownGrace is how long запросы в работе получают на завершение после сигнала.
+const shutdownGrace = 10 * time.Second
+
 // listenAndServeUntil serves like listenAndServe and, when ctx ends, shuts the server
 // down gracefully; остановка по ctx — не ошибка (#440).
 func listenAndServeUntil(ctx context.Context, srv *http.Server) error {
-	return listenAndServe(srv)
+	go func() {
+		<-ctx.Done()
+		shut, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
+		defer cancel()
+		_ = srv.Shutdown(shut)
+	}()
+	if err := listenAndServe(srv); !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }
