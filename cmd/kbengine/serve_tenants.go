@@ -165,17 +165,7 @@ func (t *tenants) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if tok, ok := httpapi.RequestToken(r); ok {
 		if id, ok := t.reg.Lookup(tok); ok {
-			if t.refuseWrite(w, r, id) {
-				return
-			}
-			h, err := t.handlerFor(id)
-			if err != nil {
-				// Причина — в журнал сервера, а не в ответ: в ней ключ хранилища.
-				fmt.Fprintf(t.stderr, "serve: base of %s: %v\n", id, err)
-				http.Error(w, "base unavailable", http.StatusServiceUnavailable)
-				return
-			}
-			h.ServeHTTP(w, r)
+			t.serveBase(w, r, id)
 			return
 		}
 	}
@@ -557,4 +547,20 @@ func (t *tenants) refuseWrite(w http.ResponseWriter, r *http.Request, id domain.
 	}
 	http.Error(w, "this token cannot change data", http.StatusForbidden)
 	return true
+}
+
+// serveBase serves a request of a known person from their own base: сначала
+// область (read-токен не пишет), потом обработчик базы.
+func (t *tenants) serveBase(w http.ResponseWriter, r *http.Request, id domain.UserID) {
+	if t.refuseWrite(w, r, id) {
+		return
+	}
+	h, err := t.handlerFor(id)
+	if err != nil {
+		// Причина — в журнал сервера, а не в ответ: в ней ключ хранилища.
+		fmt.Fprintf(t.stderr, "serve: base of %s: %v\n", id, err)
+		http.Error(w, "base unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	h.ServeHTTP(w, r)
 }
