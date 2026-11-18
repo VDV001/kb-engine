@@ -173,7 +173,7 @@ func TestAppendScopeFoldedKeysDoNotBypass(t *testing.T) {
 			t.Errorf("key %q with a javascript: address: %d, want 400", key, rec.Code)
 		}
 	}
-	for _, u := range []string{" https://h/space", "https://h/space ", "https://trusted.com@evil.example/x"} {
+	for _, u := range []string{" https://h/space", "https://h/space ", "https://trusted.com@evil.example/x", "https://:8080/x", "http://:80"} {
 		if rec := do(f.h, http.MethodPost, "/api/entries",
 			`{"title":"x","category":"golang","url":"`+u+`","verdict":"keep"}`, f.tokA); rec.Code != http.StatusBadRequest {
 			t.Errorf("address %q: %d, want 400", u, rec.Code)
@@ -188,5 +188,20 @@ func TestAppendScopeFoldedKeysDoNotBypass(t *testing.T) {
 	}
 	if body := readable(t, get(f.h, "/api/entries", f.tokA)); strings.Contains(body, "bot-inbox") || strings.Count(body, `"source":"api-append"`) != 4 {
 		t.Errorf("a folded source key got through: %s", body)
+	}
+}
+
+// Запись без адреса токен append не добавляет: иначе сервер отвечал бы 200 «уже есть»
+// с чужой записью без адреса (ревью #705).
+func TestAppendScopeRequiresURL(t *testing.T) {
+	f := newTenants(t)
+	setAlphaScope(t, f, domain.ScopeAppend)
+	for _, body := range []string{
+		`{"title":"x","category":"golang","verdict":"keep"}`,
+		`{"title":"x","category":"golang","url":"","verdict":"keep"}`,
+	} {
+		if rec := do(f.h, http.MethodPost, "/api/entries", body, f.tokA); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: %d, want 400", body, rec.Code)
+		}
 	}
 }
