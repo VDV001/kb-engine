@@ -1,14 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"maps"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"slices"
@@ -267,6 +270,7 @@ const (
 	mailSend mailKind = iota
 	mailPoll
 	mailFile
+	mailAdd // добавление записи токеном append (#703): корзина как у отправки, но своя
 )
 
 func mailKindOf(r *http.Request) mailKind {
@@ -554,10 +558,71 @@ func (t *tenants) refuseWrite(w http.ResponseWriter, r *http.Request, id domain.
 	return true
 }
 
+// appendSource is the source of every entry added with an append token: ставит
+// сервер, а не клиент, иначе запись можно выдать за пришедшую из бота (#703).
+const appendSource = "api-append"
+
+// maxAppendBody mirrors httpapi's bound on a write body (64 КБ).
+const maxAppendBody = 64 << 10
+
+// guardAppend limits what an append token adds (#703, ревью безопасности): не чаще
+// раза в секунду (всплеск 30) — каждое добавление переписывает каталог целиком;
+// адрес только http и https; источник ставит сервер. Остальные области не трогает.
+// Сообщает, что ответ уже дан.
+func (t *tenants) guardAppend(w http.ResponseWriter, r *http.Request, id domain.UserID) bool {
+	if r.Method != http.MethodPost {
+		return false
+	}
+	if sc, ok := t.scopes.Scope(id); !ok || sc != domain.ScopeAppend {
+		return false
+	}
+	k := mailKey{sum: sha256.Sum256([]byte(id.String())), kind: mailAdd}
+	if wait, ok := t.allowMail(k); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
+		http.Error(w, "too many additions; at most one a second", http.StatusTooManyRequests)
+		return true
+	}
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxAppendBody+1))
+	if err != nil || len(raw) > maxAppendBody {
+		http.Error(w, fmt.Sprintf("body over %d bytes", maxAppendBody), http.StatusRequestEntityTooLarge)
+		return true
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
+		http.Error(w, "body must be a JSON object", http.StatusBadRequest)
+		return true
+	}
+	if rawURL, ok := fields["url"]; ok {
+		var s string
+		if err := json.Unmarshal(rawURL, &s); err != nil || !httpURL(s) {
+			http.Error(w, "url must be http or https", http.StatusBadRequest)
+			return true
+		}
+	}
+	fields["source"], _ = json.Marshal(appendSource)
+	body, err := json.Marshal(fields)
+	if err != nil {
+		http.Error(w, "bad body", http.StatusBadRequest)
+		return true
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	r.ContentLength = int64(len(body))
+	return false
+}
+
+// httpURL reports whether s is an absolute http or https address with a host.
+func httpURL(s string) bool {
+	u, err := url.Parse(strings.TrimSpace(s))
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+}
+
 // serveBase serves a request of a known person from their own base: сначала
 // область (read не пишет, append только добавляет), потом обработчик базы.
 func (t *tenants) serveBase(w http.ResponseWriter, r *http.Request, id domain.UserID) {
 	if t.refuseWrite(w, r, id) {
+		return
+	}
+	if t.guardAppend(w, r, id) {
 		return
 	}
 	h, err := t.handlerFor(id)
