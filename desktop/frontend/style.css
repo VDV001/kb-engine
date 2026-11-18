@@ -2085,10 +2085,10 @@ body:not(.no-mk-spark) .mk-legend i.fc { border-image: linear-gradient(90deg, va
 .upd-run:disabled { opacity: .7; cursor: default; animation-play-state: paused; }
 @media (prefers-reduced-motion: reduce) { #update-cell.hot #update-btn, .upd-run { animation: none; } #update-cell.hot #update-btn svg { animation: none; } }
 .settings-ver { margin-top: auto; padding: 12px 6px 4px; display: flex; flex-direction: column; gap: 8px; font: 11px var(--z-font); color: var(--z-muted); }
-.settings-ver .upd-run { width: 100%; padding: 8px 12px; justify-content: flex-start; text-align: left; }
-.settings-ver .upd-run-t { display: grid; gap: 1px; line-height: 1.25; white-space: nowrap; }
+.settings-ver .upd-run { width: 100%; padding: 8px 12px; }
+.settings-ver .upd-run-t { display: flex; align-items: baseline; gap: 5px; white-space: nowrap; }
 .settings-ver .upd-run-t b { font-size: 13px; }
-.settings-ver .upd-run-t small { font: 500 11px var(--z-font); opacity: .8; }
+.settings-ver .upd-run-t small { font: 500 12px var(--z-font); }
 .settings-ver .sv-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .settings-ver .sv-row b { color: var(--z-ink); font-weight: 500; font-size: 12px; }
 .settings-ver .sv-build { color: var(--z-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
