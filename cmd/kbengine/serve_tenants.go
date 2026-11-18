@@ -639,7 +639,7 @@ func httpURL(s string) bool {
 	u, err := url.Parse(s)
 	// Пробелы по краям и userinfo ("trusted.com@evil") отказ: запись хранит строку как есть.
 	return err == nil && s == strings.TrimSpace(s) && u.User == nil &&
-		(u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+		(u.Scheme == "http" || u.Scheme == "https") && u.Hostname() != ""
 }
 
 // serveBase serves a request of a known person from their own base: сначала
