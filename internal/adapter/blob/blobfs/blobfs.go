@@ -244,3 +244,6 @@ func (s *Store) Delete(_ context.Context, key string) error {
 	}
 	return nil
 }
+
+// Purge removes every file under prefix (stub, filled in by the next commit).
+func (s *Store) Purge(_ context.Context, prefix string) (int, error) { return 0, nil }

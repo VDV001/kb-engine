@@ -68,6 +68,21 @@ type Deleter interface {
 	Delete(ctx context.Context, key string) error
 }
 
+// Purger removes everything under a prefix, all versions of every object:
+// снять человека с сервера целиком (#545). Отдельно от Deleter: Delete убирает
+// один ключ и в бакете с версиями оставляет прежние, а здесь уходят и они.
+type Purger interface {
+	// Purge removes every object whose key starts with prefix and returns how
+	// many keys it removed. Нет таких — 0 и не ошибка. Префикс проверяет
+	// ValidPurgePrefix до всякого ввода-вывода.
+	Purge(ctx context.Context, prefix string) (int, error)
+}
+
+// ValidPurgePrefix refuses a prefix that could reach beyond one person: пустой,
+// корень, одна ступень (`users/`), без окончания и с неверным ключом.
+// ponytail: stub, filled in by the next commit.
+func ValidPurgePrefix(prefix string) error { return nil }
+
 // ValidKey refuses keys that could name something outside their own place:
 // абсолютный путь, сегменты `.` и `..`, пустой сегмент, обратная косая черта
 // и управляющие символы. На диске такой ключ вышел бы из корня, в бакете — из

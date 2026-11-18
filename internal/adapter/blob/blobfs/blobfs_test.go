@@ -148,3 +148,38 @@ func TestKeyCollidingWithADirectory(t *testing.T) {
 		t.Errorf("Get under a file: err = %v, want ErrNotFound", err)
 	}
 }
+
+func TestPurgeContract(t *testing.T) {
+	blobtest.RunPurger(t, func(t *testing.T) blobtest.PurgeStore {
+		s, err := blobfs.New(t.TempDir())
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		return s
+	})
+}
+
+// Опустевшие каталоги человека уходят вместе с файлами: на диске после
+// удаления не остается и пустого users/a/.
+func TestPurgeLeavesNoEmptyDirectories(t *testing.T) {
+	root := t.TempDir()
+	s, err := blobfs.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	for _, key := range []string{"users/a/kb/x", "users/b/kb/x"} {
+		if _, err := s.Put(ctx, key, []byte("x"), ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.Purge(ctx, "users/a/"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "users", "a")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("users/a after Purge: %v, want not exist", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "users", "b", "kb", "x")); err != nil {
+		t.Errorf("neighbour: %v", err)
+	}
+}
