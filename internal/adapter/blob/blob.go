@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -66,6 +67,37 @@ type Store interface {
 type Deleter interface {
 	// Delete removes key; ключа нет — не ошибка: удаление повторяемо.
 	Delete(ctx context.Context, key string) error
+}
+
+// Purger removes everything under a prefix, all versions of every object:
+// снять человека с сервера целиком (#545). Отдельно от Deleter: Delete убирает
+// один ключ и в бакете с версиями оставляет прежние, а здесь уходят и они.
+type Purger interface {
+	// Purge removes every object whose key starts with prefix and returns how
+	// many keys it removed. Нет таких — 0 и не ошибка. Префикс проверяет
+	// ValidPurgePrefix до всякого ввода-вывода.
+	Purge(ctx context.Context, prefix string) (int, error)
+}
+
+// purgePrefix is every prefix Purge accepts: the tree of one person
+// (`users/<id>/`, `mailfiles/users/<id>/`) or the file of one person
+// (`auth/seen/<id>.`). Имя — как у domain.UserID: a-z, 0-9, дефис не по краям,
+// до 32 знаков; ни «/», ни «.» в нем нет, поэтому `users/a/` не задевает
+// `users/a-b/`, а `auth/seen/a.` — `auth/seen/ab.json`.
+var purgePrefix = regexp.MustCompile(`^(?:(?:users|mailfiles/users)/[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?/|auth/seen/[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?\.)$`)
+
+// ValidPurgePrefix refuses everything but the places of one person: широкий
+// префикс (`mailfiles/users/`, `auth/seen/`), общий реестр (`auth/users.`),
+// корень и чужой каталог снимали бы чужих людей или весь сервер, поэтому
+// список разрешенных форм закрыт, а не «кроме перечисленного».
+func ValidPurgePrefix(prefix string) error {
+	if err := ValidKey(strings.TrimSuffix(prefix, "/")); err != nil {
+		return err
+	}
+	if !purgePrefix.MatchString(prefix) {
+		return fmt.Errorf("%w: purge prefix %q is not the place of one person", ErrInvalidKey, prefix)
+	}
+	return nil
 }
 
 // ValidKey refuses keys that could name something outside their own place:

@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -258,6 +259,11 @@ func (s *Store) Put(ctx context.Context, key string, data []byte, ifMatch string
 }
 
 func (s *Store) do(ctx context.Context, method, key string, body []byte, h http.Header) (*http.Response, error) {
+	return s.send(ctx, method, s.objectURL(key), key, body, h)
+}
+
+// send is do for an address built by the caller: name — что показать в ошибке.
+func (s *Store) send(ctx context.Context, method, rawURL, name string, body []byte, h http.Header) (*http.Response, error) {
 	tok, err := s.token.Token(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("blobs3: token: %w", err)
@@ -266,7 +272,7 @@ func (s *Store) do(ctx context.Context, method, key string, body []byte, h http.
 	if body != nil {
 		rd = bytes.NewReader(body)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, s.objectURL(key), rd)
+	req, err := http.NewRequestWithContext(ctx, method, rawURL, rd)
 	if err != nil {
 		return nil, fmt.Errorf("blobs3: %w", err)
 	}
@@ -274,7 +280,7 @@ func (s *Store) do(ctx context.Context, method, key string, body []byte, h http.
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("blobs3: %s %s: %w", strings.ToLower(method), key, err)
+		return nil, fmt.Errorf("blobs3: %s %s: %w", strings.ToLower(method), name, err)
 	}
 	return resp, nil
 }
@@ -410,4 +416,143 @@ func (s *Store) Delete(ctx context.Context, key string) error {
 		return nil
 	}
 	return statusError("delete", key, resp)
+}
+
+var _ blob.Purger = (*Store)(nil)
+
+// maxListBody bounds one ListObjectVersions answer: 1000 записей — килобайты,
+// сотня мегабайт — уже не список.
+const maxListBody = 16 << 20
+
+// maxPurgeRounds bounds the purge loop: круг — до 1000 записей, так что предел —
+// десять миллионов версий одного человека. Сервер, у которого каждый круг
+// начинается с новой записи, иначе крутил бы цикл до отмены контекста.
+// Переменная, а не константа: тест опускает предел.
+var maxPurgeRounds = 10_000
+
+type versionsPage struct {
+	Version      []versionEntry `xml:"Version"`
+	DeleteMarker []versionEntry `xml:"DeleteMarker"`
+}
+
+type versionEntry struct {
+	Key       string `xml:"Key"`
+	VersionID string `xml:"VersionId"`
+}
+
+// Purge removes every version and delete marker under prefix and returns how
+// many keys it took (blob.Purger). Обычный Delete в бакете с версиями только
+// ставит метку, а прежние версии лежат до правила жизненного цикла; для
+// «удалить человека» этого мало.
+//
+// Круг: первая страница списка версий → удаление каждой записи по versionId →
+// снова первая страница, пока список не пуст. Продолжать по маркерам не нужно:
+// удаленное из списка уходит. Ключ из ответа, не лежащий под префиксом, — ошибка
+// до всякого удаления: ответ сервера не должен вести руку за пределы человека.
+// Круг, у которого первая запись та же, что у прошлого, — ошибка: удаление
+// отвечает 204 и ничего не убирает (иначе цикл бесконечен).
+//
+// ponytail: удаление записей по одной, не пачкой DeleteObjects. Потолок —
+// человек с тысячами версий уходит минутами; путь апгрейда — POST ?delete.
+func (s *Store) Purge(ctx context.Context, prefix string) (int, error) {
+	if err := blob.ValidPurgePrefix(prefix); err != nil {
+		return 0, err
+	}
+	full := s.prefix + prefix
+	keys := map[string]struct{}{}
+	lastFirst := ""
+	for round := 0; ; round++ {
+		if round >= maxPurgeRounds {
+			return len(keys), fmt.Errorf("blobs3: purge %s: more than %d rounds of the listing; stopped", prefix, maxPurgeRounds)
+		}
+		entries, err := s.listVersions(ctx, full)
+		if err != nil {
+			return len(keys), err
+		}
+		if len(entries) == 0 {
+			return len(keys), nil
+		}
+		removable, skipped, err := s.checkEntries(prefix, full, entries)
+		if err != nil {
+			return len(keys), err
+		}
+		if len(removable) == 0 { // остались только ключи, которых через адрес не выразить
+			return len(keys), skippedError(prefix, skipped)
+		}
+		if first := removable[0].Key + "@" + removable[0].VersionID; first == lastFirst {
+			return len(keys), fmt.Errorf("blobs3: purge %s: %s is still listed after its delete answered ok", prefix, first)
+		} else {
+			lastFirst = first
+		}
+		for _, e := range removable {
+			if err := s.deleteVersion(ctx, e); err != nil {
+				return len(keys), err
+			}
+			keys[strings.TrimPrefix(e.Key, s.prefix)] = struct{}{}
+		}
+	}
+}
+
+// checkEntries splits a listing into what can be removed and what cannot be
+// addressed. Ключ вне префикса или без versionId — ошибка до всякого удаления
+// (ответу сервера нельзя вести руку за пределы человека). Ключ под префиксом, но
+// с `..`, пустым сегментом или управляющим знаком в адресе объекта выразить
+// нельзя (`..` сервер мог бы свернуть в другой объект): он пропускается и
+// называется в итоговой ошибке, а остальное удаляется.
+func (s *Store) checkEntries(prefix, full string, entries []versionEntry) (removable []versionEntry, skipped []string, err error) {
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Key, full) {
+			return nil, nil, fmt.Errorf("blobs3: purge %s: the listing returned %q outside the prefix", prefix, e.Key)
+		}
+		if e.VersionID == "" { // Delete без версии ставит метку, а не убирает запись
+			return nil, nil, fmt.Errorf("blobs3: purge %s: the listing gave no version id for %q", prefix, e.Key)
+		}
+		if s.checkKey(strings.TrimPrefix(e.Key, s.prefix)) != nil {
+			skipped = append(skipped, e.Key)
+			continue
+		}
+		removable = append(removable, e)
+	}
+	return removable, skipped, nil
+}
+
+// skippedError names up to three keys purge could not address.
+func skippedError(prefix string, skipped []string) error {
+	shown := skipped[:min(len(skipped), 3)]
+	return fmt.Errorf("blobs3: purge %s: %d keys cannot be addressed and stay in the bucket (remove by hand), e.g. %q", prefix, len(skipped), shown)
+}
+
+// deleteVersion removes one version or marker by its id.
+func (s *Store) deleteVersion(ctx context.Context, e versionEntry) error {
+	key := strings.TrimPrefix(e.Key, s.prefix)
+	target := s.objectURL(key) + "?versionId=" + url.QueryEscape(e.VersionID)
+	resp, err := s.send(ctx, http.MethodDelete, target, key, nil, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	switch resp.StatusCode {
+	case http.StatusNoContent, http.StatusOK, http.StatusNotFound:
+		return nil
+	}
+	return statusError("delete version", key, resp)
+}
+
+// listVersions returns the first page (up to 1000) of versions and delete
+// markers under the full key prefix.
+func (s *Store) listVersions(ctx context.Context, fullPrefix string) ([]versionEntry, error) {
+	q := url.Values{"versions": {""}, "prefix": {fullPrefix}, "max-keys": {"1000"}}
+	resp, err := s.send(ctx, http.MethodGet, s.base+"?"+q.Encode(), "versions of "+fullPrefix, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, statusError("list versions", fullPrefix, resp)
+	}
+	var page versionsPage
+	if err := xml.NewDecoder(io.LimitReader(resp.Body, maxListBody)).Decode(&page); err != nil {
+		return nil, fmt.Errorf("blobs3: list versions %s: %w", fullPrefix, err)
+	}
+	return append(page.Version, page.DeleteMarker...), nil
 }

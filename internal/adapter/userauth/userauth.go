@@ -126,19 +126,43 @@ func RevokeToken(ctx context.Context, s blob.Store, id domain.UserID, token stri
 // с ним: отозванного некому отвязать (ревью #630); сервер к тому же не пускает
 // телефон без живого хозяина.
 func Revoke(ctx context.Context, s blob.Store, id domain.UserID) error {
+	var absent error // человека в реестре нет: старый или прерванный отзыв
 	err := update(ctx, s, RegistryKey, func(r *registryDTO) error {
 		n := len(r.Users)
 		r.Users = slices.DeleteFunc(r.Users, func(u userDTO) bool { return u.ID == id.String() })
 		if len(r.Users) == n {
-			return fmt.Errorf("%w: %s", domain.ErrNoSuchUser, id)
+			absent = fmt.Errorf("%w: %s", domain.ErrNoSuchUser, id)
+			return errUnchanged
 		}
 		return nil
 	})
 	if err != nil {
 		return err
 	}
+	// Остальное чистится и когда в реестре человека уже нет: прежний Revoke,
+	// отозвавший до чистки push, или сбой между записями оставлял телефоны,
+	// push и входы навсегда, а повтор на ErrNoSuchUser выходил ни с чем.
+	// Пишется только то, что изменилось: опечатка в имени не переписывает общие
+	// файлы и не спорит с другими экземплярами за их версию.
 	err = update(ctx, s, DevicesKey, func(r *registryDTO) error {
+		n := len(r.Users)
 		r.Users = slices.DeleteFunc(r.Users, func(u userDTO) bool { return u.ID == id.String() })
+		if len(r.Users) == n {
+			return errUnchanged
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	// Адреса push-уведомлений: после отзыва они остались бы в auth/push.json,
+	// хотя телефонов у человека уже нет (#545).
+	err = update(ctx, s, PushKey, func(r *pushRegistryDTO) error {
+		n := len(r.Subs)
+		r.Subs = slices.DeleteFunc(r.Subs, func(p pushDTO) bool { return p.ID == id.String() })
+		if len(r.Subs) == n {
+			return errUnchanged
+		}
 		return nil
 	})
 	if err != nil {
@@ -147,7 +171,7 @@ func Revoke(ctx context.Context, s blob.Store, id domain.UserID) error {
 	// Входы телефонов — следом; не вышло — не беда: окно их уже не спросит, а
 	// новый вход без живого телефона не пишется (ревью #652).
 	_ = clearSeen(ctx, s, id, func(string) bool { return true })
-	return nil
+	return absent
 }
 
 // update reads the registry, applies change and writes it back under the

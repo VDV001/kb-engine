@@ -23,13 +23,14 @@ import (
 // оболочки, журнал агента и переписку с моделью, а токен открывает базу и
 // финансы человека. Связку ключей ведет окно: токен попадает туда из файла
 // (pbcopy < файл и вставить в окно), а не из командной строки. В хранилище
-// только хэш. revoke закрывает вход, база человека остается.
+// только хэш. revoke закрывает вход, база человека остается; purge снимает
+// человека целиком, с базой, файлами ящика и версиями объектов.
 func runUsers(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
 		fmt.Fprintln(stdout, usersUsage) // просьба о помощи — успех (help_test.go)
 		return 0
 	}
-	if len(args) == 0 || (args[0] != "add" && args[0] != "revoke") {
+	if len(args) == 0 || (args[0] != "add" && args[0] != "revoke" && args[0] != "purge") {
 		fmt.Fprintln(stderr, usersUsage)
 		return 2
 	}
@@ -38,8 +39,11 @@ func runUsers(args []string, stdout, stderr io.Writer) int {
 	if tg == nil {
 		return code
 	}
-	if sub == "revoke" {
+	switch sub {
+	case "revoke":
 		return usersRevoke(tg.store, tg.id, stderr)
+	case "purge":
+		return usersPurge(tg, stderr)
 	}
 	return usersAdd(tg, stderr)
 }
@@ -51,13 +55,29 @@ type usersTargetOf struct {
 	loc      string // --tenants как назван: подсказки печатают готовую команду
 	id       domain.UserID
 	tokenOut string
+	confirm  string        // purge: имя еще раз
+	yes      bool          // purge: предпросмотр показан, удалять
+	wait     time.Duration // purge: пауза между отзывом и удалением
 }
 
 // usersOpenStore opens the people's store; тесты подменяют хранилище, которое
 // записывает и отвечает ошибкой.
 var usersOpenStore = openTenantStore
 
-const usersUsage = "usage: kbengine users add|revoke --tenants <s3://bucket | dir> --id <name> [add: --token-out <new file>]"
+// usersPurgeSleep waits for other server instances to learn of a revoke; тесты
+// подменяют.
+var usersPurgeSleep = func(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+const usersUsage = "usage: kbengine users add|revoke|purge --tenants <s3://bucket | dir> --id <name> [add: --token-out <new file>] [purge: --confirm <name> --wait <duration> --yes]"
 
 // usersTarget parses the flags into the store and the person; nil — выйти с
 // кодом code.
@@ -70,6 +90,14 @@ func usersTarget(sub string, args []string, stderr io.Writer) (*usersTargetOf, i
 	var out *string
 	if sub == "add" {
 		out = fs.String("token-out", "", "write the token into this new file (mode 0600; an existing file is refused)")
+	}
+	var confirm *string
+	var wait *time.Duration
+	var yes *bool
+	if sub == "purge" {
+		yes = fs.Bool("yes", false, "remove: without it the command only shows what exists and changes nothing")
+		confirm = fs.String("confirm", "", "the same name again: the removal cannot be undone")
+		wait = fs.Duration("wait", userauth.MaxStale+10*time.Second, "pause between the revoke and the removal, so every server instance stops admitting the token (a failed registry read keeps the old list for MaxStale)")
 	}
 	if code, stop := parseFlags(fs, args); stop {
 		return nil, code
@@ -84,6 +112,17 @@ func usersTarget(sub string, args []string, stderr io.Writer) (*usersTargetOf, i
 		return nil, 2
 	}
 	tg := &usersTargetOf{loc: *loc, id: id}
+	if sub == "purge" {
+		if *confirm != id.String() {
+			fmt.Fprintf(stderr, "users purge: --confirm <имя> обязателен и равен --id: удаление необратимо\n")
+			return nil, 2
+		}
+		if *wait < 0 {
+			fmt.Fprintf(stderr, "users purge: --wait не может быть отрицательным\n")
+			return nil, 2
+		}
+		tg.confirm, tg.wait, tg.yes = *confirm, *wait, *yes
+	}
 	if sub == "add" {
 		if *out == "" {
 			fmt.Fprintf(stderr, "users add: --token-out <новый файл> обязателен: в терминал токен не выводится\n")
@@ -198,3 +237,78 @@ func keepToken(f *os.File, tok string) error {
 // shellQuote quotes s for a command the person copies: путь с пробелом иначе
 // развалил бы подсказку.
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
+
+// usersPurge closes the person's login, waits for the other server instances to
+// notice (userauth.RefreshEvery), then removes the base, the mailbox files and
+// every version of them. Прерывание в паузе оставляет данные целыми и вход
+// закрытым: повтор команды доводит дело.
+func usersPurge(tg *usersTargetOf, stderr io.Writer) int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer stop()
+	if _, ok := tg.store.(blob.Purger); !ok {
+		fmt.Fprintf(stderr, "users purge: хранилище не умеет удалять дерево с версиями: ничего не изменено\n")
+		return 1
+	}
+	if !tg.yes {
+		return usersPurgePreview(ctx, tg, stderr)
+	}
+	registered := true
+	if err := userauth.Revoke(ctx, tg.store, tg.id); errors.Is(err, domain.ErrNoSuchUser) {
+		registered = false
+	} else if err != nil {
+		fmt.Fprintf(stderr, "users purge: %v\n", err)
+		return 1
+	} else {
+		fmt.Fprintf(stderr, "users purge: вход %s закрыт\n", tg.id)
+	}
+	if tg.wait > 0 { // и при повторе: отозвать второй раз нечем, но экземпляры могли еще не узнать
+		fmt.Fprintf(stderr, "users purge: жду %s, пока все экземпляры сервера узнают об отзыве\n", tg.wait)
+		if err := usersPurgeSleep(ctx, tg.wait); err != nil {
+			fmt.Fprintf(stderr, "users purge: прервано (%v): вход закрыт, данные целы; повтори kbengine users purge --tenants %s --id %s --confirm %s\n", err, shellQuote(tg.loc), tg.id, tg.id)
+			return 1
+		}
+	}
+	rep, err := userauth.Purge(ctx, tg.store, tg.id)
+	if err != nil {
+		fmt.Fprintf(stderr, "users purge: %v; уже удалено: база %d, файлы ящика %d, входы телефонов %d; повтор безопасен\n", err, rep.Base, rep.Mail, rep.Seen)
+		return 1
+	}
+	// Второй проход: запрос, впущенный до того, как экземпляр узнал об отзыве,
+	// мог записать уже после удаления.
+	if late, err := userauth.Purge(ctx, tg.store, tg.id); err != nil {
+		fmt.Fprintf(stderr, "users purge: проверка после удаления: %v; повтори команду\n", err)
+		return 1
+	} else if late != (userauth.PurgeReport{}) {
+		fmt.Fprintf(stderr, "users purge: после удаления появились записи (база %d, ящик %d, входы %d), они убраны; отчет ниже неполон, повтори команду еще раз и проверь, что список пуст\n", late.Base, late.Mail, late.Seen)
+		return 1
+	}
+	if !registered && rep == (userauth.PurgeReport{}) {
+		fmt.Fprintf(stderr, "users purge: %s нет ни в реестре, ни в хранилище: опечатка в имени?\n", tg.id)
+		return 1
+	}
+	fmt.Fprintf(stderr, "users purge: %s удален: база %d, файлы ящика %d, входы телефонов %d (объекты со всеми версиями)\n", tg.id, rep.Base, rep.Mail, rep.Seen)
+	fmt.Fprintf(stderr, "users purge: логи сервера в Monium (ошибки, без тел запросов и токенов) не удаляются, они живут по сроку хранения Monium\n")
+	fmt.Fprintf(stderr, "users purge: имя и хэш токена еще 30 дней лежат в старых версиях общих реестров auth/*.json: файлы общие, версии по одной не вычистить, не задев чужих\n")
+	return 0
+}
+
+// usersPurgePreview shows what the name stands for and changes nothing: имя,
+// набранное дважды верно, но не про того человека, не удаляет молча.
+func usersPurgePreview(ctx context.Context, tg *usersTargetOf, stderr io.Writer) int {
+	registered := userauth.NewRegistry(ctx, tg.store).Has(tg.id)
+	phones := 0
+	if ds, err := userauth.Devices(ctx, tg.store, tg.id); err == nil {
+		phones = len(ds)
+	}
+	base := "есть"
+	if _, err := tg.store.Get(ctx, userauth.CatalogKey(tg.id)); errors.Is(err, blob.ErrNotFound) {
+		base = "нет"
+	}
+	reg := "нет"
+	if registered {
+		reg = "да"
+	}
+	fmt.Fprintf(stderr, "users purge: %s: в реестре: %s; телефонов: %d; база: %s\n", tg.id, reg, phones, base)
+	fmt.Fprintf(stderr, "users purge: удалится без возврата: вход, телефоны, push, база и финансы, файлы ящика, входы телефонов, все версии объектов. Это тот человек? Повтори с --yes\n")
+	return 2
+}

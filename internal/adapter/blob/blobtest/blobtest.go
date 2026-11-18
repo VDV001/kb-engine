@@ -292,3 +292,129 @@ func RunDeleter(t *testing.T, newStore func(t *testing.T) DeleteStore) {
 		}
 	})
 }
+
+// InvalidPurgePrefixes are prefixes Purge must refuse before any I/O: пустой,
+// корень, одна ступень, без «/» или «.» на конце, пустой сегмент, выход вверх.
+var InvalidPurgePrefixes = []string{
+	"", "/", "users/", "users", "users/a", "a/", "users//", "users//a/", "../a/", "users/../x/",
+	"users/./a/", "/users/a/", "users\\a/", "users/a/\x00",
+	// Широкие или чужие по форме: всех людей, общий реестр, чужой каталог.
+	"mailfiles/users/", "mailfiles/", "auth/", "auth/seen/", "auth/users.", "auth/push.", "auth/devices.",
+	"users/a.", "a/b.", "a/b/", "users/a/b/", "users/A/", "users/a_b/", "users/-a/", "users/a-/", "users/ключ/",
+	"test/users/a/", "auth/seen/a/", "auth/seen/a-.",
+}
+
+// PurgeStore is a store that also purges.
+type PurgeStore interface {
+	blob.Store
+	blob.Purger
+}
+
+// RunPurger checks the purge contract (#545): уходит дерево человека и только
+// оно — `users/a/` не задевает `users/a-b/` и `users/ab/`; префикс с точкой
+// берет один файл; повтор и пустой префикс — 0 без ошибки; плохой префикс
+// отказан и ничего не удалено.
+func RunPurger(t *testing.T, newStore func(t *testing.T) PurgeStore) {
+	t.Helper()
+	for _, c := range []struct {
+		name  string
+		check func(t *testing.T, s PurgeStore)
+	}{
+		{"removes the tree and only the tree", purgeTree},
+		{"a dot prefix takes one file", purgeDot},
+		{"nothing under the prefix is zero, not an error", purgeNothing},
+		{"a bad prefix is refused and nothing is removed", purgeBad},
+		{"a purged key can be created again", purgeRecreate},
+	} {
+		t.Run(c.name, func(t *testing.T) { c.check(t, newStore(t)) })
+	}
+}
+
+func purgeSeed(t *testing.T, s PurgeStore) {
+	t.Helper()
+	for _, key := range []string{
+		"users/a/kb/_data/catalog.json", "users/a/mail/log.jsonl",
+		"users/a-b/kb/_data/catalog.json", "users/ab/kb/_data/catalog.json",
+		"mailfiles/users/a/f1", "auth/seen/a.json", "auth/seen/ab.json",
+	} {
+		if _, err := s.Put(context.Background(), key, []byte(key), ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func purgeGone(t *testing.T, s PurgeStore, key string) bool {
+	t.Helper()
+	_, err := s.Get(context.Background(), key)
+	if err != nil && !errors.Is(err, blob.ErrNotFound) {
+		t.Fatalf("Get %s: %v", key, err)
+	}
+	return err != nil
+}
+
+func purgeTree(t *testing.T, s PurgeStore) {
+	purgeSeed(t, s)
+	n, err := s.Purge(context.Background(), "users/a/")
+	if err != nil || n != 2 {
+		t.Fatalf("Purge = %d, %v; want 2, nil", n, err)
+	}
+	for _, key := range []string{"users/a/kb/_data/catalog.json", "users/a/mail/log.jsonl"} {
+		if !purgeGone(t, s, key) {
+			t.Errorf("%s is still there", key)
+		}
+	}
+	for _, key := range []string{"users/a-b/kb/_data/catalog.json", "users/ab/kb/_data/catalog.json", "mailfiles/users/a/f1", "auth/seen/a.json", "auth/seen/ab.json"} {
+		if purgeGone(t, s, key) {
+			t.Errorf("%s was removed with the neighbour", key)
+		}
+	}
+}
+
+func purgeDot(t *testing.T, s PurgeStore) {
+	purgeSeed(t, s)
+	n, err := s.Purge(context.Background(), "auth/seen/a.")
+	if err != nil || n != 1 {
+		t.Fatalf("Purge = %d, %v; want 1, nil", n, err)
+	}
+	if !purgeGone(t, s, "auth/seen/a.json") || purgeGone(t, s, "auth/seen/ab.json") {
+		t.Error("auth/seen/a. must take a.json and leave ab.json")
+	}
+}
+
+func purgeNothing(t *testing.T, s PurgeStore) {
+	ctx := context.Background()
+	purgeSeed(t, s)
+	if n, err := s.Purge(ctx, "users/none/"); err != nil || n != 0 {
+		t.Fatalf("Purge = %d, %v; want 0, nil", n, err)
+	}
+	if n, err := s.Purge(ctx, "users/a/"); err != nil || n != 2 {
+		t.Fatalf("first Purge = %d, %v", n, err)
+	}
+	if n, err := s.Purge(ctx, "users/a/"); err != nil || n != 0 {
+		t.Fatalf("second Purge = %d, %v; want 0, nil", n, err)
+	}
+}
+
+func purgeBad(t *testing.T, s PurgeStore) {
+	purgeSeed(t, s)
+	for _, prefix := range InvalidPurgePrefixes {
+		if _, err := s.Purge(context.Background(), prefix); !errors.Is(err, blob.ErrInvalidKey) {
+			t.Errorf("Purge(%q): err = %v, want ErrInvalidKey", prefix, err)
+		}
+	}
+	for _, key := range []string{"users/a/kb/_data/catalog.json", "users/ab/kb/_data/catalog.json", "auth/seen/a.json"} {
+		if purgeGone(t, s, key) {
+			t.Errorf("%s was removed by a refused prefix", key)
+		}
+	}
+}
+
+func purgeRecreate(t *testing.T, s PurgeStore) {
+	purgeSeed(t, s)
+	if _, err := s.Purge(context.Background(), "users/a/"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Put(context.Background(), "users/a/kb/_data/catalog.json", []byte("new"), ""); err != nil {
+		t.Fatalf("create after Purge: %v", err)
+	}
+}
