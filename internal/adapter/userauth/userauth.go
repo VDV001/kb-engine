@@ -142,8 +142,14 @@ func Revoke(ctx context.Context, s blob.Store, id domain.UserID) error {
 	// Остальное чистится и когда в реестре человека уже нет: прежний Revoke,
 	// отозвавший до чистки push, или сбой между записями оставлял телефоны,
 	// push и входы навсегда, а повтор на ErrNoSuchUser выходил ни с чем.
+	// Пишется только то, что изменилось: опечатка в имени не переписывает общие
+	// файлы и не спорит с другими экземплярами за их версию.
 	err = update(ctx, s, DevicesKey, func(r *registryDTO) error {
+		n := len(r.Users)
 		r.Users = slices.DeleteFunc(r.Users, func(u userDTO) bool { return u.ID == id.String() })
+		if len(r.Users) == n {
+			return errUnchanged
+		}
 		return nil
 	})
 	if err != nil {
@@ -152,7 +158,11 @@ func Revoke(ctx context.Context, s blob.Store, id domain.UserID) error {
 	// Адреса push-уведомлений: после отзыва они остались бы в auth/push.json,
 	// хотя телефонов у человека уже нет (#545).
 	err = update(ctx, s, PushKey, func(r *pushRegistryDTO) error {
+		n := len(r.Subs)
 		r.Subs = slices.DeleteFunc(r.Subs, func(p pushDTO) bool { return p.ID == id.String() })
+		if len(r.Subs) == n {
+			return errUnchanged
+		}
 		return nil
 	})
 	if err != nil {

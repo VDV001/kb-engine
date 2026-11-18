@@ -56,6 +56,7 @@ type usersTargetOf struct {
 	id       domain.UserID
 	tokenOut string
 	confirm  string        // purge: имя еще раз
+	yes      bool          // purge: предпросмотр показан, удалять
 	wait     time.Duration // purge: пауза между отзывом и удалением
 }
 
@@ -76,7 +77,7 @@ var usersPurgeSleep = func(ctx context.Context, d time.Duration) error {
 	}
 }
 
-const usersUsage = "usage: kbengine users add|revoke|purge --tenants <s3://bucket | dir> --id <name> [add: --token-out <new file>] [purge: --confirm <name> --wait <duration>]"
+const usersUsage = "usage: kbengine users add|revoke|purge --tenants <s3://bucket | dir> --id <name> [add: --token-out <new file>] [purge: --confirm <name> --wait <duration> --yes]"
 
 // usersTarget parses the flags into the store and the person; nil — выйти с
 // кодом code.
@@ -92,7 +93,9 @@ func usersTarget(sub string, args []string, stderr io.Writer) (*usersTargetOf, i
 	}
 	var confirm *string
 	var wait *time.Duration
+	var yes *bool
 	if sub == "purge" {
+		yes = fs.Bool("yes", false, "remove: without it the command only shows what exists and changes nothing")
 		confirm = fs.String("confirm", "", "the same name again: the removal cannot be undone")
 		wait = fs.Duration("wait", userauth.MaxStale+10*time.Second, "pause between the revoke and the removal, so every server instance stops admitting the token (a failed registry read keeps the old list for MaxStale)")
 	}
@@ -118,7 +121,7 @@ func usersTarget(sub string, args []string, stderr io.Writer) (*usersTargetOf, i
 			fmt.Fprintf(stderr, "users purge: --wait не может быть отрицательным\n")
 			return nil, 2
 		}
-		tg.confirm, tg.wait = *confirm, *wait
+		tg.confirm, tg.wait, tg.yes = *confirm, *wait, *yes
 	}
 	if sub == "add" {
 		if *out == "" {
@@ -246,6 +249,9 @@ func usersPurge(tg *usersTargetOf, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "users purge: хранилище не умеет удалять дерево с версиями: ничего не изменено\n")
 		return 1
 	}
+	if !tg.yes {
+		return usersPurgePreview(ctx, tg, stderr)
+	}
 	registered := true
 	if err := userauth.Revoke(ctx, tg.store, tg.id); errors.Is(err, domain.ErrNoSuchUser) {
 		registered = false
@@ -284,4 +290,25 @@ func usersPurge(tg *usersTargetOf, stderr io.Writer) int {
 	fmt.Fprintf(stderr, "users purge: логи сервера в Monium (ошибки, без тел запросов и токенов) не удаляются, они живут по сроку хранения Monium\n")
 	fmt.Fprintf(stderr, "users purge: имя и хэш токена еще 30 дней лежат в старых версиях общих реестров auth/*.json: файлы общие, версии по одной не вычистить, не задев чужих\n")
 	return 0
+}
+
+// usersPurgePreview shows what the name stands for and changes nothing: имя,
+// набранное дважды верно, но не про того человека, не удаляет молча.
+func usersPurgePreview(ctx context.Context, tg *usersTargetOf, stderr io.Writer) int {
+	registered := userauth.NewRegistry(ctx, tg.store).Has(tg.id)
+	phones := 0
+	if ds, err := userauth.Devices(ctx, tg.store, tg.id); err == nil {
+		phones = len(ds)
+	}
+	base := "есть"
+	if _, err := tg.store.Get(ctx, userauth.CatalogKey(tg.id)); errors.Is(err, blob.ErrNotFound) {
+		base = "нет"
+	}
+	reg := "нет"
+	if registered {
+		reg = "да"
+	}
+	fmt.Fprintf(stderr, "users purge: %s: в реестре: %s; телефонов: %d; база: %s\n", tg.id, reg, phones, base)
+	fmt.Fprintf(stderr, "users purge: удалится без возврата: вход, телефоны, push, база и финансы, файлы ящика, входы телефонов, все версии объектов. Это тот человек? Повтори с --yes\n")
+	return 2
 }

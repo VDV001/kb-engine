@@ -424,8 +424,11 @@ var _ blob.Purger = (*Store)(nil)
 // сотня мегабайт — уже не список.
 const maxListBody = 16 << 20
 
-// maxPurgeRounds bounds the purge loop (stub, set by the next commit).
-var maxPurgeRounds = 1 << 30
+// maxPurgeRounds bounds the purge loop: круг — до 1000 записей, так что предел —
+// десять миллионов версий одного человека. Сервер, у которого каждый круг
+// начинается с новой записи, иначе крутил бы цикл до отмены контекста.
+// Переменная, а не константа: тест опускает предел.
+var maxPurgeRounds = 10_000
 
 type versionsPage struct {
 	Version      []versionEntry `xml:"Version"`
@@ -458,7 +461,10 @@ func (s *Store) Purge(ctx context.Context, prefix string) (int, error) {
 	full := s.prefix + prefix
 	keys := map[string]struct{}{}
 	lastFirst := ""
-	for {
+	for round := 0; ; round++ {
+		if round >= maxPurgeRounds {
+			return len(keys), fmt.Errorf("blobs3: purge %s: more than %d rounds of the listing; stopped", prefix, maxPurgeRounds)
+		}
 		entries, err := s.listVersions(ctx, full)
 		if err != nil {
 			return len(keys), err
@@ -466,15 +472,19 @@ func (s *Store) Purge(ctx context.Context, prefix string) (int, error) {
 		if len(entries) == 0 {
 			return len(keys), nil
 		}
-		if err := s.checkEntries(prefix, full, entries); err != nil {
+		removable, skipped, err := s.checkEntries(prefix, full, entries)
+		if err != nil {
 			return len(keys), err
 		}
-		if first := entries[0].Key + "@" + entries[0].VersionID; first == lastFirst {
+		if len(removable) == 0 { // остались только ключи, которых через адрес не выразить
+			return len(keys), skippedError(prefix, skipped)
+		}
+		if first := removable[0].Key + "@" + removable[0].VersionID; first == lastFirst {
 			return len(keys), fmt.Errorf("blobs3: purge %s: %s is still listed after its delete answered ok", prefix, first)
 		} else {
 			lastFirst = first
 		}
-		for _, e := range entries {
+		for _, e := range removable {
 			if err := s.deleteVersion(ctx, e); err != nil {
 				return len(keys), err
 			}
@@ -483,21 +493,33 @@ func (s *Store) Purge(ctx context.Context, prefix string) (int, error) {
 	}
 }
 
-// checkEntries refuses a listing that points outside the prefix or names no
-// version, before anything is deleted.
-func (s *Store) checkEntries(prefix, full string, entries []versionEntry) error {
+// checkEntries splits a listing into what can be removed and what cannot be
+// addressed. Ключ вне префикса или без versionId — ошибка до всякого удаления
+// (ответу сервера нельзя вести руку за пределы человека). Ключ под префиксом, но
+// с `..`, пустым сегментом или управляющим знаком в адресе объекта выразить
+// нельзя (`..` сервер мог бы свернуть в другой объект): он пропускается и
+// называется в итоговой ошибке, а остальное удаляется.
+func (s *Store) checkEntries(prefix, full string, entries []versionEntry) (removable []versionEntry, skipped []string, err error) {
 	for _, e := range entries {
 		if !strings.HasPrefix(e.Key, full) {
-			return fmt.Errorf("blobs3: purge %s: the listing returned %q outside the prefix", prefix, e.Key)
+			return nil, nil, fmt.Errorf("blobs3: purge %s: the listing returned %q outside the prefix", prefix, e.Key)
 		}
 		if e.VersionID == "" { // Delete без версии ставит метку, а не убирает запись
-			return fmt.Errorf("blobs3: purge %s: the listing gave no version id for %q", prefix, e.Key)
+			return nil, nil, fmt.Errorf("blobs3: purge %s: the listing gave no version id for %q", prefix, e.Key)
 		}
-		if err := s.checkKey(strings.TrimPrefix(e.Key, s.prefix)); err != nil {
-			return fmt.Errorf("blobs3: purge %s: %w", prefix, err)
+		if s.checkKey(strings.TrimPrefix(e.Key, s.prefix)) != nil {
+			skipped = append(skipped, e.Key)
+			continue
 		}
+		removable = append(removable, e)
 	}
-	return nil
+	return removable, skipped, nil
+}
+
+// skippedError names up to three keys purge could not address.
+func skippedError(prefix string, skipped []string) error {
+	shown := skipped[:min(len(skipped), 3)]
+	return fmt.Errorf("blobs3: purge %s: %d keys cannot be addressed and stay in the bucket (remove by hand), e.g. %q", prefix, len(skipped), shown)
 }
 
 // deleteVersion removes one version or marker by its id.
