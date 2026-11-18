@@ -167,15 +167,26 @@ func listenAndServe(srv *http.Server) error {
 const shutdownGrace = 10 * time.Second
 
 // listenAndServeUntil serves like listenAndServe and, when ctx ends, shuts the server
-// down gracefully; остановка по ctx — не ошибка (#440).
+// down gracefully; остановка по ctx — не ошибка (#440). Возвращается, только когда
+// Shutdown закончил: ListenAndServe выходит сразу после его вызова, а процесс, который
+// завершился раньше, оборвал бы запросы в работе (ревью #696, круг 2).
 func listenAndServeUntil(ctx context.Context, srv *http.Server) error {
-	go func() {
-		<-ctx.Done()
-		shut, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
-		defer cancel()
-		_ = srv.Shutdown(shut)
-	}()
-	if err := listenAndServe(srv); !errors.Is(err, http.ErrServerClosed) {
+	errc := make(chan error, 1)
+	go func() { errc <- listenAndServe(srv) }()
+	select {
+	case err := <-errc: // не поднялся или вышел сам
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+	}
+	shut, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
+	defer cancel()
+	if err := srv.Shutdown(shut); err != nil { // срок вышел: остальное закрываем силой
+		_ = srv.Close()
+	}
+	if err := <-errc; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil

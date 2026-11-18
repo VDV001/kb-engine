@@ -54,5 +54,9 @@ func startMonium(getenv func(string) string, stderr io.Writer) (io.Writer, func(
 	go func() { defer close(done); mon.Run(ctx) }()
 	out := io.MultiWriter(mon, stderr) // mon первым: он не возвращает ошибок, и сбой stderr не отнимает строку у Monium
 	log.SetOutput(out)
-	return out, func() { cancel(); <-done }, nil
+	return out, func() {
+		cancel()
+		<-done
+		log.SetOutput(stderr) // писатель остановлен: строки после выхода не должны уходить в пустоту
+	}, nil
 }
