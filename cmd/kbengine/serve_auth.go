@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -160,4 +161,33 @@ func listenAndServe(srv *http.Server) error {
 		return srv.ListenAndServeTLS("", "")
 	}
 	return srv.ListenAndServe()
+}
+
+// shutdownGrace is how long запросы в работе получают на завершение после сигнала.
+const shutdownGrace = 10 * time.Second
+
+// listenAndServeUntil serves like listenAndServe and, when ctx ends, shuts the server
+// down gracefully; остановка по ctx — не ошибка (#440). Возвращается, только когда
+// Shutdown закончил: ListenAndServe выходит сразу после его вызова, а процесс, который
+// завершился раньше, оборвал бы запросы в работе (ревью #696, круг 2).
+func listenAndServeUntil(ctx context.Context, srv *http.Server) error {
+	errc := make(chan error, 1)
+	go func() { errc <- listenAndServe(srv) }()
+	select {
+	case err := <-errc: // не поднялся или вышел сам
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+	}
+	shut, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
+	defer cancel()
+	if err := srv.Shutdown(shut); err != nil { // срок вышел: остальное закрываем силой
+		_ = srv.Close()
+	}
+	if err := <-errc; err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }

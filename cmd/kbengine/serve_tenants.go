@@ -10,10 +10,12 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"os/signal"
 	"slices"
 	"strconv"
 	"strings"
 	gosync "sync" // имя sync в пакете main занято помощником теста `fin sync` (sync_test.go)
+	"syscall"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
@@ -429,11 +431,21 @@ func runServeTenants(location, s3TokenFile, addr, pprofAddr, tlsCert, tlsKey str
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 2
 	}
-	h := tenantsHandler(context.Background(), store, stderr)
+	errOut, stopMonium, err := startMonium(os.Getenv, stderr)
+	if err != nil {
+		fmt.Fprintf(stderr, "serve: %v\n", err)
+		return 2
+	}
+	defer stopMonium()
+	h := tenantsHandler(context.Background(), store, errOut)
 	srv := newServeServer(addr, h, "", tlsCfg)
 	fmt.Fprintf(stdout, "kbengine: serving people's bases on %s (tenants %s; tokens %s, TLS %s)\n", addr, location, userauth.RegistryKey, onOff(tlsCfg != nil))
 	startPprof(pprofAddr, stdout, stderr)
-	if err := listenAndServe(srv); err != nil {
+	// SIGTERM платформы и Ctrl-C завершают serve штатно: так выполняется отложенная
+	// досылка очереди Monium, а запросы в работе успевают ответить (#440).
+	sigCtx, stopSig := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSig()
+	if err := listenAndServeUntil(sigCtx, srv); err != nil {
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 1
 	}
