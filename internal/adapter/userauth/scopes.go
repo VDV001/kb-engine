@@ -74,6 +74,9 @@ func NewScopes(ctx context.Context, s blob.Store, now func() time.Time) *Scopes 
 	return &Scopes{ctx: ctx, store: s, now: now}
 }
 
+// Scope returns the scope of id and whether it can be trusted (stub).
+func (s *Scopes) Scope(id domain.UserID) (domain.Scope, bool) { return domain.ScopeWrite, true }
+
 // Writable reports whether id's token may change data.
 func (s *Scopes) Writable(id domain.UserID) bool {
 	readOnly, ok := s.snapshot()

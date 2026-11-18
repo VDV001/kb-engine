@@ -31,7 +31,8 @@ func writable(t *testing.T, dir, id string) bool {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return userauth.NewScopes(context.Background(), s, nil).Writable(uid)
+	sc, ok := userauth.NewScopes(context.Background(), s, nil).Scope(uid)
+	return ok && sc == domain.ScopeWrite
 }
 
 // users add --scope read выпускает токен, который только читает; без флага человек
@@ -148,5 +149,42 @@ func TestUsersScopeRefusals(t *testing.T) {
 	}
 	if !writable(t, dir, "cloud") {
 		t.Error("a refused scope command changed something")
+	}
+}
+
+func scopeOf(t *testing.T, dir, id string) domain.Scope {
+	t.Helper()
+	s, err := blobfs.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uid, err := domain.NewUserID(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc, ok := userauth.NewScopes(context.Background(), s, nil).Scope(uid)
+	if !ok {
+		t.Fatal("scopes untrusted")
+	}
+	return sc
+}
+
+// users add --scope append и users scope --scope append (#703).
+func TestUsersScopeAppend(t *testing.T) {
+	dir := t.TempDir()
+	if code, e := addWith(t, dir, "cloud", "--scope", "append"); code != 0 {
+		t.Fatalf("add --scope append: %d %s", code, e)
+	}
+	if got := scopeOf(t, dir, "cloud"); got != domain.ScopeAppend {
+		t.Errorf("after add: %v, want append", got)
+	}
+	if code, e := scopeCmd(dir, "--id", "cloud", "--scope", "read"); code != 0 {
+		t.Fatal(e)
+	}
+	if code, e := scopeCmd(dir, "--id", "cloud", "--scope", "append"); code != 0 {
+		t.Fatalf("scope append: %d %s", code, e)
+	}
+	if got := scopeOf(t, dir, "cloud"); got != domain.ScopeAppend {
+		t.Errorf("after scope: %v, want append", got)
 	}
 }

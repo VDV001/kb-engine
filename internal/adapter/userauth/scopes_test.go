@@ -48,24 +48,24 @@ func TestScopesReadOnlyPersonAndNeighbour(t *testing.T) {
 	cloud, anna := id(t, "cloud"), id(t, "anna")
 	now, advance := clock(t18)
 	sc := userauth.NewScopes(ctx, s, now)
-	if !sc.Writable(cloud) || !sc.Writable(anna) {
+	if !writable(sc, cloud) || !writable(sc, anna) {
 		t.Fatal("with no scopes file everyone must be writable")
 	}
 	if err := userauth.SetScope(ctx, s, cloud, domain.ScopeRead); err != nil {
 		t.Fatal(err)
 	}
 	advance(userauth.RefreshEvery + time.Second)
-	if sc.Writable(cloud) {
+	if writable(sc, cloud) {
 		t.Error("the read-only person is writable")
 	}
-	if !sc.Writable(anna) {
+	if !writable(sc, anna) {
 		t.Error("the neighbour lost the write")
 	}
 	if err := userauth.SetScope(ctx, s, cloud, domain.ScopeWrite); err != nil {
 		t.Fatal(err)
 	}
 	advance(userauth.RefreshEvery + time.Second)
-	if !sc.Writable(cloud) {
+	if !writable(sc, cloud) {
 		t.Error("clearing the scope did not give the write back")
 	}
 }
@@ -82,7 +82,7 @@ func TestScopesFailClosed(t *testing.T) {
 	t.Run("never read yet and the storage is down", func(t *testing.T) {
 		now, _ := clock(t18)
 		sc := userauth.NewScopes(ctx, &flaky{Store: base, down: true}, now)
-		if sc.Writable(cloud) || sc.Writable(anna) {
+		if writable(sc, cloud) || writable(sc, anna) {
 			t.Error("writable while the scopes file cannot be read")
 		}
 	})
@@ -90,21 +90,21 @@ func TestScopesFailClosed(t *testing.T) {
 		st := &flaky{Store: base}
 		now, advance := clock(t18)
 		sc := userauth.NewScopes(ctx, st, now)
-		if sc.Writable(cloud) || !sc.Writable(anna) {
+		if writable(sc, cloud) || !writable(sc, anna) {
 			t.Fatal("setup: cloud must be read-only, anna writable")
 		}
 		st.down = true
 		advance(userauth.RefreshEvery + time.Second)
-		if sc.Writable(cloud) || !sc.Writable(anna) {
+		if writable(sc, cloud) || !writable(sc, anna) {
 			t.Error("within MaxStale the last good list must hold")
 		}
 		advance(userauth.MaxStale)
-		if sc.Writable(cloud) || sc.Writable(anna) {
+		if writable(sc, cloud) || writable(sc, anna) {
 			t.Error("after MaxStale of failure nobody may write")
 		}
 		st.down = false
 		advance(userauth.RefreshEvery + time.Second)
-		if sc.Writable(cloud) || !sc.Writable(anna) {
+		if writable(sc, cloud) || !writable(sc, anna) {
 			t.Error("after the storage is back the list must be read again")
 		}
 	})
@@ -115,7 +115,7 @@ func TestScopesFailClosed(t *testing.T) {
 		}
 		now, _ := clock(t18)
 		sc := userauth.NewScopes(ctx, s, now)
-		if sc.Writable(cloud) || sc.Writable(anna) {
+		if writable(sc, cloud) || writable(sc, anna) {
 			t.Error("a corrupt scopes file left someone writable")
 		}
 	})
@@ -166,7 +166,7 @@ func TestScopesCorruptFileSaysWhy(t *testing.T) {
 	sc := userauth.NewScopes(ctx, s, now)
 	var logged []string
 	sc.Logf = func(f string, a ...any) { logged = append(logged, fmt.Sprintf(f, a...)) }
-	if sc.Writable(id(t, "alpha")) || sc.Writable(id(t, "beta")) {
+	if writable(sc, id(t, "alpha")) || writable(sc, id(t, "beta")) {
 		t.Fatal("setup: a corrupt file must close writes for everyone")
 	}
 	if len(logged) != 1 || !strings.Contains(logged[0], userauth.ScopesKey) || !strings.Contains(logged[0], "Read") {
@@ -184,7 +184,44 @@ func TestScopesUnknownFieldClosesWrites(t *testing.T) {
 	}
 	now, _ := clock(t18)
 	sc := userauth.NewScopes(ctx, s, now)
-	if sc.Writable(id(t, "cloud")) || sc.Writable(id(t, "anna")) {
+	if writable(sc, id(t, "cloud")) || writable(sc, id(t, "anna")) {
 		t.Error("a misspelt field left someone writable")
 	}
+}
+
+func writable(sc *userauth.Scopes, id domain.UserID) bool {
+	s, ok := sc.Scope(id)
+	return ok && s == domain.ScopeWrite
+}
+
+// Область append хранится и читается; кроме неё у человека все как у read для
+// остальных, сосед пишет, а недоверенный файл не дает никому ничего, кроме чтения.
+func TestScopesAppendIsStoredAndFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	base := newStore(t)
+	cloud, anna := id(t, "cloud"), id(t, "anna")
+	if err := userauth.SetScope(ctx, base, cloud, domain.ScopeAppend); err != nil {
+		t.Fatal(err)
+	}
+	now, _ := clock(t18)
+	sc := userauth.NewScopes(ctx, base, now)
+	if got, ok := sc.Scope(cloud); !ok || got != domain.ScopeAppend {
+		t.Errorf("Scope(cloud) = %v, %v; want append", got, ok)
+	}
+	if got, ok := sc.Scope(anna); !ok || got != domain.ScopeWrite {
+		t.Errorf("Scope(anna) = %v, %v; want write", got, ok)
+	}
+	down := userauth.NewScopes(ctx, &flaky{Store: base, down: true}, now)
+	if _, ok := down.Scope(cloud); ok {
+		t.Error("an unreadable scopes file is trusted")
+	}
+	if err := userauth.SetScope(ctx, base, cloud, domain.ScopeRead); err != nil {
+		t.Fatal(err)
+	}
+	later, advance := clock(t18)
+	sc2 := userauth.NewScopes(ctx, base, later)
+	if got, _ := sc2.Scope(cloud); got != domain.ScopeRead {
+		t.Errorf("append replaced by read: %v", got)
+	}
+	_ = advance
 }
