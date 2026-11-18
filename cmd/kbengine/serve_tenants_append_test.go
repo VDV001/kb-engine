@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/userauth"
 	"github.com/daniil/kb-engine/internal/domain"
@@ -89,5 +92,70 @@ func TestAppendScopeFailsClosed(t *testing.T) {
 	body := `{"title":"x","category":"golang","url":"https://h/closed","verdict":"keep"}`
 	if rec := do(f.h, http.MethodPost, "/api/entries", body, f.tokA); rec.Code != http.StatusForbidden {
 		t.Errorf("add with an unreadable scopes file: %d, want 403", rec.Code)
+	}
+}
+
+// Источник записи ставит сервер, а не клиент: токен append не выдает свою запись
+// за пришедшую из бота (#703, ревью безопасности N2). Адрес — только http и https.
+func TestAppendScopeServerOwnsSourceAndURLScheme(t *testing.T) {
+	f := newTenants(t)
+	setAlphaScope(t, f, domain.ScopeAppend)
+
+	forged := `{"title":"` + phoneAdded + `","category":"golang","url":"https://h/forged","verdict":"keep","source":"bot-inbox","tags":["cheatsheet"]}`
+	if rec := do(f.h, http.MethodPost, "/api/entries", forged, f.tokA); rec.Code != http.StatusCreated {
+		t.Fatalf("the add: %d %s", rec.Code, rec.Body.String())
+	}
+	body := readable(t, get(f.h, "/api/entries", f.tokA))
+	if strings.Contains(body, "bot-inbox") || !strings.Contains(body, "api-append") {
+		t.Errorf("the source was not forced to api-append: %s", body)
+	}
+
+	for _, u := range []string{"javascript:alert(1)", "data:text/html,x", "file:///etc/passwd", "ftp://h/x", "//h/x"} {
+		rec := do(f.h, http.MethodPost, "/api/entries",
+			`{"title":"x","category":"golang","url":"`+u+`","verdict":"keep"}`, f.tokA)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("url %q: %d, want 400", u, rec.Code)
+		}
+	}
+
+	// Контроль: полный токен соседа source не трогают.
+	own := `{"title":"B-own","category":"golang","url":"https://h/b-own","verdict":"keep","source":"manual"}`
+	if rec := do(f.h, http.MethodPost, "/api/entries", own, f.tokB); rec.Code != http.StatusCreated {
+		t.Fatalf("the neighbour's add: %d", rec.Code)
+	}
+	if body := readable(t, get(f.h, "/api/entries", f.tokB)); strings.Contains(body, "api-append") || !strings.Contains(body, "manual") {
+		t.Errorf("a full token's source was changed: %s", body)
+	}
+}
+
+// Предел частоты добавления на токен append: 30 подряд проходят, 31-е — 429 с
+// Retry-After; через секунду снова можно. Токен с полной областью предел не знает
+// (ревью безопасности N1).
+func TestAppendScopeRateLimit(t *testing.T) {
+	f := newTenants(t)
+	now := frozen(f)
+	setAlphaScope(t, f, domain.ScopeAppend)
+	add := func(i int) *httptest.ResponseRecorder {
+		return do(f.h, http.MethodPost, "/api/entries",
+			fmt.Sprintf(`{"title":"t%d","category":"golang","url":"https://h/rl-%d","verdict":"keep"}`, i, i), f.tokA)
+	}
+	for i := 0; i < 30; i++ {
+		if rec := add(i); rec.Code != http.StatusCreated {
+			t.Fatalf("add %d: %d %s", i, rec.Code, rec.Body.String())
+		}
+	}
+	rec := add(30)
+	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" {
+		t.Fatalf("add over the burst: %d retry-after=%q, want 429", rec.Code, rec.Header().Get("Retry-After"))
+	}
+	*now = now.Add(1100 * time.Millisecond)
+	if rec := add(30 + 1); rec.Code != http.StatusCreated {
+		t.Errorf("add after a second: %d", rec.Code)
+	}
+	for i := 0; i < 30+5; i++ {
+		body := fmt.Sprintf(`{"title":"b%d","category":"golang","url":"https://h/b-%d","verdict":"keep"}`, i, i)
+		if rec := do(f.h, http.MethodPost, "/api/entries", body, f.tokB); rec.Code != http.StatusCreated {
+			t.Fatalf("the neighbour's add %d: %d", i, rec.Code)
+		}
 	}
 }
