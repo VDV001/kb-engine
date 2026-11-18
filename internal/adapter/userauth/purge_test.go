@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -230,5 +231,44 @@ func TestRevokeAndPurgeFinishWhatAHalfDoneRevokeLeft(t *testing.T) {
 	}
 	if exists(t, s, userauth.SeenKey(anna)) {
 		t.Error("visits file survived Purge")
+	}
+}
+
+// putCounter counts the writes by key.
+type putCounter struct {
+	blob.Store
+	mu   sync.Mutex
+	puts map[string]int
+}
+
+func (c *putCounter) Put(ctx context.Context, key string, data []byte, ifMatch string) (string, error) {
+	c.mu.Lock()
+	c.puts[key]++
+	c.mu.Unlock()
+	return c.Store.Put(ctx, key, data, ifMatch)
+}
+
+// Revoke по имени, у которого нечего убирать (опечатка), не переписывает общие
+// файлы: лишняя запись — лишняя гонка за версию с другими экземплярами.
+func TestRevokeOfAPersonWithNothingToCleanWritesNothing(t *testing.T) {
+	ctx := context.Background()
+	base := newStore(t)
+	other := id(t, "other")
+	if _, err := userauth.Add(ctx, base, other); err != nil {
+		t.Fatal(err)
+	}
+	dev, _, err := userauth.AddDevice(ctx, base, other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	subscribe(t, base, other, dev)
+	s := &putCounter{Store: base, puts: map[string]int{}}
+	if err := userauth.Revoke(ctx, s, id(t, "ghost")); !errors.Is(err, domain.ErrNoSuchUser) {
+		t.Fatalf("Revoke of a stranger: %v", err)
+	}
+	for _, key := range []string{userauth.RegistryKey, userauth.DevicesKey, userauth.PushKey} {
+		if s.puts[key] != 0 {
+			t.Errorf("Revoke of a stranger wrote %s %d times", key, s.puts[key])
+		}
 	}
 }

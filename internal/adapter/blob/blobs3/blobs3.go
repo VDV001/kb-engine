@@ -424,6 +424,9 @@ var _ blob.Purger = (*Store)(nil)
 // сотня мегабайт — уже не список.
 const maxListBody = 16 << 20
 
+// maxPurgeRounds bounds the purge loop (stub, set by the next commit).
+var maxPurgeRounds = 1 << 30
+
 type versionsPage struct {
 	Version      []versionEntry `xml:"Version"`
 	DeleteMarker []versionEntry `xml:"DeleteMarker"`

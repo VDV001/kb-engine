@@ -40,7 +40,12 @@ func present(t *testing.T, dir, key string) bool {
 	return err == nil
 }
 
+// purge runs the command with --yes: так тесты проходят предпросмотр.
 func purge(args ...string) (int, string, string) {
+	return purgeRaw(append(args, "--yes")...)
+}
+
+func purgeRaw(args ...string) (int, string, string) {
 	var out, errb bytes.Buffer
 	code := run(append([]string{"users", "purge"}, args...), &out, &errb)
 	return code, out.String(), errb.String()
@@ -244,5 +249,32 @@ func TestUsersPurgeReportsAWriteAfterTheRemoval(t *testing.T) {
 	}
 	if present(t, dir, "users/anna/kb/late.md") {
 		t.Error("the late write survived the second pass")
+	}
+}
+
+// Без --yes команда ничего не меняет: печатает, что есть у человека, и просит
+// повторить. Имя, набранное дважды верно, но не про того человека, так не
+// удаляет молча.
+func TestUsersPurgeShowsWhatItWillRemoveAndNeedsYes(t *testing.T) {
+	dir, toks := purgeFixture(t)
+	code, out, errb := purgeRaw("--tenants", dir, "--id", "anna", "--confirm", "anna", "--wait", "0s")
+	if code != 2 || out != "" {
+		t.Fatalf("exit %d, stdout %q; want 2 and nothing on stdout", code, out)
+	}
+	for _, want := range []string{"--yes", "anna", "в реестре: да", "база: есть"} {
+		if !strings.Contains(errb, want) {
+			t.Errorf("the preview lacks %q: %s", want, errb)
+		}
+	}
+	if _, ok := lookup(t, dir, toks["anna"]); !ok || !present(t, dir, "users/anna/kb/notes/n.md") {
+		t.Error("the preview changed something")
+	}
+}
+
+func TestUsersPurgePreviewOfAnUnknownName(t *testing.T) {
+	dir, _ := purgeFixture(t)
+	code, _, errb := purgeRaw("--tenants", dir, "--id", "ghost", "--confirm", "ghost", "--wait", "0s")
+	if code != 2 || !strings.Contains(errb, "в реестре: нет") || !strings.Contains(errb, "база: нет") {
+		t.Errorf("exit %d, stderr %q; want 2 saying the name is nowhere", code, errb)
 	}
 }

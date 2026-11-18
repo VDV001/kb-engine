@@ -48,6 +48,12 @@ type fakeVersioned struct {
 	// blankVersionID — список не называет версии: удалять по ним нечем.
 	blankVersionID bool
 	deleted        []string // «key@versionId» удаленных по версии
+	// weird — ключи под префиксом, которые список показывает, а путь не выдержит
+	// (`..`, пустой сегмент): удалить их через адрес нельзя.
+	weird []string
+	// endless — каждый круг списка начинается с новой записи под префиксом, а
+	// удаление отвечает 204: враждебный сервер или бесконечный писатель.
+	endless bool
 }
 
 func newFakeVersioned(t *testing.T, pageSize int) (*fakeVersioned, *httptest.Server) {
@@ -163,6 +169,13 @@ func (f *fakeVersioned) list(w http.ResponseWriter, prefix, keyMarker, idMarker 
 	}
 	if f.rogue != nil {
 		rows = append(rows, row{"users/other/kb/x", *f.rogue, true})
+	}
+	for i, k := range f.weird {
+		rows = append(rows, row{k, version{id: "weird-" + strconv.Itoa(i)}, true})
+	}
+	if f.endless {
+		f.next++
+		rows = append([]row{{prefix + "endless", version{id: "e" + strconv.Itoa(f.next)}, true}}, rows...)
 	}
 	start := 0
 	if keyMarker != "" {
@@ -423,5 +436,42 @@ func TestLiveYandexPurgeLeavesNoVersionsOrMarkers(t *testing.T) {
 	// «<Version[ >]», а не «<Version»: в шапке ответа есть <VersionIdMarker>.
 	if left := regexp.MustCompile(`<(?:Version|DeleteMarker)[ >]`).FindAllString(string(body), -1); len(left) != 0 {
 		t.Errorf("%d versions or markers left after Purge: %s", len(left), body)
+	}
+}
+
+// Ключ, которого через адрес не выразить (`..` в пути ушел бы в другой объект),
+// не обрывает удаление человека: остальное уходит, а ошибка называет пропущенное.
+func TestPurgeSkipsKeysItCannotAddressAndSaysSo(t *testing.T) {
+	f, srv := newFakeVersioned(t, 0)
+	s := newStore(t, srv.URL, blobs3.StaticToken(token))
+	if _, err := s.Put(t.Context(), "users/a/kb/x", []byte("x"), ""); err != nil {
+		t.Fatal(err)
+	}
+	f.weird = []string{"users/a/../auth/users.json", "users/a//e"}
+	n, err := s.Purge(t.Context(), "users/a/")
+	if err == nil || !strings.Contains(err.Error(), "users/a/../auth/users.json") {
+		t.Fatalf("Purge = %d, %v; want an error naming the skipped key", n, err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.keys["users/a/kb/x"]; ok {
+		t.Error("the removable key was left because of the odd one")
+	}
+	for _, d := range f.deleted {
+		if strings.Contains(d, "..") || strings.Contains(d, "//") {
+			t.Errorf("deleted through an address that is not safe: %s", d)
+		}
+	}
+}
+
+// Круги не бесконечны: сервер, у которого каждый круг начинается с новой записи,
+// останавливается по пределу кругов.
+func TestPurgeStopsAfterTooManyRounds(t *testing.T) {
+	f, srv := newFakeVersioned(t, 0)
+	s := newStore(t, srv.URL, blobs3.StaticToken(token))
+	f.endless = true
+	defer blobs3.SetMaxPurgeRounds(5)()
+	if _, err := s.Purge(t.Context(), "users/a/"); err == nil || !strings.Contains(err.Error(), "rounds") {
+		t.Fatalf("Purge on an endless listing: %v, want an error about rounds", err)
 	}
 }
