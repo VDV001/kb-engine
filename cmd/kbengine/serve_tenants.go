@@ -540,11 +540,14 @@ func (l *lazyPusher) PublicKey(ctx context.Context) (string, error) {
 	return v.PublicKey(), nil
 }
 
-// refuseWrite answers 403 to a write by a person whose token only reads (#701):
+// refuseWrite answers 403 to a request the person's scope does not allow (#701, #703):
 // до разбора тела и до обработчика, по методу. Читать (GET, HEAD) можно всегда;
 // если файл областей не прочитать, пишет никто (userauth.Scopes закрывает).
 func (t *tenants) refuseWrite(w http.ResponseWriter, r *http.Request, id domain.UserID) bool {
-	if r.Method == http.MethodGet || r.Method == http.MethodHead || t.scopes.Writable(id) {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		return false
+	}
+	if sc, ok := t.scopes.Scope(id); ok && sc.Allows(r.Method, r.URL.Path) {
 		return false
 	}
 	http.Error(w, "this token cannot change data", http.StatusForbidden)
@@ -552,7 +555,7 @@ func (t *tenants) refuseWrite(w http.ResponseWriter, r *http.Request, id domain.
 }
 
 // serveBase serves a request of a known person from their own base: сначала
-// область (read-токен не пишет), потом обработчик базы.
+// область (read не пишет, append только добавляет), потом обработчик базы.
 func (t *tenants) serveBase(w http.ResponseWriter, r *http.Request, id domain.UserID) {
 	if t.refuseWrite(w, r, id) {
 		return

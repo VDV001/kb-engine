@@ -34,7 +34,7 @@ func SetScope(ctx context.Context, s blob.Store, id domain.UserID, scope domain.
 	return update(ctx, s, ScopesKey, func(d *scopesDTO) error {
 		before := slices.Clone(d.Scopes)
 		d.Scopes = slices.DeleteFunc(d.Scopes, func(e scopeDTO) bool { return e.ID == id.String() })
-		if !scope.AllowsWrite() {
+		if !scope.AllowsWrite() { // read и append хранятся, write - отсутствие записи
 			d.Scopes = append(d.Scopes, scopeDTO{ID: id.String(), Scope: scope.String()})
 		}
 		if slices.Equal(before, d.Scopes) {
@@ -62,11 +62,11 @@ type Scopes struct {
 	refreshing bool
 	refreshed  chan struct{}
 	etag       string
-	readOnly   map[domain.UserID]struct{}
+	limited    map[domain.UserID]domain.Scope
 	bad        bool
 }
 
-// NewScopes reads the scopes lazily, on the first Writable. now nil — time.Now.
+// NewScopes reads the scopes lazily, on the first Scope. now nil — time.Now.
 func NewScopes(ctx context.Context, s blob.Store, now func() time.Time) *Scopes {
 	if now == nil {
 		now = time.Now
@@ -74,21 +74,22 @@ func NewScopes(ctx context.Context, s blob.Store, now func() time.Time) *Scopes 
 	return &Scopes{ctx: ctx, store: s, now: now}
 }
 
-// Scope returns the scope of id and whether it can be trusted (stub).
-func (s *Scopes) Scope(id domain.UserID) (domain.Scope, bool) { return domain.ScopeWrite, true }
-
-// Writable reports whether id's token may change data.
-func (s *Scopes) Writable(id domain.UserID) bool {
-	readOnly, ok := s.snapshot()
+// Scope returns the scope of id and whether it can be trusted. Нет доверия (файл не
+// прочитать, битый, устарел) - область read и false: чтение остается, остального нет.
+// Человек без записи в файле пишет, как до #701.
+func (s *Scopes) Scope(id domain.UserID) (domain.Scope, bool) {
+	limited, ok := s.snapshot()
 	if !ok {
-		return false
+		return domain.ScopeRead, false
 	}
-	_, limited := readOnly[id]
-	return !limited
+	if sc, found := limited[id]; found {
+		return sc, true
+	}
+	return domain.ScopeWrite, true
 }
 
-// snapshot returns the read-only set and whether it can be trusted.
-func (s *Scopes) snapshot() (map[domain.UserID]struct{}, bool) {
+// snapshot returns the limited people and whether the list can be trusted.
+func (s *Scopes) snapshot() (map[domain.UserID]domain.Scope, bool) {
 	s.mu.Lock()
 	now := s.now()
 	due := s.lastOK.IsZero() || now.Sub(s.checked) >= RefreshEvery
@@ -122,39 +123,39 @@ func (s *Scopes) snapshot() (map[domain.UserID]struct{}, bool) {
 	case errors.Is(err, blob.ErrNotModified):
 		s.lastOK = now
 	case errors.Is(err, blob.ErrNotFound):
-		s.etag, s.readOnly, s.bad, s.lastOK = "", nil, false, now
+		s.etag, s.limited, s.bad, s.lastOK = "", nil, false, now
 	case err != nil:
 		// lastOK не двигается: сбой длиннее MaxStale закроет запись всем.
 	default:
 		set, derr := decodeScopes(o.Data)
 		if derr != nil {
-			s.etag, s.readOnly, s.bad, s.lastOK = "", nil, true, now
+			s.etag, s.limited, s.bad, s.lastOK = "", nil, true, now
 			if s.Logf != nil { // раз в RefreshEvery, пока файл не починят
 				s.Logf("%s: %v: запись закрыта всем, чтение открыто", ScopesKey, derr)
 			}
 		} else {
-			s.etag, s.readOnly, s.bad, s.lastOK = o.ETag, set, false, now
+			s.etag, s.limited, s.bad, s.lastOK = o.ETag, set, false, now
 		}
 	}
 	return s.fresh(now)
 }
 
 // fresh returns the set while it is younger than MaxStale and not corrupt.
-func (s *Scopes) fresh(now time.Time) (map[domain.UserID]struct{}, bool) {
+func (s *Scopes) fresh(now time.Time) (map[domain.UserID]domain.Scope, bool) {
 	if s.bad || s.lastOK.IsZero() || now.Sub(s.lastOK) > MaxStale {
 		return nil, false
 	}
-	return s.readOnly, true
+	return s.limited, true
 }
 
-func decodeScopes(data []byte) (map[domain.UserID]struct{}, error) {
+func decodeScopes(data []byte) (map[domain.UserID]domain.Scope, error) {
 	var dto scopesDTO
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields() // опечатка в имени поля при ручной правке - битый файл, а не «человек пишет»
 	if err := dec.Decode(&dto); err != nil {
 		return nil, err
 	}
-	set := make(map[domain.UserID]struct{}, len(dto.Scopes))
+	set := make(map[domain.UserID]domain.Scope, len(dto.Scopes))
 	for _, e := range dto.Scopes {
 		id, err := domain.NewUserID(e.ID)
 		if err != nil {
@@ -165,7 +166,7 @@ func decodeScopes(data []byte) (map[domain.UserID]struct{}, error) {
 			return nil, err
 		}
 		if !scope.AllowsWrite() {
-			set[id] = struct{}{}
+			set[id] = scope
 		}
 	}
 	return set, nil
