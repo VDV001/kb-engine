@@ -128,8 +128,8 @@ func TestUsersPurgeClosesTheDoorThenWaitsThenRemoves(t *testing.T) {
 	if code, _, errb := purge("--tenants", dir, "--id", "anna", "--confirm", "anna"); code != 0 {
 		t.Fatalf("purge: exit %d, %s", code, errb)
 	}
-	if slept <= userauth.RefreshEvery {
-		t.Errorf("default wait %v, want longer than RefreshEvery %v", slept, userauth.RefreshEvery)
+	if slept <= userauth.MaxStale {
+		t.Errorf("default wait %v, want longer than MaxStale %v: a failed registry read keeps the old list that long", slept, userauth.MaxStale)
 	}
 	if !doorClosed {
 		t.Error("the token still admitted while waiting")
@@ -175,5 +175,74 @@ func TestUsersPurgeOnAStoreWithoutPurgeChangesNothing(t *testing.T) {
 	}
 	if _, ok := lookup(t, dir, toks["anna"]); !ok {
 		t.Error("the person was revoked by a refused purge")
+	}
+}
+
+// Повтор после прерванной паузы ждет снова: отозвать человека во второй раз
+// нечем, но другие экземпляры могли еще не узнать об отзыве. То же, если
+// владелец сделал users revoke и сразу users purge.
+func TestUsersPurgeRepeatAfterInterruptionStillWaits(t *testing.T) {
+	dir, _ := purgeFixture(t)
+	calls := 0
+	prev := usersPurgeSleep
+	usersPurgeSleep = func(context.Context, time.Duration) error {
+		calls++
+		if calls == 1 {
+			return context.Canceled
+		}
+		return nil
+	}
+	t.Cleanup(func() { usersPurgeSleep = prev })
+	if code, _, _ := purge("--tenants", dir, "--id", "anna", "--confirm", "anna"); code != 1 {
+		t.Fatalf("interrupted run: exit %d", code)
+	}
+	if code, _, errb := purge("--tenants", dir, "--id", "anna", "--confirm", "anna"); code != 0 {
+		t.Fatalf("repeat: exit %d, %s", code, errb)
+	}
+	if calls != 2 {
+		t.Errorf("the wait ran %d times over two runs, want 2", calls)
+	}
+}
+
+func TestUsersPurgeRefusesANegativeWait(t *testing.T) {
+	dir, _ := purgeFixture(t)
+	code, _, errb := purge("--tenants", dir, "--id", "anna", "--confirm", "anna", "--wait", "-1s")
+	if code != 2 || !strings.Contains(errb, "--wait") {
+		t.Errorf("exit %d, stderr %q; want 2 naming --wait", code, errb)
+	}
+}
+
+// lateWriter writes under the person's base right after the first purge of it,
+// as a request admitted before the revoke would.
+type lateWriter struct {
+	*blobfs.Store
+	done bool
+}
+
+func (l *lateWriter) Purge(ctx context.Context, prefix string) (int, error) {
+	n, err := l.Store.Purge(ctx, prefix)
+	if prefix == "users/anna/" && !l.done {
+		l.done = true
+		_, _ = l.Store.Put(ctx, "users/anna/kb/late.md", []byte("late"), "")
+	}
+	return n, err
+}
+
+// Запись, пришедшая после удаления, не остается молча: второй проход находит ее,
+// убирает и говорит вслух, что отчет «удален» был рано.
+func TestUsersPurgeReportsAWriteAfterTheRemoval(t *testing.T) {
+	dir, _ := purgeFixture(t)
+	prev := usersOpenStore
+	usersOpenStore = func(loc, _ string) (blob.Store, error) {
+		s, err := blobfs.New(loc)
+		return &lateWriter{Store: s}, err
+	}
+	t.Cleanup(func() { usersOpenStore = prev })
+	code, _, errb := purge("--tenants", dir, "--id", "anna", "--confirm", "anna", "--wait", "0s")
+	if code != 1 || !strings.Contains(errb, "после удаления") {
+		t.Errorf("exit %d, stderr %q; want 1 naming a write after the removal", code, errb)
+	}
+	if present(t, dir, "users/anna/kb/late.md") {
+		t.Error("the late write survived the second pass")
 	}
 }

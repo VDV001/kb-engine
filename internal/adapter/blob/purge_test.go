@@ -9,7 +9,7 @@ import (
 )
 
 func TestValidPurgePrefix(t *testing.T) {
-	for _, prefix := range []string{"users/a/", "users/a-b/", "mailfiles/users/a/", "auth/seen/a.", "users/ключ/"} {
+	for _, prefix := range []string{"users/a/", "users/a-b/", "users/a1/", "users/a-1-b/", "mailfiles/users/a/", "auth/seen/a.", "auth/seen/a-b."} {
 		if err := blob.ValidPurgePrefix(prefix); err != nil {
 			t.Errorf("ValidPurgePrefix(%q) = %v, want nil", prefix, err)
 		}

@@ -298,6 +298,10 @@ func RunDeleter(t *testing.T, newStore func(t *testing.T) DeleteStore) {
 var InvalidPurgePrefixes = []string{
 	"", "/", "users/", "users", "users/a", "a/", "users//", "users//a/", "../a/", "users/../x/",
 	"users/./a/", "/users/a/", "users\\a/", "users/a/\x00",
+	// Широкие или чужие по форме: всех людей, общий реестр, чужой каталог.
+	"mailfiles/users/", "mailfiles/", "auth/", "auth/seen/", "auth/users.", "auth/push.", "auth/devices.",
+	"users/a.", "a/b.", "a/b/", "users/a/b/", "users/A/", "users/a_b/", "users/-a/", "users/a-/", "users/ключ/",
+	"test/users/a/", "auth/seen/a/", "auth/seen/a-.",
 }
 
 // PurgeStore is a store that also purges.

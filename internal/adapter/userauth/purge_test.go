@@ -189,3 +189,39 @@ func TestPurgeWithoutAPurgerChangesNothing(t *testing.T) {
 		t.Error("data was removed by a refused purge")
 	}
 }
+
+// Отзыв, прошедший только до реестра (старый revoke без чистки push или сбой
+// между записями), оставляет телефоны, push и входы человека; Revoke и Purge
+// доделывают их и при повторе, а не выходят на ErrNoSuchUser.
+func TestRevokeAndPurgeFinishWhatAHalfDoneRevokeLeft(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	anna := id(t, "anna")
+	tok, err := userauth.Add(ctx, s, anna)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev, _, err := userauth.AddDevice(ctx, s, anna)
+	if err != nil {
+		t.Fatal(err)
+	}
+	subscribe(t, s, anna, dev)
+	if err := (&userauth.Visits{Store: s}).Visit(ctx, anna, dev, "Phone", time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	if err := userauth.RevokeToken(ctx, s, anna, tok); err != nil { // убрана только запись реестра
+		t.Fatal(err)
+	}
+	if err := userauth.Revoke(ctx, s, anna); !errors.Is(err, domain.ErrNoSuchUser) {
+		t.Fatalf("Revoke of a person already out of the registry: %v, want ErrNoSuchUser", err)
+	}
+	if ds, _ := userauth.Devices(ctx, s, anna); len(ds) != 0 {
+		t.Errorf("phones left after Revoke: %v", ds)
+	}
+	if got := pushOwners(t, s); len(got) != 0 {
+		t.Errorf("push left after Revoke: %v", got)
+	}
+	if exists(t, s, userauth.SeenKey(anna)) {
+		t.Error("phone visits left after Revoke")
+	}
+}
