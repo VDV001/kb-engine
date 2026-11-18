@@ -57,6 +57,10 @@ type usersTargetOf struct {
 // записывает и отвечает ошибкой.
 var usersOpenStore = openTenantStore
 
+// usersPurgeSleep waits for other server instances to learn of a revoke; тесты
+// подменяют (stub, filled in by the next commit).
+var usersPurgeSleep = func(ctx context.Context, d time.Duration) error { return nil }
+
 const usersUsage = "usage: kbengine users add|revoke --tenants <s3://bucket | dir> --id <name> [add: --token-out <new file>]"
 
 // usersTarget parses the flags into the store and the person; nil — выйти с
