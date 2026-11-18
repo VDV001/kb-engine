@@ -92,6 +92,7 @@ func tenantsHandler(ctx context.Context, store blob.Store, stderr io.Writer, opt
 	return &tenants{
 		ctx: ctx, store: store, stderr: lw,
 		reg:       userauth.NewRegistry(ctx, store),
+		scopes:    userauth.NewScopes(ctx, store, nil),
 		phones:    phones,
 		handlers:  map[domain.UserID]http.Handler{},
 		limits:    map[mailKey]*rate.Limiter{},
@@ -124,7 +125,7 @@ func (p freshPhones) Revoke(ctx context.Context, id domain.UserID, device string
 }
 
 type tenants struct {
-	scopes *userauth.Scopes // области людей (#701); stub, подключается следующим коммитом
+	scopes *userauth.Scopes // области людей (#701): read-токен только читает
 	ctx    context.Context
 	store  blob.Store
 	stderr io.Writer
@@ -164,6 +165,9 @@ func (t *tenants) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if tok, ok := httpapi.RequestToken(r); ok {
 		if id, ok := t.reg.Lookup(tok); ok {
+			if t.refuseWrite(w, r, id) {
+				return
+			}
 			h, err := t.handlerFor(id)
 			if err != nil {
 				// Причина — в журнал сервера, а не в ответ: в ней ключ хранилища.
@@ -207,6 +211,9 @@ func (t *tenants) serveMail(w http.ResponseWriter, r *http.Request) {
 			side = domain.MailPhone
 		}
 		if ok {
+			if t.refuseWrite(w, r, id) {
+				return
+			}
 			k := mailKey{sum: sha256.Sum256([]byte(tok)), kind: mailKindOf(r)}
 			wait, ok := t.allowMail(k)
 			if ok && k.kind == mailFile {
@@ -539,4 +546,15 @@ func (l *lazyPusher) PublicKey(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return v.PublicKey(), nil
+}
+
+// refuseWrite answers 403 to a write by a person whose token only reads (#701):
+// до разбора тела и до обработчика, по методу. Читать (GET, HEAD) можно всегда;
+// если файл областей не прочитать, пишет никто (userauth.Scopes закрывает).
+func (t *tenants) refuseWrite(w http.ResponseWriter, r *http.Request, id domain.UserID) bool {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead || t.scopes.Writable(id) {
+		return false
+	}
+	http.Error(w, "this token cannot change data", http.StatusForbidden)
+	return true
 }

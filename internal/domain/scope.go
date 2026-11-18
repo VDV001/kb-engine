@@ -20,13 +20,23 @@ var (
 )
 
 // NewScope parses a scope name: "read", "write" or "" (запись).
-// stub: filled in by the next commit.
-func NewScope(s string) (Scope, error) { return Scope{}, nil }
+func NewScope(s string) (Scope, error) {
+	switch s {
+	case "read":
+		return ScopeRead, nil
+	case "write", "":
+		return ScopeWrite, nil
+	}
+	return Scope{}, fmt.Errorf("%w: %q (use read or write)", ErrInvalidScope, s)
+}
 
 // String returns "read" or "write".
-func (s Scope) String() string { return "write" }
+func (s Scope) String() string {
+	if s == ScopeRead {
+		return "read"
+	}
+	return "write"
+}
 
 // AllowsWrite reports whether the token may change data.
-func (s Scope) AllowsWrite() bool { return true }
-
-var _ = fmt.Sprint
+func (s Scope) AllowsWrite() bool { return s != ScopeRead }

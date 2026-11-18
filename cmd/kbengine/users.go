@@ -55,6 +55,7 @@ type usersTargetOf struct {
 	loc      string // --tenants как назван: подсказки печатают готовую команду
 	id       domain.UserID
 	tokenOut string
+	scope    domain.Scope  // add: область токена
 	confirm  string        // purge: имя еще раз
 	yes      bool          // purge: предпросмотр показан, удалять
 	wait     time.Duration // purge: пауза между отзывом и удалением
@@ -77,7 +78,7 @@ var usersPurgeSleep = func(ctx context.Context, d time.Duration) error {
 	}
 }
 
-const usersUsage = "usage: kbengine users add|revoke|purge --tenants <s3://bucket | dir> --id <name> [add: --token-out <new file>] [purge: --confirm <name> --wait <duration> --yes]"
+const usersUsage = "usage: kbengine users add|revoke|purge --tenants <s3://bucket | dir> --id <name> [add: --token-out <new file> --scope read|write] [purge: --confirm <name> --wait <duration> --yes]"
 
 // usersTarget parses the flags into the store and the person; nil — выйти с
 // кодом code.
@@ -87,8 +88,9 @@ func usersTarget(sub string, args []string, stderr io.Writer) (*usersTargetOf, i
 	loc := fs.String("tenants", "", "s3://bucket or directory, the same as serve --tenants")
 	s3TokenFile := fs.String("s3-token-file", "", "optional file with an IAM token for s3:// (mode 0600)")
 	name := fs.String("id", "", "person's name: a-z, 0-9 and inner hyphens, up to 32")
-	var out *string
+	var out, scopeName *string
 	if sub == "add" {
+		scopeName = fs.String("scope", "", "read: the token only reads; write or empty: as before")
 		out = fs.String("token-out", "", "write the token into this new file (mode 0600; an existing file is refused)")
 	}
 	var confirm *string
@@ -124,6 +126,12 @@ func usersTarget(sub string, args []string, stderr io.Writer) (*usersTargetOf, i
 		tg.confirm, tg.wait, tg.yes = *confirm, *wait, *yes
 	}
 	if sub == "add" {
+		scope, serr := domain.NewScope(*scopeName)
+		if serr != nil {
+			fmt.Fprintf(stderr, "users add: %v\n", serr)
+			return nil, 2
+		}
+		tg.scope = scope
 		if *out == "" {
 			fmt.Fprintf(stderr, "users add: --token-out <новый файл> обязателен: в терминал токен не выводится\n")
 			return nil, 2
@@ -187,6 +195,12 @@ func usersAdd(tg *usersTargetOf, stderr io.Writer) int {
 		dropFile()
 		fmt.Fprintf(stderr, "users add: %v — новый токен: сначала users revoke\n", err)
 		return 1
+	}
+	if err == nil {
+		// Область называется явно и при write: прежняя запись об этом имени (после
+		// отзыва) не делает новый токен ограниченным молча. Токен у вызывающего
+		// появляется только после этой записи; не вышло — выпуск откатывается.
+		err = userauth.SetScope(ctx, tg.store, tg.id, tg.scope)
 	}
 	if err == nil {
 		err = keepToken(f, tok)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/domain"
@@ -42,6 +41,10 @@ func Purge(ctx context.Context, s blob.Store, id domain.UserID) (PurgeReport, er
 	if err := Revoke(ctx, s, id); err != nil && !errors.Is(err, domain.ErrNoSuchUser) {
 		return PurgeReport{}, err
 	}
+	// Запись об области уходит с человеком: имя не остается ограниченным в файле.
+	if err := SetScope(ctx, s, id, domain.ScopeWrite); err != nil {
+		return PurgeReport{}, fmt.Errorf("userauth: purge scope of %s: %w", id, err)
+	}
 	var rep PurgeReport
 	for _, step := range []struct {
 		prefix string
@@ -59,22 +62,3 @@ func Purge(ctx context.Context, s blob.Store, id domain.UserID) (PurgeReport, er
 	}
 	return rep, nil
 }
-
-// ScopesKey is where the people with a limited scope are listed (#701). Отдельный
-// от реестров токенов объект: реестр читается строго, и новое поле в нем при
-// откате сервера заперло бы всех людей.
-const ScopesKey = "auth/scopes.json"
-
-// SetScope records the scope of a person (stub, filled in by the next commit).
-func SetScope(ctx context.Context, s blob.Store, id domain.UserID, scope domain.Scope) error {
-	return nil
-}
-
-// Scopes answers which people may write (stub, filled in by the next commit).
-type Scopes struct{}
-
-// NewScopes reads the scopes lazily (stub).
-func NewScopes(ctx context.Context, s blob.Store, now func() time.Time) *Scopes { return &Scopes{} }
-
-// Writable reports whether id's token may change data (stub).
-func (*Scopes) Writable(id domain.UserID) bool { return true }
