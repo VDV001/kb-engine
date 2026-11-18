@@ -124,6 +124,7 @@ func (p freshPhones) Revoke(ctx context.Context, id domain.UserID, device string
 }
 
 type tenants struct {
+	scopes *userauth.Scopes // области людей (#701); stub, подключается следующим коммитом
 	ctx    context.Context
 	store  blob.Store
 	stderr io.Writer
