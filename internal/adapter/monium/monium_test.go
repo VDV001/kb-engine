@@ -154,14 +154,28 @@ func TestWriterKeepsOrderAcrossLines(t *testing.T) {
 }
 
 // Секрет не должен уйти в журнал, даже если попал в текст ошибки (ревью безопасности).
+// Формы взяты из ревью #696: Go-ошибки печатают URL, заголовки и JSON как есть.
 func TestWriterRedactsSecrets(t *testing.T) {
 	tests := []struct {
-		name, line, secret string
+		name, line string
+		secrets    []string // пусто — строка должна дойти без изменений
 	}{
-		{"bearer", "call failed: Authorization: Bearer abc123SECRET\n", "abc123SECRET"},
-		{"api key", "call failed: Api-Key AQVNsecretkey\n", "AQVNsecretkey"},
-		{"token in url", "get https://x.example/?token=tok123&a=1: boom\n", "tok123"},
-		{"plain stays", "portrait read: boom\n", ""},
+		{"bearer", "call failed: Authorization: Bearer abc123SECRET\n", []string{"abc123SECRET"}},
+		{"bare bearer", "call failed: got Bearer abc123SECRET back\n", []string{"abc123SECRET"}},
+		{"api key", "call failed: Api-Key AQVNsecretkey\n", []string{"AQVNsecretkey"}},
+		{"basic auth", "call failed: Authorization: Basic dXNlcjpwYXNz\n", []string{"dXNlcjpwYXNz"}},
+		{"header with colon", "denied x-api-key: AQVNsecret\n", []string{"AQVNsecret"}},
+		{"token in url", "get https://x.example/?token=tok123&a=1: boom\n", []string{"tok123"}},
+		{"json body", "body {\"token\":\"abc123\",\"api_key\":\"zzz987\"}\n", []string{"abc123", "zzz987"}},
+		{"underscored names", "s3: access_key=AKIA123 secret_key=abcdef12\n", []string{"AKIA123", "abcdef12"}},
+		{"password with colon", "login failed password: hunter2\n", []string{"hunter2"}},
+		{"credentials in url", "dial https://user:p4ssw0rd@host/x: boom\n", []string{"p4ssw0rd"}},
+		{"quoted value with a space", "bad config key=\"abc def\" here\n", []string{"abc", "def"}},
+		{"cookie session", "cookie: session=abc123xyz\n", []string{"abc123xyz"}},
+		{"plain stays", "portrait read: boom\n", nil},
+		{"the word bearer stays", "the bearer of bad news\n", nil},
+		{"path and errno stay", "write entries: open /data/x: permission denied\n", nil},
+		{"serve warning stays", "serve: push off: bad contact\n", nil},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -173,14 +187,16 @@ func TestWriterRedactsSecrets(t *testing.T) {
 			if len(recs) != 1 {
 				t.Fatalf("records = %d, want 1", len(recs))
 			}
-			if tc.secret == "" {
+			if len(tc.secrets) == 0 {
 				if recs[0] != strings.TrimSpace(tc.line) {
-					t.Errorf("plain line changed: %q", recs[0])
+					t.Errorf("line changed: %q", recs[0])
 				}
 				return
 			}
-			if strings.Contains(recs[0], tc.secret) {
-				t.Errorf("secret left in %q", recs[0])
+			for _, secret := range tc.secrets {
+				if strings.Contains(recs[0], secret) {
+					t.Errorf("secret %q left in %q", secret, recs[0])
+				}
 			}
 		})
 	}
