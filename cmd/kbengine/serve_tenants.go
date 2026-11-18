@@ -604,10 +604,17 @@ func appendBody(raw []byte) ([]byte, string) {
 	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
 		return nil, "body must be a JSON object"
 	}
-	if rawURL, ok := fields["url"]; ok {
-		var s string
-		if err := json.Unmarshal(rawURL, &s); err != nil || !httpURL(s) {
-			return nil, "url must be http or https"
+	// encoding/json читает ключи без учета регистра ("URL", "ſource"): проверять и
+	// переписывать надо все такие ключи, а не только точное написание.
+	for k, v := range fields {
+		switch {
+		case strings.EqualFold(k, "url"):
+			var s string
+			if err := json.Unmarshal(v, &s); err != nil || !httpURL(s) {
+				return nil, "url must be http or https"
+			}
+		case strings.EqualFold(k, "source"):
+			delete(fields, k)
 		}
 	}
 	fields["source"], _ = json.Marshal(appendSource)
@@ -620,7 +627,7 @@ func appendBody(raw []byte) ([]byte, string) {
 
 // httpURL reports whether s is an absolute http or https address with a host.
 func httpURL(s string) bool {
-	u, err := url.Parse(strings.TrimSpace(s))
+	u, err := url.Parse(s)
 	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }
 
