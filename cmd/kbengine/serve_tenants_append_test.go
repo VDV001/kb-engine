@@ -139,7 +139,7 @@ func TestAppendScopeRateLimit(t *testing.T) {
 		return do(f.h, http.MethodPost, "/api/entries",
 			fmt.Sprintf(`{"title":"t%d","category":"golang","url":"https://h/rl-%d","verdict":"keep"}`, i, i), f.tokA)
 	}
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		if rec := add(i); rec.Code != http.StatusCreated {
 			t.Fatalf("add %d: %d %s", i, rec.Code, rec.Body.String())
 		}
@@ -152,7 +152,7 @@ func TestAppendScopeRateLimit(t *testing.T) {
 	if rec := add(30 + 1); rec.Code != http.StatusCreated {
 		t.Errorf("add after a second: %d", rec.Code)
 	}
-	for i := 0; i < 30+5; i++ {
+	for i := range 35 {
 		body := fmt.Sprintf(`{"title":"b%d","category":"golang","url":"https://h/b-%d","verdict":"keep"}`, i, i)
 		if rec := do(f.h, http.MethodPost, "/api/entries", body, f.tokB); rec.Code != http.StatusCreated {
 			t.Fatalf("the neighbour's add %d: %d", i, rec.Code)

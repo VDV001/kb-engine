@@ -587,27 +587,35 @@ func (t *tenants) guardAppend(w http.ResponseWriter, r *http.Request, id domain.
 		http.Error(w, fmt.Sprintf("body over %d bytes", maxAppendBody), http.StatusRequestEntityTooLarge)
 		return true
 	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
-		http.Error(w, "body must be a JSON object", http.StatusBadRequest)
-		return true
-	}
-	if rawURL, ok := fields["url"]; ok {
-		var s string
-		if err := json.Unmarshal(rawURL, &s); err != nil || !httpURL(s) {
-			http.Error(w, "url must be http or https", http.StatusBadRequest)
-			return true
-		}
-	}
-	fields["source"], _ = json.Marshal(appendSource)
-	body, err := json.Marshal(fields)
-	if err != nil {
-		http.Error(w, "bad body", http.StatusBadRequest)
+	body, msg := appendBody(raw)
+	if msg != "" {
+		http.Error(w, msg, http.StatusBadRequest)
 		return true
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	r.ContentLength = int64(len(body))
 	return false
+}
+
+// appendBody checks the body of an add by an append token and sets its source;
+// the second result is the refusal, empty when the body is fine.
+func appendBody(raw []byte) ([]byte, string) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
+		return nil, "body must be a JSON object"
+	}
+	if rawURL, ok := fields["url"]; ok {
+		var s string
+		if err := json.Unmarshal(rawURL, &s); err != nil || !httpURL(s) {
+			return nil, "url must be http or https"
+		}
+	}
+	fields["source"], _ = json.Marshal(appendSource)
+	body, err := json.Marshal(fields)
+	if err != nil {
+		return nil, "bad body"
+	}
+	return body, ""
 }
 
 // httpURL reports whether s is an absolute http or https address with a host.
