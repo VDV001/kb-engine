@@ -56,14 +56,14 @@ func TestStartMonium(t *testing.T) {
 
 	t.Run("off: stderr as is, stop is harmless", func(t *testing.T) {
 		var buf bytes.Buffer
-		out, stop, err := startMonium(func(string) string { return "" }, &buf)
-		if err != nil || out != io.Writer(&buf) {
-			t.Fatalf("out %v err %v", out, err)
+		m, err := startMonium(func(string) string { return "" }, &buf)
+		if err != nil || m.out != io.Writer(&buf) || m.dropped != nil {
+			t.Fatalf("out %v dropped set %v err %v", m.out, m.dropped != nil, err)
 		}
-		stop()
+		m.stop()
 	})
 	t.Run("bad config is an error, not silent", func(t *testing.T) {
-		_, _, err := startMonium(func(k string) string { return map[string]string{"KB_MONIUM_API_KEY": "k"}[k] }, io.Discard)
+		_, err := startMonium(func(k string) string { return map[string]string{"KB_MONIUM_API_KEY": "k"}[k] }, io.Discard)
 		if err == nil {
 			t.Fatal("want an error naming KB_MONIUM_PROJECT")
 		}
@@ -71,19 +71,27 @@ func TestStartMonium(t *testing.T) {
 	t.Run("on: lines still reach stderr and the standard log", func(t *testing.T) {
 		var buf bytes.Buffer
 		env := map[string]string{"KB_MONIUM_API_KEY": "k", "KB_MONIUM_PROJECT": "folder__x", "KB_MONIUM_ENDPOINT": "https://127.0.0.1:1/otlp/v1/logs"}
-		out, stop, err := startMonium(func(k string) string { return env[k] }, &buf)
+		m, err := startMonium(func(k string) string { return env[k] }, &buf)
 		if err != nil {
 			t.Fatal(err)
 		}
 		log.SetFlags(0)
 		log.Print("portrait read: boom")
-		fmt.Fprintln(out, "serve: warning")
-		stop()
+		fmt.Fprintln(m.out, "serve: warning")
+		m.stop()
 		if got := buf.String(); !strings.Contains(got, "portrait read: boom") || !strings.Contains(got, "serve: warning") {
 			t.Errorf("stderr lost lines: %q", got)
 		}
 		if log.Writer() != io.Writer(&buf) { // после stop строки не должны уходить в Writer, который никто не читает
 			t.Error("stop must put the standard log back on stderr")
+		}
+		// Маркер старта: каждая выкатка сама показывает в Monium, что отправка включена и дошла (#697).
+		if !strings.Contains(buf.String(), "logs are shipped to Monium") {
+			t.Errorf("startMonium must write a start marker, stderr: %q", buf.String())
+		}
+		// Адрес недоступен (127.0.0.1:1), две строки не дошли: об этом остается след в stderr (#697).
+		if !strings.Contains(buf.String(), "log lines never reached Monium") {
+			t.Errorf("stop must say how many lines were lost, stderr: %q", buf.String())
 		}
 	})
 }
