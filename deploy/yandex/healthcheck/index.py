@@ -13,10 +13,16 @@ Cloud Functions api.telegram.org недоступен (06.11), а Postbox — с
 ponytail: состояния нет, поэтому сбой сообщается на каждой проверке, пока
 длится, а о восстановлении — никак. Потолок: 12 сообщений в час при долгом
 сбое. Путь: хранить последний исход (объект в бакете) и писать только смену.
+
+Потери логов (#697): сервер при включенной отправке в Monium добавляет к «ok» строку
+«log-dropped: N». N > 0 — тоже сообщение, тем же путем. Счетчик живет в одном экземпляре
+контейнера и обнуляется его перезапуском, поэтому сообщение повторяется, пока этот
+экземпляр жив и проба попадает в него; к сообщению о недоступности это не относится.
 """
 
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -24,16 +30,20 @@ import urllib.request
 
 ATTEMPTS = 2  # холодный старт контейнера не должен будить человека
 TIMEOUT = 15
+MAX_BODY = 1024  # ответ /healthz — две короткие строки; больше читать незачем
+# Только строка целиком и не длиннее 9 цифр: мусор в ответе не должен будить человека.
+DROPPED = re.compile(r"^log-dropped: (\d{1,9})$", re.MULTILINE)
 
 
 def check(url):
-    """Returns (ok, why): why — код ответа или вид сбоя, без тела."""
+    """Returns (ok, why, body): why — код ответа или вид сбоя, body — начало ответа
+    при 200 (для строки о потерях логов), иначе пусто."""
     why = ""
     for i in range(ATTEMPTS):
         try:
             with urllib.request.urlopen(url, timeout=TIMEOUT) as r:
                 if r.status == 200:
-                    return True, "HTTP 200"
+                    return True, "HTTP 200", r.read(MAX_BODY).decode("utf-8", "replace")
                 why = f"HTTP {r.status}"
         except urllib.error.HTTPError as e:
             why = f"HTTP {e.code}"
@@ -41,7 +51,13 @@ def check(url):
             why = type(e).__name__
         if i + 1 < ATTEMPTS:
             time.sleep(5)
-    return False, why
+    return False, why, ""
+
+
+def dropped_lines(body):
+    """Returns N from the «log-dropped: N» line, or None when it is absent or malformed."""
+    m = DROPPED.search(body)
+    return int(m.group(1)) if m else None
 
 
 def notify(text):
@@ -99,15 +115,20 @@ def mail(text, context):
 
 def handler(event, context):
     url = os.environ["HEALTH_URL"]
-    ok, why = check(url)
+    ok, why, body = check(url)
+    dropped = dropped_lines(body) if ok else None
     sent, tg, ml = False, "", ""
+    text = ""
     if not ok:
         text = f"kb-сервер не отвечает: {why}\n{url}"
+    elif dropped:
+        text = f"kb-сервер: логи не доходят до Monium, потеряно строк: {dropped}\n{url}"
+    if text:
         if os.environ.get("MAIL_TO"):
             ml, m_ok = mail(text, context)
             sent = sent or m_ok
         if os.environ.get("TG_TOKEN"):
             tg, t_ok = notify(text)
             sent = sent or t_ok
-    print(f"healthcheck ok={ok} why={why} notified={sent} mail={ml or '-'} telegram={tg or '-'}")
-    return {"ok": ok, "why": why, "notified": sent, "mail": ml, "telegram": tg}
+    print(f"healthcheck ok={ok} why={why} dropped={dropped} notified={sent} mail={ml or '-'} telegram={tg or '-'}")
+    return {"ok": ok, "why": why, "dropped": dropped, "notified": sent, "mail": ml, "telegram": tg}
