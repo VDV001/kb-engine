@@ -126,6 +126,9 @@ func (s *Scopes) snapshot() (map[domain.UserID]struct{}, bool) {
 		set, derr := decodeScopes(o.Data)
 		if derr != nil {
 			s.etag, s.readOnly, s.bad, s.lastOK = "", nil, true, now
+			if s.Logf != nil { // раз в RefreshEvery, пока файл не починят
+				s.Logf("%s: %v: запись закрыта всем, чтение открыто", ScopesKey, derr)
+			}
 		} else {
 			s.etag, s.readOnly, s.bad, s.lastOK = o.ETag, set, false, now
 		}
@@ -143,7 +146,9 @@ func (s *Scopes) fresh(now time.Time) (map[domain.UserID]struct{}, bool) {
 
 func decodeScopes(data []byte) (map[domain.UserID]struct{}, error) {
 	var dto scopesDTO
-	if err := json.NewDecoder(bytes.NewReader(data)).Decode(&dto); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields() // опечатка в имени поля при ручной правке - битый файл, а не «человек пишет»
+	if err := dec.Decode(&dto); err != nil {
 		return nil, err
 	}
 	set := make(map[domain.UserID]struct{}, len(dto.Scopes))

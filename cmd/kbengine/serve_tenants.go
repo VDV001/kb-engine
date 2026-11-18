@@ -89,10 +89,12 @@ func tenantsHandler(ctx context.Context, store blob.Store, stderr io.Writer, opt
 	if cfg.contact != "" { // без контакта push выключен: Push nil, маршруты — 404
 		svc.Push = &lazyPusher{store: store, contact: cfg.contact, transport: cfg.transport}
 	}
+	scopes := userauth.NewScopes(ctx, store, nil)
+	scopes.Logf = logf // причина закрытой записи (битый файл областей) видна в журнале
 	return &tenants{
 		ctx: ctx, store: store, stderr: lw,
 		reg:       userauth.NewRegistry(ctx, store),
-		scopes:    userauth.NewScopes(ctx, store, nil),
+		scopes:    scopes,
 		phones:    phones,
 		handlers:  map[domain.UserID]http.Handler{},
 		limits:    map[mailKey]*rate.Limiter{},
