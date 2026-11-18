@@ -1,15 +1,19 @@
 package blobs3_test
 
 import (
+	"crypto/rand"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
@@ -331,4 +335,35 @@ func TestPurgeRefusesAnEntryWithoutVersionID(t *testing.T) {
 	if len(f.keys["users/a/kb/x"]) != 1 {
 		t.Errorf("versions of the key: %d, want 1 untouched", len(f.keys["users/a/kb/x"]))
 	}
+}
+
+// TestLiveYandexPurge runs the purge contract on a real versioned bucket: то,
+// что fakeVersioned моделирует (метка вместо удаления, версии по одной,
+// страницы списка), здесь проверяет сам бакет. Те же KB_BLOB_LIVE_BUCKET и
+// KB_BLOB_LIVE_TOKEN_FILE, что у TestLiveYandex; ключи только под
+// test/<случайное>/, их чистит правило жизненного цикла.
+func TestLiveYandexPurge(t *testing.T) {
+	bkt, tokFile := os.Getenv("KB_BLOB_LIVE_BUCKET"), os.Getenv("KB_BLOB_LIVE_TOKEN_FILE")
+	if bkt == "" || tokFile == "" {
+		t.Skip("KB_BLOB_LIVE_BUCKET / KB_BLOB_LIVE_TOKEN_FILE not set")
+	}
+	raw, err := os.ReadFile(tokFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok := blobs3.StaticToken(strings.TrimSpace(string(raw)))
+	run := rand.Text()[:12]
+	var n atomic.Int64
+	blobtest.RunPurger(t, func(t *testing.T) blobtest.PurgeStore {
+		s, err := blobs3.New(blobs3.Config{
+			Endpoint: blobs3.YandexEndpoint,
+			Bucket:   bkt,
+			Token:    tok,
+			Prefix:   fmt.Sprintf("test/purge-%s/%d/", run, n.Add(1)),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	})
 }
