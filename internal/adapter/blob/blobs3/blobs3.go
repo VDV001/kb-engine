@@ -411,3 +411,9 @@ func (s *Store) Delete(ctx context.Context, key string) error {
 	}
 	return statusError("delete", key, resp)
 }
+
+var _ blob.Purger = (*Store)(nil)
+
+// Purge removes every version and delete marker under prefix (stub, filled in
+// by the next commit).
+func (s *Store) Purge(ctx context.Context, prefix string) (int, error) { return 0, nil }
