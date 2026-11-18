@@ -15,12 +15,14 @@ import index
 
 class _Handler(http.server.BaseHTTPRequestHandler):
     status = 200
+    body = b""  # тело ответа /healthz: «ok» и, при отправке в Monium, «log-dropped: N»
     sent = []
     headers_seen = []
 
     def do_GET(self):  # noqa: N802 — имя задает http.server
         self.send_response(type(self).status)
         self.end_headers()
+        self.wfile.write(type(self).body)
 
     def do_POST(self):  # noqa: N802
         n = int(self.headers.get("Content-Length", 0))
@@ -42,7 +44,7 @@ class _Context:
 
 class HealthcheckTest(unittest.TestCase):
     def setUp(self):
-        _Handler.status, _Handler.sent, _Handler.headers_seen = 200, [], []
+        _Handler.status, _Handler.body, _Handler.sent, _Handler.headers_seen = 200, b"", [], []
         self.srv = http.server.HTTPServer(("127.0.0.1", 0), _Handler)
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
         base = f"http://127.0.0.1:{self.srv.server_port}"
@@ -57,6 +59,38 @@ class HealthcheckTest(unittest.TestCase):
     def test_up_is_silent(self):
         self.assertEqual(index.handler({}, None)["ok"], True)
         self.assertEqual(_Handler.sent, [])
+
+    def test_up_with_lost_log_lines_is_reported(self):
+        """Monium недоступен, сервер жив: «ok» с числом потерь не должно проходить молча (#697)."""
+        _Handler.body = b"ok\nlog-dropped: 5\n"
+        out = index.handler({}, None)
+        self.assertTrue(out["ok"])
+        self.assertEqual(out.get("dropped"), 5)
+        self.assertTrue(out["notified"])
+        self.assertEqual(len(_Handler.sent), 1)
+        _, body = _Handler.sent[0]
+        self.assertIn("Monium", body)
+        self.assertIn("5", body)
+
+    def test_up_with_no_lost_lines_is_silent(self):
+        _Handler.body = b"ok\nlog-dropped: 0\n"
+        out = index.handler({}, None)
+        self.assertEqual(out.get("dropped"), 0)
+        self.assertEqual(_Handler.sent, [])
+
+    def test_plain_ok_has_no_dropped_field(self):
+        _Handler.body = b"ok\n"  # отправка выключена: ответ прежний
+        out = index.handler({}, None)
+        self.assertIsNone(out.get("dropped", None))
+        self.assertEqual(_Handler.sent, [])
+
+    def test_garbage_in_the_dropped_line_is_ignored(self):
+        for body in (b"ok\nlog-dropped: abc\n", b"ok\nlog-dropped: -3\n", b"ok\nlog-dropped: 99999999999999999999\n", b"ok\n" + b"x" * 5000):
+            _Handler.body, _Handler.sent = body, []
+            out = index.handler({}, None)
+            self.assertTrue(out["ok"], body[:30])
+            self.assertIsNone(out.get("dropped"), body[:30])
+            self.assertEqual(_Handler.sent, [], body[:30])
 
     def test_down_is_reported_once_per_check(self):
         _Handler.status = 503
