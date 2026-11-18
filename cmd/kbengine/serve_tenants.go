@@ -429,7 +429,13 @@ func runServeTenants(location, s3TokenFile, addr, pprofAddr, tlsCert, tlsKey str
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 2
 	}
-	h := tenantsHandler(context.Background(), store, stderr)
+	errOut, stopMonium, err := startMonium(os.Getenv, stderr)
+	if err != nil {
+		fmt.Fprintf(stderr, "serve: %v\n", err)
+		return 2
+	}
+	defer stopMonium()
+	h := tenantsHandler(context.Background(), store, errOut)
 	srv := newServeServer(addr, h, "", tlsCfg)
 	fmt.Fprintf(stdout, "kbengine: serving people's bases on %s (tenants %s; tokens %s, TLS %s)\n", addr, location, userauth.RegistryKey, onOff(tlsCfg != nil))
 	startPprof(pprofAddr, stdout, stderr)
