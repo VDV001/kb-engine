@@ -1,6 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"fmt"
+	"io"
+	"log"
+	"os"
 	"strings"
 	"testing"
 )
@@ -40,4 +45,38 @@ func TestMoniumFromEnv(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestStartMonium(t *testing.T) {
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	t.Run("off: stderr as is, stop is harmless", func(t *testing.T) {
+		var buf bytes.Buffer
+		out, stop, err := startMonium(func(string) string { return "" }, &buf)
+		if err != nil || out != io.Writer(&buf) {
+			t.Fatalf("out %v err %v", out, err)
+		}
+		stop()
+	})
+	t.Run("bad config is an error, not silent", func(t *testing.T) {
+		_, _, err := startMonium(func(k string) string { return map[string]string{"KB_MONIUM_API_KEY": "k"}[k] }, io.Discard)
+		if err == nil {
+			t.Fatal("want an error naming KB_MONIUM_PROJECT")
+		}
+	})
+	t.Run("on: lines still reach stderr and the standard log", func(t *testing.T) {
+		var buf bytes.Buffer
+		env := map[string]string{"KB_MONIUM_API_KEY": "k", "KB_MONIUM_PROJECT": "folder__x", "KB_MONIUM_ENDPOINT": "https://127.0.0.1:1/otlp/v1/logs"}
+		out, stop, err := startMonium(func(k string) string { return env[k] }, &buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		log.SetFlags(0)
+		log.Print("portrait read: boom")
+		fmt.Fprintln(out, "serve: warning")
+		stop()
+		if got := buf.String(); !strings.Contains(got, "portrait read: boom") || !strings.Contains(got, "serve: warning") {
+			t.Errorf("stderr lost lines: %q", got)
+		}
+	})
 }
