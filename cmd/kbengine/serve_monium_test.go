@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -81,6 +82,9 @@ func TestStartMonium(t *testing.T) {
 		if got := buf.String(); !strings.Contains(got, "portrait read: boom") || !strings.Contains(got, "serve: warning") {
 			t.Errorf("stderr lost lines: %q", got)
 		}
+		if log.Writer() != io.Writer(&buf) { // после stop строки не должны уходить в Writer, который никто не читает
+			t.Error("stop must put the standard log back on stderr")
+		}
 	})
 }
 
@@ -101,5 +105,59 @@ func TestListenAndServeUntilStopsOnContext(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		_ = srv.Close() // чтобы горутина не осталась
 		t.Fatal("server kept running after the context ended")
+	}
+}
+
+// Shutdown возвращается, когда запросы закончились; если выйти раньше, процесс оборвет
+// запрос в работе (ревью #696, круг 2: функция возвращалась через 30 мкс).
+func TestListenAndServeUntilWaitsForRequestsInFlight(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close()
+	started := make(chan struct{})
+	srv := &http.Server{Addr: addr, Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		close(started)
+		time.Sleep(700 * time.Millisecond)
+		_, _ = io.WriteString(w, "done")
+	})}
+	ctx, cancel := context.WithCancel(t.Context())
+	returned := make(chan time.Time, 1)
+	go func() { _ = listenAndServeUntil(ctx, srv); returned <- time.Now() }()
+
+	body := make(chan string, 1)
+	go func() {
+		for range 50 { // сервер поднимается не мгновенно
+			resp, err := http.Get("http://" + addr + "/")
+			if err != nil {
+				time.Sleep(40 * time.Millisecond)
+				continue
+			}
+			b, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			body <- string(b)
+			return
+		}
+		body <- "no response"
+	}()
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("request never reached the handler")
+	}
+	cancelAt := time.Now()
+	cancel()
+	select {
+	case at := <-returned:
+		if d := at.Sub(cancelAt); d < 500*time.Millisecond {
+			t.Errorf("returned %v after the stop, while the request needs 700 ms: in-flight requests are cut", d)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("did not return")
+	}
+	if got := <-body; got != "done" {
+		t.Errorf("response %q, want done", got)
 	}
 }
