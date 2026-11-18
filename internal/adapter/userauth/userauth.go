@@ -144,6 +144,15 @@ func Revoke(ctx context.Context, s blob.Store, id domain.UserID) error {
 	if err != nil {
 		return err
 	}
+	// Адреса push-уведомлений — следом: после отзыва они остались бы в
+	// auth/push.json, хотя телефонов у человека уже нет (#545).
+	err = update(ctx, s, PushKey, func(r *pushRegistryDTO) error {
+		r.Subs = slices.DeleteFunc(r.Subs, func(p pushDTO) bool { return p.ID == id.String() })
+		return nil
+	})
+	if err != nil {
+		return err
+	}
 	// Входы телефонов — следом; не вышло — не беда: окно их уже не спросит, а
 	// новый вход без живого телефона не пишется (ревью #652).
 	_ = clearSeen(ctx, s, id, func(string) bool { return true })
