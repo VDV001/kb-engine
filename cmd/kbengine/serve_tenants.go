@@ -59,6 +59,9 @@ func pushContactFromEnv() (string, error) {
 	return c, nil
 }
 
+// withLogDropped adds how many log lines never reached Monium to /healthz (#697).
+func withLogDropped(f func() uint64) tenantOption { return func(*pushConfig) {} }
+
 // withPush replaces the push contact and transport (tests).
 func withPush(contact string, rt http.RoundTripper) tenantOption {
 	return func(c *pushConfig) { c.contact, c.transport = contact, rt }

@@ -85,6 +85,10 @@ func TestStartMonium(t *testing.T) {
 		if log.Writer() != io.Writer(&buf) { // после stop строки не должны уходить в Writer, который никто не читает
 			t.Error("stop must put the standard log back on stderr")
 		}
+		// Адрес недоступен (127.0.0.1:1), две строки не дошли: об этом остается след в stderr (#697).
+		if !strings.Contains(buf.String(), "log lines never reached Monium") {
+			t.Errorf("stop must say how many lines were lost, stderr: %q", buf.String())
+		}
 	})
 }
 
