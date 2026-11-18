@@ -49,6 +49,9 @@ func SetScope(ctx context.Context, s blob.Store, id domain.UserID, scope domain.
 // который нельзя прочитать (сбой дольше MaxStale, ни разу не прочитан, битый),
 // значит «пишет никто», читают все. Нет файла — ограниченных нет, все пишут.
 type Scopes struct {
+	// Logf, если задан, получает причину, по которой файл областей закрыл запись всем.
+	Logf func(format string, args ...any)
+
 	ctx   context.Context
 	store blob.Store
 	now   func() time.Time

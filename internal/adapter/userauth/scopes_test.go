@@ -3,6 +3,8 @@ package userauth_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -150,4 +152,39 @@ func countOccurrences(s, sub string) int {
 		}
 	}
 	return n
+}
+
+// Битый файл закрывает запись всем, и причина попадает в журнал: иначе человек,
+// у которого вдруг перестала работать запись, не найдет, почему.
+func TestScopesCorruptFileSaysWhy(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	if _, err := s.Put(ctx, userauth.ScopesKey, []byte(`{"scopes":[{"id":"alpha","scope":"Read"}]}`), ""); err != nil {
+		t.Fatal(err)
+	}
+	now, _ := clock(t18)
+	sc := userauth.NewScopes(ctx, s, now)
+	var logged []string
+	sc.Logf = func(f string, a ...any) { logged = append(logged, fmt.Sprintf(f, a...)) }
+	if sc.Writable(id(t, "alpha")) || sc.Writable(id(t, "beta")) {
+		t.Fatal("setup: a corrupt file must close writes for everyone")
+	}
+	if len(logged) != 1 || !strings.Contains(logged[0], userauth.ScopesKey) || !strings.Contains(logged[0], "Read") {
+		t.Errorf("the reason was not logged: %q", logged)
+	}
+}
+
+// Опечатка в имени поля при ручной правке не делает человека пишущим молча:
+// неизвестное поле - битый файл, а битый файл закрывает запись.
+func TestScopesUnknownFieldClosesWrites(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	if _, err := s.Put(ctx, userauth.ScopesKey, []byte(`{"scopes":[{"id":"cloud","scopes":"read"}]}`), ""); err != nil {
+		t.Fatal(err)
+	}
+	now, _ := clock(t18)
+	sc := userauth.NewScopes(ctx, s, now)
+	if sc.Writable(id(t, "cloud")) || sc.Writable(id(t, "anna")) {
+		t.Error("a misspelt field left someone writable")
+	}
 }
