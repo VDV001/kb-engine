@@ -9,7 +9,7 @@ import (
 	"github.com/daniil/kb-engine/internal/domain"
 )
 
-// ErrNoPurge: the store cannot remove a tree (no blob.Purger).
+// ErrNoPurge is returned when the store cannot remove a tree (no blob.Purger).
 var ErrNoPurge = errors.New("userauth: the store cannot purge")
 
 // PurgeReport counts the objects Purge took, by place.

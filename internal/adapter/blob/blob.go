@@ -86,7 +86,7 @@ type Purger interface {
 func ValidPurgePrefix(prefix string) error {
 	body, tree := strings.CutSuffix(prefix, "/")
 	if !tree && !strings.HasSuffix(prefix, ".") {
-		return fmt.Errorf("%w: purge prefix %q must end with / or .", ErrInvalidKey, prefix)
+		return fmt.Errorf("%w: purge prefix %q must end with a slash or a dot", ErrInvalidKey, prefix)
 	}
 	if err := ValidKey(body); err != nil {
 		return err

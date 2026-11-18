@@ -463,16 +463,8 @@ func (s *Store) Purge(ctx context.Context, prefix string) (int, error) {
 		if len(entries) == 0 {
 			return len(keys), nil
 		}
-		for _, e := range entries {
-			if !strings.HasPrefix(e.Key, full) {
-				return len(keys), fmt.Errorf("blobs3: purge %s: the listing returned %q outside the prefix", prefix, e.Key)
-			}
-			if e.VersionID == "" { // Delete без версии ставит метку, а не убирает запись
-				return len(keys), fmt.Errorf("blobs3: purge %s: the listing gave no version id for %q", prefix, e.Key)
-			}
-			if err := s.checkKey(strings.TrimPrefix(e.Key, s.prefix)); err != nil {
-				return len(keys), fmt.Errorf("blobs3: purge %s: %w", prefix, err)
-			}
+		if err := s.checkEntries(prefix, full, entries); err != nil {
+			return len(keys), err
 		}
 		if first := entries[0].Key + "@" + entries[0].VersionID; first == lastFirst {
 			return len(keys), fmt.Errorf("blobs3: purge %s: %s is still listed after its delete answered ok", prefix, first)
@@ -480,23 +472,45 @@ func (s *Store) Purge(ctx context.Context, prefix string) (int, error) {
 			lastFirst = first
 		}
 		for _, e := range entries {
-			key := strings.TrimPrefix(e.Key, s.prefix)
-			target := s.objectURL(key) + "?versionId=" + url.QueryEscape(e.VersionID)
-			resp, err := s.send(ctx, http.MethodDelete, target, key, nil, nil)
-			if err != nil {
+			if err := s.deleteVersion(ctx, e); err != nil {
 				return len(keys), err
 			}
-			ok := resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNotFound
-			if !ok {
-				err = statusError("delete version", key, resp)
-			}
-			_ = resp.Body.Close()
-			if err != nil {
-				return len(keys), err
-			}
-			keys[key] = struct{}{}
+			keys[strings.TrimPrefix(e.Key, s.prefix)] = struct{}{}
 		}
 	}
+}
+
+// checkEntries refuses a listing that points outside the prefix or names no
+// version, before anything is deleted.
+func (s *Store) checkEntries(prefix, full string, entries []versionEntry) error {
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Key, full) {
+			return fmt.Errorf("blobs3: purge %s: the listing returned %q outside the prefix", prefix, e.Key)
+		}
+		if e.VersionID == "" { // Delete без версии ставит метку, а не убирает запись
+			return fmt.Errorf("blobs3: purge %s: the listing gave no version id for %q", prefix, e.Key)
+		}
+		if err := s.checkKey(strings.TrimPrefix(e.Key, s.prefix)); err != nil {
+			return fmt.Errorf("blobs3: purge %s: %w", prefix, err)
+		}
+	}
+	return nil
+}
+
+// deleteVersion removes one version or marker by its id.
+func (s *Store) deleteVersion(ctx context.Context, e versionEntry) error {
+	key := strings.TrimPrefix(e.Key, s.prefix)
+	target := s.objectURL(key) + "?versionId=" + url.QueryEscape(e.VersionID)
+	resp, err := s.send(ctx, http.MethodDelete, target, key, nil, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	switch resp.StatusCode {
+	case http.StatusNoContent, http.StatusOK, http.StatusNotFound:
+		return nil
+	}
+	return statusError("delete version", key, resp)
 }
 
 // listVersions returns the first page (up to 1000) of versions and delete

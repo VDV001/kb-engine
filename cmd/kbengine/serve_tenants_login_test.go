@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -42,9 +43,7 @@ func TestTenantsTokenHeaderEdges(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/api/entries"+c.query, nil)
-			for k, vs := range c.header {
-				req.Header[k] = vs
-			}
+			maps.Copy(req.Header, c.header)
 			rec := httptest.NewRecorder()
 			f.h.ServeHTTP(rec, req)
 			if rec.Code != c.want {
@@ -155,9 +154,7 @@ func TestTenantsFirstRequestsRaceStayApart(t *testing.T) {
 	errs := make(chan string, len(names)*4)
 	for _, name := range names {
 		for range 4 { // и несколько запросов одного человека разом
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				rec := do(h, http.MethodGet, "/api/entries", "", toks[name])
 				body := rec.Body.String()
 				if rec.Code != http.StatusOK || !strings.Contains(body, marker(name)) {
@@ -168,7 +165,7 @@ func TestTenantsFirstRequestsRaceStayApart(t *testing.T) {
 						errs <- fmt.Sprintf("%s sees %s's data", name, other)
 					}
 				}
-			}()
+			})
 		}
 	}
 	wg.Wait()
