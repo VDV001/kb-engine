@@ -569,6 +569,10 @@ const maxAppendBody = 64 << 10
 // раза в секунду (всплеск 30) — каждое добавление переписывает каталог целиком;
 // адрес только http и https; источник ставит сервер. Остальные области не трогает.
 // Сообщает, что ответ уже дан.
+//
+// ponytail: предел — в памяти экземпляра, как у ящика: при нескольких экземплярах он
+// умножается на их число, а токен спишется и на запрос, который потом получит 400.
+// Путь апгрейда — предел в API Gateway и учет после разбора тела.
 func (t *tenants) guardAppend(w http.ResponseWriter, r *http.Request, id domain.UserID) bool {
 	if r.Method != http.MethodPost {
 		return false
@@ -583,7 +587,11 @@ func (t *tenants) guardAppend(w http.ResponseWriter, r *http.Request, id domain.
 		return true
 	}
 	raw, err := io.ReadAll(io.LimitReader(r.Body, maxAppendBody+1))
-	if err != nil || len(raw) > maxAppendBody {
+	if err != nil {
+		http.Error(w, "cannot read the body", http.StatusBadRequest)
+		return true
+	}
+	if len(raw) > maxAppendBody {
 		http.Error(w, fmt.Sprintf("body over %d bytes", maxAppendBody), http.StatusRequestEntityTooLarge)
 		return true
 	}
@@ -594,6 +602,7 @@ func (t *tenants) guardAppend(w http.ResponseWriter, r *http.Request, id domain.
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	r.ContentLength = int64(len(body))
+	r.Header.Set("Content-Length", strconv.Itoa(len(body)))
 	return false
 }
 
@@ -628,7 +637,9 @@ func appendBody(raw []byte) ([]byte, string) {
 // httpURL reports whether s is an absolute http or https address with a host.
 func httpURL(s string) bool {
 	u, err := url.Parse(s)
-	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+	// Пробелы по краям и userinfo ("trusted.com@evil") отказ: запись хранит строку как есть.
+	return err == nil && s == strings.TrimSpace(s) && u.User == nil &&
+		(u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }
 
 // serveBase serves a request of a known person from their own base: сначала
