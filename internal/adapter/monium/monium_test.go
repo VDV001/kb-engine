@@ -172,7 +172,18 @@ func TestWriterRedactsSecrets(t *testing.T) {
 		{"credentials in url", "dial https://user:p4ssw0rd@host/x: boom\n", []string{"p4ssw0rd"}},
 		{"quoted value with a space", "bad config key=\"abc def\" here\n", []string{"abc", "def"}},
 		{"cookie session", "cookie: session=abc123xyz\n", []string{"abc123xyz"}},
+		{"api-key scheme in authorization", "Authorization: Api-Key AQVN123456789\n", []string{"AQVN123456789"}},
+		{"signed url", "get https://b.s3.example/k?X-Amz-Signature=abcdef123456&X-Amz-Expires=60: boom\n", []string{"abcdef123456"}},
+		{"sig param", "get https://x.example/f?sig=SECRETSIG123 failed\n", []string{"SECRETSIG123"}},
+		{"signature word", "bad signature=SIGVAL999 in request\n", []string{"SIGVAL999"}},
+		{"aws4 header", "Authorization: AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20260101/x, SignedHeaders=host, Signature=deadbeefcafe\n", []string{"AKIAIOSFODNN7EXAMPLE", "deadbeefcafe"}},
+		{"second cookie", "Cookie: session=abc123; other=zzz999\n", []string{"abc123", "zzz999"}},
+		{"bare aws key id", "AccessDenied for AKIAIOSFODNN7EXAMPLE on bucket\n", []string{"AKIAIOSFODNN7EXAMPLE"}},
+		{"bare jwt", "bad token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.abcDEF123_-x here\n", []string{"eyJzdWIiOiIxMjM0In0"}}, // gitleaks:allow — выдуманный образец
 		{"plain stays", "portrait read: boom\n", nil},
+		{"missing session file stays", "open /data/session.json: no such file or directory\n", nil},
+		{"parse session stays", "failed to parse session: unexpected EOF\n", nil},
+		{"key colon prose stays", "monium: key: missing\n", nil},
 		{"the word bearer stays", "the bearer of bad news\n", nil},
 		{"path and errno stay", "write entries: open /data/x: permission denied\n", nil},
 		{"serve warning stays", "serve: push off: bad contact\n", nil},
@@ -340,7 +351,44 @@ func TestWriterStopIsBoundedWhenMoniumHangs(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("Run did not stop within 3 s: the flush has no overall deadline")
 	}
-	if w.Dropped() == 0 {
-		t.Error("lines left in the queue were not counted as dropped")
+	// Сервер завис, ничего не доставлено: каждая из 250 строк либо в пачке, которая не дошла,
+	// либо осталась в очереди. Счет должен сойтись ровно (ревью #696, круг 2: мутация выживала).
+	if got := w.Dropped(); got != 250 {
+		t.Errorf("Dropped = %d, want 250 (nothing was delivered)", got)
+	}
+}
+
+// Строка после остановки Run не должна пропадать молча: очередь никто не заберет.
+func TestWriterCountsLinesWrittenAfterStop(t *testing.T) {
+	var got received
+	srv := httptest.NewServer(got.handler(200))
+	defer srv.Close()
+	w := run(t, config(srv.URL), "first\n")
+	before := w.Dropped()
+	for range 5 {
+		if n, err := w.Write([]byte("late\n")); n != 5 || err != nil {
+			t.Fatalf("Write = %d, %v", n, err)
+		}
+	}
+	if d := w.Dropped() - before; d != 5 {
+		t.Errorf("5 late lines counted as %d dropped", d)
+	}
+}
+
+// Мегабайтная строка не должна тормозить Write вычисткой (0,2 с на МБ в ревью #696).
+func TestWriterCapsLineLength(t *testing.T) {
+	var got received
+	srv := httptest.NewServer(got.handler(200))
+	defer srv.Close()
+	run(t, config(srv.URL), "boom "+strings.Repeat("a", 20000)+"\n")
+	recs := records(t, &got)
+	if len(recs) != 1 {
+		t.Fatalf("records = %d", len(recs))
+	}
+	if len(recs[0]) > 8300 {
+		t.Errorf("record is %d bytes: a long line must be cut", len(recs[0]))
+	}
+	if !strings.HasPrefix(recs[0], "boom aaaa") {
+		t.Errorf("the start of the line must stay: %.20q", recs[0])
 	}
 }
