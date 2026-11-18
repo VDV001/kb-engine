@@ -41,6 +41,10 @@ func Purge(ctx context.Context, s blob.Store, id domain.UserID) (PurgeReport, er
 	if err := Revoke(ctx, s, id); err != nil && !errors.Is(err, domain.ErrNoSuchUser) {
 		return PurgeReport{}, err
 	}
+	// Запись об области уходит с человеком: имя не остается ограниченным в файле.
+	if err := SetScope(ctx, s, id, domain.ScopeWrite); err != nil {
+		return PurgeReport{}, fmt.Errorf("userauth: purge scope of %s: %w", id, err)
+	}
 	var rep PurgeReport
 	for _, step := range []struct {
 		prefix string

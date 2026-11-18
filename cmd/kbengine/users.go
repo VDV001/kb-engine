@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -25,12 +26,15 @@ import (
 // (pbcopy < файл и вставить в окно), а не из командной строки. В хранилище
 // только хэш. revoke закрывает вход, база человека остается; purge снимает
 // человека целиком, с базой, файлами ящика и версиями объектов.
+// usersSubs are the subcommands of users.
+var usersSubs = []string{"add", "revoke", "purge", "scope"}
+
 func runUsers(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
 		fmt.Fprintln(stdout, usersUsage) // просьба о помощи — успех (help_test.go)
 		return 0
 	}
-	if len(args) == 0 || (args[0] != "add" && args[0] != "revoke" && args[0] != "purge") {
+	if len(args) == 0 || !slices.Contains(usersSubs, args[0]) {
 		fmt.Fprintln(stderr, usersUsage)
 		return 2
 	}
@@ -44,6 +48,8 @@ func runUsers(args []string, stdout, stderr io.Writer) int {
 		return usersRevoke(tg.store, tg.id, stderr)
 	case "purge":
 		return usersPurge(tg, stderr)
+	case "scope":
+		return usersScope(tg, stderr)
 	}
 	return usersAdd(tg, stderr)
 }
@@ -55,6 +61,7 @@ type usersTargetOf struct {
 	loc      string // --tenants как назван: подсказки печатают готовую команду
 	id       domain.UserID
 	tokenOut string
+	scope    domain.Scope  // add: область токена
 	confirm  string        // purge: имя еще раз
 	yes      bool          // purge: предпросмотр показан, удалять
 	wait     time.Duration // purge: пауза между отзывом и удалением
@@ -77,7 +84,49 @@ var usersPurgeSleep = func(ctx context.Context, d time.Duration) error {
 	}
 }
 
-const usersUsage = "usage: kbengine users add|revoke|purge --tenants <s3://bucket | dir> --id <name> [add: --token-out <new file>] [purge: --confirm <name> --wait <duration> --yes]"
+const usersUsage = "usage: kbengine users add|revoke|purge|scope --tenants <s3://bucket | dir> --id <name> [add: --token-out <new file> --scope read|write] [scope: --scope read|write] [purge: --confirm <name> --wait <duration> --yes]"
+
+// usersFlags are the flags specific to one subcommand.
+type usersFlags struct {
+	scope, tokenOut, confirm string
+	wait                     time.Duration
+	yes                      bool
+}
+
+// apply checks the subcommand's own flags and fills tg; code 0 — все верно.
+func (fl usersFlags) apply(sub string, tg *usersTargetOf, stderr io.Writer) int {
+	switch sub {
+	case "purge":
+		if fl.confirm != tg.id.String() {
+			fmt.Fprintf(stderr, "users purge: --confirm <имя> обязателен и равен --id: удаление необратимо\n")
+			return 2
+		}
+		if fl.wait < 0 {
+			fmt.Fprintf(stderr, "users purge: --wait не может быть отрицательным\n")
+			return 2
+		}
+		tg.confirm, tg.wait, tg.yes = fl.confirm, fl.wait, fl.yes
+	case "add", "scope":
+		scope, err := domain.NewScope(fl.scope)
+		if err != nil {
+			fmt.Fprintf(stderr, "users %s: %v\n", sub, err)
+			return 2
+		}
+		if sub == "scope" && fl.scope == "" {
+			fmt.Fprintf(stderr, "users scope: --scope read|write обязателен\n")
+			return 2
+		}
+		tg.scope = scope
+		if sub == "add" {
+			if fl.tokenOut == "" {
+				fmt.Fprintf(stderr, "users add: --token-out <новый файл> обязателен: в терминал токен не выводится\n")
+				return 2
+			}
+			tg.tokenOut = fl.tokenOut
+		}
+	}
+	return 0
+}
 
 // usersTarget parses the flags into the store and the person; nil — выйти с
 // кодом code.
@@ -87,17 +136,17 @@ func usersTarget(sub string, args []string, stderr io.Writer) (*usersTargetOf, i
 	loc := fs.String("tenants", "", "s3://bucket or directory, the same as serve --tenants")
 	s3TokenFile := fs.String("s3-token-file", "", "optional file with an IAM token for s3:// (mode 0600)")
 	name := fs.String("id", "", "person's name: a-z, 0-9 and inner hyphens, up to 32")
-	var out *string
-	if sub == "add" {
-		out = fs.String("token-out", "", "write the token into this new file (mode 0600; an existing file is refused)")
+	var fl usersFlags
+	if sub == "add" || sub == "scope" {
+		fs.StringVar(&fl.scope, "scope", "", "read: the token only reads; write: as before")
 	}
-	var confirm *string
-	var wait *time.Duration
-	var yes *bool
+	if sub == "add" {
+		fs.StringVar(&fl.tokenOut, "token-out", "", "write the token into this new file (mode 0600; an existing file is refused)")
+	}
 	if sub == "purge" {
-		yes = fs.Bool("yes", false, "remove: without it the command only shows what exists and changes nothing")
-		confirm = fs.String("confirm", "", "the same name again: the removal cannot be undone")
-		wait = fs.Duration("wait", userauth.MaxStale+10*time.Second, "pause between the revoke and the removal, so every server instance stops admitting the token (a failed registry read keeps the old list for MaxStale)")
+		fs.BoolVar(&fl.yes, "yes", false, "remove: without it the command only shows what exists and changes nothing")
+		fs.StringVar(&fl.confirm, "confirm", "", "the same name again: the removal cannot be undone")
+		fs.DurationVar(&fl.wait, "wait", userauth.MaxStale+10*time.Second, "pause between the revoke and the removal, so every server instance stops admitting the token (a failed registry read keeps the old list for MaxStale)")
 	}
 	if code, stop := parseFlags(fs, args); stop {
 		return nil, code
@@ -112,23 +161,8 @@ func usersTarget(sub string, args []string, stderr io.Writer) (*usersTargetOf, i
 		return nil, 2
 	}
 	tg := &usersTargetOf{loc: *loc, id: id}
-	if sub == "purge" {
-		if *confirm != id.String() {
-			fmt.Fprintf(stderr, "users purge: --confirm <имя> обязателен и равен --id: удаление необратимо\n")
-			return nil, 2
-		}
-		if *wait < 0 {
-			fmt.Fprintf(stderr, "users purge: --wait не может быть отрицательным\n")
-			return nil, 2
-		}
-		tg.confirm, tg.wait, tg.yes = *confirm, *wait, *yes
-	}
-	if sub == "add" {
-		if *out == "" {
-			fmt.Fprintf(stderr, "users add: --token-out <новый файл> обязателен: в терминал токен не выводится\n")
-			return nil, 2
-		}
-		tg.tokenOut = *out
+	if code := fl.apply(sub, tg, stderr); code != 0 {
+		return nil, code
 	}
 	store, err := usersOpenStore(*loc, *s3TokenFile)
 	if err != nil {
@@ -187,6 +221,12 @@ func usersAdd(tg *usersTargetOf, stderr io.Writer) int {
 		dropFile()
 		fmt.Fprintf(stderr, "users add: %v — новый токен: сначала users revoke\n", err)
 		return 1
+	}
+	if err == nil {
+		// Область называется явно и при write: прежняя запись об этом имени (после
+		// отзыва) не делает новый токен ограниченным молча. Токен у вызывающего
+		// появляется только после этой записи; не вышло — выпуск откатывается.
+		err = userauth.SetScope(ctx, tg.store, tg.id, tg.scope)
 	}
 	if err == nil {
 		err = keepToken(f, tok)
@@ -311,4 +351,21 @@ func usersPurgePreview(ctx context.Context, tg *usersTargetOf, stderr io.Writer)
 	fmt.Fprintf(stderr, "users purge: %s: в реестре: %s; телефонов: %d; база: %s\n", tg.id, reg, phones, base)
 	fmt.Fprintf(stderr, "users purge: удалится без возврата: вход, телефоны, push, база и финансы, файлы ящика, входы телефонов, все версии объектов. Это тот человек? Повтори с --yes\n")
 	return 2
+}
+
+// usersScope changes the scope of an existing person without a new token
+// (#701): так облачный арендатор становится read-only. Сервер узнает за минуту.
+func usersScope(tg *usersTargetOf, stderr io.Writer) int {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if !userauth.NewRegistry(ctx, tg.store).Has(tg.id) {
+		fmt.Fprintf(stderr, "users scope: %v: %s\n", domain.ErrNoSuchUser, tg.id)
+		return 1
+	}
+	if err := userauth.SetScope(ctx, tg.store, tg.id, tg.scope); err != nil {
+		fmt.Fprintf(stderr, "users scope: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stderr, "users scope: %s: %s (сервер узнает за %s)\n", tg.id, tg.scope, userauth.RefreshEvery)
+	return 0
 }

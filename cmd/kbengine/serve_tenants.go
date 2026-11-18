@@ -89,9 +89,12 @@ func tenantsHandler(ctx context.Context, store blob.Store, stderr io.Writer, opt
 	if cfg.contact != "" { // без контакта push выключен: Push nil, маршруты — 404
 		svc.Push = &lazyPusher{store: store, contact: cfg.contact, transport: cfg.transport}
 	}
+	scopes := userauth.NewScopes(ctx, store, nil)
+	scopes.Logf = logf // причина закрытой записи (битый файл областей) видна в журнале
 	return &tenants{
 		ctx: ctx, store: store, stderr: lw,
 		reg:       userauth.NewRegistry(ctx, store),
+		scopes:    scopes,
 		phones:    phones,
 		handlers:  map[domain.UserID]http.Handler{},
 		limits:    map[mailKey]*rate.Limiter{},
@@ -124,6 +127,7 @@ func (p freshPhones) Revoke(ctx context.Context, id domain.UserID, device string
 }
 
 type tenants struct {
+	scopes *userauth.Scopes // области людей (#701): read-токен только читает
 	ctx    context.Context
 	store  blob.Store
 	stderr io.Writer
@@ -163,14 +167,7 @@ func (t *tenants) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if tok, ok := httpapi.RequestToken(r); ok {
 		if id, ok := t.reg.Lookup(tok); ok {
-			h, err := t.handlerFor(id)
-			if err != nil {
-				// Причина — в журнал сервера, а не в ответ: в ней ключ хранилища.
-				fmt.Fprintf(t.stderr, "serve: base of %s: %v\n", id, err)
-				http.Error(w, "base unavailable", http.StatusServiceUnavailable)
-				return
-			}
-			h.ServeHTTP(w, r)
+			t.serveBase(w, r, id)
 			return
 		}
 	}
@@ -206,6 +203,9 @@ func (t *tenants) serveMail(w http.ResponseWriter, r *http.Request) {
 			side = domain.MailPhone
 		}
 		if ok {
+			if t.refuseWrite(w, r, id) {
+				return
+			}
 			k := mailKey{sum: sha256.Sum256([]byte(tok)), kind: mailKindOf(r)}
 			wait, ok := t.allowMail(k)
 			if ok && k.kind == mailFile {
@@ -538,4 +538,31 @@ func (l *lazyPusher) PublicKey(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return v.PublicKey(), nil
+}
+
+// refuseWrite answers 403 to a write by a person whose token only reads (#701):
+// до разбора тела и до обработчика, по методу. Читать (GET, HEAD) можно всегда;
+// если файл областей не прочитать, пишет никто (userauth.Scopes закрывает).
+func (t *tenants) refuseWrite(w http.ResponseWriter, r *http.Request, id domain.UserID) bool {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead || t.scopes.Writable(id) {
+		return false
+	}
+	http.Error(w, "this token cannot change data", http.StatusForbidden)
+	return true
+}
+
+// serveBase serves a request of a known person from their own base: сначала
+// область (read-токен не пишет), потом обработчик базы.
+func (t *tenants) serveBase(w http.ResponseWriter, r *http.Request, id domain.UserID) {
+	if t.refuseWrite(w, r, id) {
+		return
+	}
+	h, err := t.handlerFor(id)
+	if err != nil {
+		// Причина — в журнал сервера, а не в ответ: в ней ключ хранилища.
+		fmt.Fprintf(t.stderr, "serve: base of %s: %v\n", id, err)
+		http.Error(w, "base unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	h.ServeHTTP(w, r)
 }
