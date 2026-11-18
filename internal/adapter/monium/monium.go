@@ -27,6 +27,8 @@ const (
 	maxBatch = 100
 	// sendTimeout bounds one request, и остановку: перед выходом Run досылает остаток.
 	sendTimeout = 5 * time.Second
+	// defaultFlush bounds the whole stop: the batch in flight and the tail behind it.
+	defaultFlush = 8 * time.Second
 
 	severityError = 17 // OTLP SeverityNumber ERROR
 )
@@ -75,6 +77,9 @@ func New(cfg Config) (*Writer, error) {
 	if cfg.Queue <= 0 {
 		cfg.Queue = DefaultQueue
 	}
+	if cfg.FlushTimeout <= 0 {
+		cfg.FlushTimeout = defaultFlush
+	}
 	return &Writer{cfg: cfg, ch: make(chan record, cfg.Queue)}, nil
 }
 
@@ -118,24 +123,30 @@ func (w *Writer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// Dropped is how many lines were thrown away because the queue was full.
+// Dropped is how many lines never reached Monium: the queue was full, the stop ran
+// out of time, or the request failed (no connection, a status other than 2xx).
 func (w *Writer) Dropped() uint64 { return w.dropped.Load() }
 
-// Run sends the queue until ctx ends, then sends what is left.
+// Run sends the queue until ctx ends, then sends what is left. Остановка занимает не
+// больше FlushTimeout: запрос, который уже идет, и хвост за ним делят один срок, а что
+// не ушло, считается в Dropped.
 func (w *Writer) Run(ctx context.Context) {
+	// hard живет FlushTimeout после остановки: обычная отправка не обрывается самой
+	// остановкой, но и зависший Monium не держит выход дольше срока.
+	hard, hardCancel := context.WithCancel(context.WithoutCancel(ctx))
+	defer hardCancel()
+	stopTimer := context.AfterFunc(ctx, func() { time.AfterFunc(w.cfg.FlushTimeout, hardCancel) })
+	defer stopTimer()
 	for {
 		select {
 		case r := <-w.ch:
-			w.send(ctx, w.batch(r))
+			w.deliver(hard, w.batch(r))
 		case <-ctx.Done():
-			for {
-				select {
-				case r := <-w.ch:
-					w.send(ctx, w.batch(r))
-				default:
-					return
-				}
+			for len(w.ch) > 0 && hard.Err() == nil {
+				w.deliver(hard, w.batch(<-w.ch))
 			}
+			w.dropped.Add(uint64(len(w.ch))) // то, что не успело уйти до срока
+			return
 		}
 	}
 }
@@ -175,22 +186,28 @@ type (
 	}
 )
 
-// send posts one batch; сбой теряет пачку (см. ponytail у Writer). Отмена Run
-// запрос не обрывает: остановка досылает хвост.
-func (w *Writer) send(ctx context.Context, b []record) {
+// deliver sends one batch and counts its lines as dropped when it did not arrive.
+func (w *Writer) deliver(ctx context.Context, b []record) {
+	if !w.send(ctx, b) {
+		w.dropped.Add(uint64(len(b)))
+	}
+}
+
+// send posts one batch; сбой теряет пачку (см. ponytail у Writer).
+func (w *Writer) send(ctx context.Context, b []record) bool {
 	recs := make([]logRecord, len(b))
 	for i, r := range b {
 		recs[i] = logRecord{TimeUnixNano: strconv.FormatInt(r.at.UnixNano(), 10), SeverityNumber: severityError, SeverityText: "ERROR", Body: anyValue{r.line}}
 	}
 	body, err := json.Marshal(otlp{[]resourceLogs{{[]scopeLogs{{recs}}}}})
 	if err != nil {
-		return
+		return false
 	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), sendTimeout)
+	ctx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, w.cfg.Endpoint, bytes.NewReader(body))
 	if err != nil {
-		return
+		return false
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Api-Key "+w.cfg.APIKey)
@@ -203,8 +220,9 @@ func (w *Writer) send(ctx context.Context, b []record) {
 	}
 	resp, err := w.cfg.Client.Do(req)
 	if err != nil {
-		return
+		return false
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
 	_ = resp.Body.Close()
+	return resp.StatusCode/100 == 2
 }
