@@ -173,18 +173,20 @@ func TestAppendScopeFoldedKeysDoNotBypass(t *testing.T) {
 			t.Errorf("key %q with a javascript: address: %d, want 400", key, rec.Code)
 		}
 	}
-	if rec := do(f.h, http.MethodPost, "/api/entries",
-		`{"title":"x","category":"golang","url":" https://h/space","verdict":"keep"}`, f.tokA); rec.Code != http.StatusBadRequest {
-		t.Errorf("an address with a leading space: %d, want 400", rec.Code)
+	for _, u := range []string{" https://h/space", "https://h/space ", "https://trusted.com@evil.example/x"} {
+		if rec := do(f.h, http.MethodPost, "/api/entries",
+			`{"title":"x","category":"golang","url":"`+u+`","verdict":"keep"}`, f.tokA); rec.Code != http.StatusBadRequest {
+			t.Errorf("address %q: %d, want 400", u, rec.Code)
+		}
 	}
 
 	for i, key := range []string{"Source", "SOURCE", "ſource", "sourcE"} {
 		body := fmt.Sprintf(`{"title":"fold%d","category":"golang","url":"https://h/fold%d","verdict":"keep","%s":"bot-inbox"}`, i, i, key)
-		if rec := do(f.h, http.MethodPost, "/api/entries", body, f.tokA); rec.Code != http.StatusCreated && rec.Code != http.StatusBadRequest {
+		if rec := do(f.h, http.MethodPost, "/api/entries", body, f.tokA); rec.Code != http.StatusCreated {
 			t.Fatalf("key %q: %d %s", key, rec.Code, rec.Body.String())
 		}
 	}
-	if body := readable(t, get(f.h, "/api/entries", f.tokA)); strings.Contains(body, "bot-inbox") {
+	if body := readable(t, get(f.h, "/api/entries", f.tokA)); strings.Contains(body, "bot-inbox") || strings.Count(body, `"source":"api-append"`) != 4 {
 		t.Errorf("a folded source key got through: %s", body)
 	}
 }
