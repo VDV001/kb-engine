@@ -76,15 +76,30 @@ func New(cfg Config) (*Writer, error) {
 	return &Writer{cfg: cfg, ch: make(chan record, cfg.Queue)}, nil
 }
 
-// secrets — то, что не должно попасть в журнал, даже если оказалось в тексте ошибки.
-var (
-	headerSecret = regexp.MustCompile(`(?i)\b(bearer|api-key|application-key)\s+\S+`)
-	paramSecret  = regexp.MustCompile(`(?i)\b((?:token|api_?key|key|secret|password)=)[^&\s]+`)
-)
+// Вычистка секретов (ревью #696). Строка ошибки Go печатает URL, заголовки и JSON как
+// есть, поэтому правил несколько, и все они режут значение, а не имя. Лучше лишнее
+// «[redacted]», чем ключ в журнале.
+var redactions = []struct {
+	re   *regexp.Regexp
+	with string
+}{
+	// Authorization: <схема> <значение>, схема любая (Bearer, Basic, Token).
+	{regexp.MustCompile(`(?i)(\bauthorization\s*[:=]\s*)(?:[a-z]+\s+)?[^\s,;"']+`), "${1}[redacted]"},
+	// Схема и значение без заголовка: «Bearer abc…», «Api-Key AQV…». Значение от 8 знаков,
+	// чтобы «the bearer of bad news» осталось текстом.
+	{regexp.MustCompile(`(?i)\b(bearer|basic|api-key|application-key)\s+[^\s,;"']{8,}`), "${1} [redacted]"},
+	// Пароль в адресе: scheme://user:пароль@host.
+	{regexp.MustCompile(`(://[^/\s:@]+:)[^@\s/]+@`), "${1}[redacted]@"},
+	// имя = значение и "имя": "значение", где в имени слово из списка (x-api-key, access_key,
+	// secret_key, password, session, cookie, token). Значение в кавычках режется целиком.
+	{regexp.MustCompile(`(?i)(["']?[\w.-]*(?:token|key|secret|passw(?:or)?d|pwd|credential|cookie|session)[\w.-]*["']?\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s&,;}"']+)`), "${1}[redacted]"},
+}
 
 func redact(s string) string {
-	s = headerSecret.ReplaceAllString(s, "$1 [redacted]")
-	return paramSecret.ReplaceAllString(s, "${1}[redacted]")
+	for _, r := range redactions {
+		s = r.re.ReplaceAllString(s, r.with)
+	}
+	return s
 }
 
 // Write queues the line and never blocks or fails: the server must not wait for Monium.
