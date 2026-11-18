@@ -84,7 +84,7 @@ var usersPurgeSleep = func(ctx context.Context, d time.Duration) error {
 	}
 }
 
-const usersUsage = "usage: kbengine users add|revoke|purge|scope --tenants <s3://bucket | dir> --id <name> [add: --token-out <new file> --scope read|write] [scope: --scope read|write] [purge: --confirm <name> --wait <duration> --yes]"
+const usersUsage = "usage: kbengine users add|revoke|purge|scope --tenants <s3://bucket | dir> --id <name> [add: --token-out <new file> --scope read|append|write] [scope: --scope read|write] [purge: --confirm <name> --wait <duration> --yes]"
 
 // usersFlags are the flags specific to one subcommand.
 type usersFlags struct {
@@ -113,7 +113,7 @@ func (fl usersFlags) apply(sub string, tg *usersTargetOf, stderr io.Writer) int 
 			return 2
 		}
 		if sub == "scope" && fl.scope == "" {
-			fmt.Fprintf(stderr, "users scope: --scope read|write обязателен\n")
+			fmt.Fprintf(stderr, "users scope: --scope read|append|write обязателен\n")
 			return 2
 		}
 		tg.scope = scope
@@ -138,7 +138,7 @@ func usersTarget(sub string, args []string, stderr io.Writer) (*usersTargetOf, i
 	name := fs.String("id", "", "person's name: a-z, 0-9 and inner hyphens, up to 32")
 	var fl usersFlags
 	if sub == "add" || sub == "scope" {
-		fs.StringVar(&fl.scope, "scope", "", "read: the token only reads; write: as before")
+		fs.StringVar(&fl.scope, "scope", "", "read: only reads; append: reads and adds entries; write: as before")
 	}
 	if sub == "add" {
 		fs.StringVar(&fl.tokenOut, "token-out", "", "write the token into this new file (mode 0600; an existing file is refused)")

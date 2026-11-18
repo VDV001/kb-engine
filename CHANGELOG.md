@@ -9,6 +9,12 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 ## [Unreleased]
 
 ### Added
+- **Область токена `append` (#703).** `kbengine users add ... --scope append` и
+  `kbengine users scope --id <имя> --scope append`: человек читает все свое и добавляет записи
+  (`POST /api/entries`, ровно этот путь), а правка, удаление, финансы, ящик и телефоны
+  получают 403. Нужна облачным сессиям Claude Code с телефона: добавить статью можно, испортить
+  базу нельзя. Закрыто при сбое файла областей, как у `read`. Внутри `domain.Scope.Allows(метод,
+  путь)` вместо вопроса «можно ли писать», `userauth.Scopes.Scope(id)` вместо `Writable`.
 - **Токены только на чтение (#701).** `kbengine users add ... --scope read` и
   `kbengine users scope --id <имя> --scope read|write`: человек с областью `read` читает все
   свои маршруты и получает 403 на любой метод кроме `GET`/`HEAD` (записи, финансы, ящик,
