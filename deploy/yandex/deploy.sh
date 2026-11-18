@@ -33,6 +33,16 @@ KB_ANDROID_APP="${KB_ANDROID_APP:-}"
 # создает сам в бакете (auth/vapid.json). Пусто — push выключен.
 KB_PUSH_CONTACT="${KB_PUSH_CONTACT:-}"
 [[ -z "$KB_PUSH_CONTACT" || "$KB_PUSH_CONTACT" =~ ^(mailto:|https://)[^,]+$ ]] || { echo "KB_PUSH_CONTACT: mailto:… или https://…, без запятых" >&2; exit 2; }
+# KB_MONIUM_PROJECT и KB_MONIUM_SECRET — ошибки сервера уходят в Monium (#440).
+# Проект — идентификатор вида folder__<id каталога>; секрет — id записи Lockbox с
+# API-ключом (ключ `api_key`, scope yc.monium.logs.write, сервисный аккаунт с ролью
+# monium.telemetry.writer). Ключ в окружение не кладется: платформа достает его из
+# Lockbox сама, поэтому сервисному аккаунту kb-server нужна роль lockbox.payloadViewer
+# на этот секрет. Заданы оба или ни один; пусто — логи в Monium не уходят.
+KB_MONIUM_PROJECT="${KB_MONIUM_PROJECT:-}"
+KB_MONIUM_SECRET="${KB_MONIUM_SECRET:-}"
+[[ -n "$KB_MONIUM_PROJECT" && -n "$KB_MONIUM_SECRET" || -z "$KB_MONIUM_PROJECT" && -z "$KB_MONIUM_SECRET" ]] || { echo "KB_MONIUM_PROJECT и KB_MONIUM_SECRET задаются вместе" >&2; exit 2; }
+[[ "$KB_MONIUM_PROJECT" != *,* ]] || { echo "KB_MONIUM_PROJECT: без запятых" >&2; exit 2; }
 registry=kb-engine sa=kb-server key=kb-bucket container=kb-server
 say() { printf '%s\n' "$*" >&2; }
 die() { say "✘ $*"; exit 1; }
@@ -221,15 +231,19 @@ say "· контейнер $container"
 # --zone-* действуют на каждую зону доступности (в ru-central1 их три): 1
 # экземпляр и 8 запросов на зону — не больше 3 экземпляров и 24 запросов.
 # Метаданные: только GCE-точка, из нее код берет IAM-токен; AWS v1 закрыта.
-# Секретов в окружении нет: доступ к бакету — через сервисный аккаунт.
+# Секретов в окружении нет: доступ к бакету — через сервисный аккаунт, ключ Monium — из Lockbox.
 # --command обязателен: --args платформа не дописывает к ENTRYPOINT образа,
 # а запускает как команду («"serve": executable file not found»).
+# Массивом, а не раскрытием ${…:+--secret "…"}: bash склеил бы флаг и значение в один аргумент.
+secret_args=()
+[[ -z "$KB_MONIUM_SECRET" ]] || secret_args=(--secret "id=$KB_MONIUM_SECRET,key=api_key,environment-variable=KB_MONIUM_API_KEY")  # gitleaks:allow — имя переменной и поле Lockbox, не значение ключа
 y serverless container revision deploy --container-name "$container" \
   --image "cr.yandex/$rid/kbengine@$digest" --service-account-id "$sid" \
   --memory 512MB --cores 1 --concurrency 8 --execution-timeout 30s \
   --zone-instances-limit 1 --zone-requests-limit 8 \
   --metadata-options aws-v1-http-endpoint=disabled,gce-http-endpoint=enabled \
-  --environment "TZ=$TZ_NAME${KB_ANDROID_APP:+,KB_ANDROID_APP=$KB_ANDROID_APP}${KB_PUSH_CONTACT:+,KB_PUSH_CONTACT=$KB_PUSH_CONTACT}" \
+  --environment "TZ=$TZ_NAME${KB_ANDROID_APP:+,KB_ANDROID_APP=$KB_ANDROID_APP}${KB_PUSH_CONTACT:+,KB_PUSH_CONTACT=$KB_PUSH_CONTACT}${KB_MONIUM_PROJECT:+,KB_MONIUM_PROJECT=$KB_MONIUM_PROJECT}" \
+  ${secret_args[@]+"${secret_args[@]}"} \
   --command /kbengine --args serve,--tenants,"s3://$BUCKET",--addr,0.0.0.0:8080,--allow-open >/dev/null
 # Вызов открыт: окно и kbengine-mcp ходят по HTTPS, а вход — личный токен
 # приложения (сервер хранит только SHA-256). Без токена — 401.

@@ -8,6 +8,14 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+### Added
+- **Ошибки kb-сервера в Monium (#440).** Cloud Logging закрыт для новых клиентов, и логи
+  контейнера никуда не попадали. С `KB_MONIUM_PROJECT` и ключом из Lockbox сервер шлет
+  строки stderr в Monium по OTLP JSON: очередь ограничена и не задерживает ответы, секреты
+  (`Bearer`, `Api-Key`, `token=`) вычеркиваются, остаток досылается при остановке. Без
+  переменных отправка выключена. `deploy.sh` принимает `KB_MONIUM_PROJECT` и
+  `KB_MONIUM_SECRET`.
+
 ### Fixed
 - Плашка «обновить до …», кнопка «Обновить» и карточка диалога обновления
   скруглены общим радиусом окна (`--z-radius`), а не своими 6 и 10 пикселями.
