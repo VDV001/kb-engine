@@ -40,7 +40,9 @@ type fakeVersioned struct {
 	rogue *version
 	// ignoreVersionDeletes — DELETE с versionId отвечает 204, но ничего не убирает.
 	ignoreVersionDeletes bool
-	deleted              []string // «key@versionId» удаленных по версии
+	// blankVersionID — список не называет версии: удалять по ним нечем.
+	blankVersionID bool
+	deleted        []string // «key@versionId» удаленных по версии
 }
 
 func newFakeVersioned(t *testing.T, pageSize int) (*fakeVersioned, *httptest.Server) {
@@ -176,6 +178,9 @@ func (f *fakeVersioned) list(w http.ResponseWriter, prefix, keyMarker, idMarker 
 	}
 	for _, rw := range rows {
 		e := listEntry{Key: rw.key, VersionID: rw.v.id, IsLatest: rw.new}
+		if f.blankVersionID {
+			e.VersionID = ""
+		}
 		if rw.v.marker {
 			res.DeleteMarker = append(res.DeleteMarker, e)
 		} else {
@@ -306,5 +311,24 @@ func TestPurgeReportsAccessErrors(t *testing.T) {
 	}
 	if errors.Is(err, blob.ErrInvalidKey) {
 		t.Errorf("an access error is not an invalid key: %v", err)
+	}
+}
+
+// Список без versionId не превращается в бесконечные метки удаления: Delete
+// без версии ставит метку, а не убирает запись.
+func TestPurgeRefusesAnEntryWithoutVersionID(t *testing.T) {
+	f, srv := newFakeVersioned(t, 0)
+	s := newStore(t, srv.URL, blobs3.StaticToken(token))
+	if _, err := s.Put(t.Context(), "users/a/kb/x", []byte("x"), ""); err != nil {
+		t.Fatal(err)
+	}
+	f.blankVersionID = true
+	if _, err := s.Purge(t.Context(), "users/a/"); err == nil {
+		t.Fatal("Purge went on with a listing that has no version ids")
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.keys["users/a/kb/x"]) != 1 {
+		t.Errorf("versions of the key: %d, want 1 untouched", len(f.keys["users/a/kb/x"]))
 	}
 }
