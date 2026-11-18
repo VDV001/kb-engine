@@ -62,6 +62,7 @@ type Writer struct {
 	cfg     Config
 	ch      chan record
 	dropped atomic.Uint64
+	closed  atomic.Bool // Run вышел: новые строки считаются потерянными
 }
 
 // New checks the config and builds the writer; без Run ничего не отправляется.
@@ -84,23 +85,33 @@ func New(cfg Config) (*Writer, error) {
 	return &Writer{cfg: cfg, ch: make(chan record, cfg.Queue)}, nil
 }
 
-// Вычистка секретов (ревью #696). Строка ошибки Go печатает URL, заголовки и JSON как
-// есть, поэтому правил несколько, и все они режут значение, а не имя. Лучше лишнее
-// «[redacted]», чем ключ в журнале.
+// Вычистка секретов (ревью #696, два круга). Строка ошибки Go печатает URL, заголовки и
+// JSON как есть, поэтому правил несколько, и все режут значение, а не имя. Лучше лишнее
+// «[redacted]», чем ключ в журнале. Имена делятся на сильные (token, secret, password,
+// cookie, api-key: значение прячется и после «:», и после «=») и слабые (key, session:
+// только после «=» или в JSON с кавычкой), иначе «open session.json: no such file» теряет слова.
 var redactions = []struct {
 	re   *regexp.Regexp
 	with string
 }{
-	// Authorization: <схема> <значение>, схема любая (Bearer, Basic, Token).
-	{regexp.MustCompile(`(?i)(\bauthorization\s*[:=]\s*)(?:[a-z]+\s+)?[^\s,;"']+`), "${1}[redacted]"},
+	// Cookie: вся остальная строка, пар через «;» может быть несколько.
+	{regexp.MustCompile(`(?i)\b((?:set-)?cookie\s*:\s*)[^\n]+`), "${1}[redacted]"},
+	// Authorization: <схема> <значение>, схема любая (Bearer, Basic, Api-Key, AWS4-HMAC-SHA256).
+	{regexp.MustCompile(`(?i)(\bauthorization\s*[:=]\s*)(?:[\w-]+\s+)?[^\s,;"']+`), "${1}[redacted]"},
 	// Схема и значение без заголовка: «Bearer abc…», «Api-Key AQV…». Значение от 8 знаков,
 	// чтобы «the bearer of bad news» осталось текстом.
 	{regexp.MustCompile(`(?i)\b(bearer|basic|api-key|application-key)\s+[^\s,;"']{8,}`), "${1} [redacted]"},
 	// Пароль в адресе: scheme://user:пароль@host.
 	{regexp.MustCompile(`(://[^/\s:@]+:)[^@\s/]+@`), "${1}[redacted]@"},
-	// имя = значение и "имя": "значение", где в имени слово из списка (x-api-key, access_key,
-	// secret_key, password, session, cookie, token). Значение в кавычках режется целиком.
-	{regexp.MustCompile(`(?i)(["']?[\w.-]*(?:token|key|secret|passw(?:or)?d|pwd|credential|cookie|session)[\w.-]*["']?\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s&,;}"']+)`), "${1}[redacted]"},
+	// Подписи: X-Amz-Signature=…, signature=…, sig=….
+	{regexp.MustCompile(`(?i)\b((?:x-amz-)?signature|sig)(\s*=\s*)[^\s&,;}"']+`), "${1}${2}[redacted]"},
+	// Сильные имена: «имя: значение», «имя=значение», "имя": "значение". Значение в кавычках режется целиком.
+	{regexp.MustCompile(`(?i)(["']?[\w.-]*(?:token|secret|passw(?:or)?d|pwd|credential|cookie|api[-_]?key|apikey)[\w.-]*["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s&,;}"']+)`), "${1}[redacted]"},
+	// Слабые имена: только «=» или JSON с кавычкой перед «:».
+	{regexp.MustCompile(`(?i)(["']?[\w.-]*(?:key|session)[\w.-]*(?:["']\s*:|\s*=)\s*)(?:"[^"]*"|'[^']*'|[^\s&,;}"']+)`), "${1}[redacted]"},
+	// Голые значения: идентификатор ключа AWS и JWT.
+	{regexp.MustCompile(`\b(?:AKIA|ASIA)[0-9A-Z]{16}\b`), "[redacted]"},
+	{regexp.MustCompile(`\beyJ[\w-]+\.[\w-]+\.[\w-]+`), "[redacted]"},
 }
 
 func redact(s string) string {
@@ -110,10 +121,22 @@ func redact(s string) string {
 	return s
 }
 
+// maxLine bounds a line before redaction: вычистка стоит около 0,2 с на МБ, а Write
+// вызывается на каждую строку журнала сервера.
+const maxLine = 8 << 10
+
 // Write queues the line and never blocks or fails: the server must not wait for Monium.
 func (w *Writer) Write(p []byte) (int, error) {
-	line := redact(strings.TrimRight(string(p), "\r\n"))
+	line := strings.TrimRight(string(p), "\r\n")
+	if len(line) > maxLine {
+		line = strings.ToValidUTF8(line[:maxLine], "") + "…[truncated]"
+	}
+	line = redact(line)
 	if line == "" {
+		return len(p), nil
+	}
+	if w.closed.Load() { // Run остановлен: очередь никто не заберет
+		w.dropped.Add(1)
 		return len(p), nil
 	}
 	select {
@@ -125,19 +148,35 @@ func (w *Writer) Write(p []byte) (int, error) {
 }
 
 // Dropped is how many lines never reached Monium: the queue was full, the stop ran
-// out of time, or the request failed (no connection, a status other than 2xx).
+// out of time, the request failed (no connection, a status other than 2xx), or Run
+// had already stopped.
 func (w *Writer) Dropped() uint64 { return w.dropped.Load() }
 
 // Run sends the queue until ctx ends, then sends what is left. Остановка занимает не
 // больше FlushTimeout: запрос, который уже идет, и хвост за ним делят один срок, а что
 // не ушло, считается в Dropped.
+//
+// ponytail: Write, начавшийся до остановки и положивший строку после выметания очереди,
+// не считается и не уходит; окно в доли микросекунды. Потолок — потеря одной строки при
+// выходе; путь вверх — мьютекс вокруг очереди.
 func (w *Writer) Run(ctx context.Context) {
 	// hard живет FlushTimeout после остановки: обычная отправка не обрывается самой
 	// остановкой, но и зависший Monium не держит выход дольше срока.
 	hard, hardCancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer hardCancel()
-	stopTimer := context.AfterFunc(ctx, func() { time.AfterFunc(w.cfg.FlushTimeout, hardCancel) })
-	defer stopTimer()
+	go func() {
+		select {
+		case <-ctx.Done():
+			t := time.NewTimer(w.cfg.FlushTimeout)
+			defer t.Stop()
+			select {
+			case <-t.C:
+				hardCancel()
+			case <-hard.Done():
+			}
+		case <-hard.Done():
+		}
+	}()
 	for {
 		select {
 		case r := <-w.ch:
@@ -146,7 +185,11 @@ func (w *Writer) Run(ctx context.Context) {
 			for len(w.ch) > 0 && hard.Err() == nil {
 				w.deliver(hard, w.batch(<-w.ch))
 			}
-			w.dropped.Add(uint64(len(w.ch))) // то, что не успело уйти до срока
+			w.closed.Store(true)
+			for len(w.ch) > 0 { // то, что не успело уйти до срока
+				<-w.ch
+				w.dropped.Add(1)
+			}
 			return
 		}
 	}

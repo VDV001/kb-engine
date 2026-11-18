@@ -163,6 +163,7 @@ func TestWriterRedactsSecrets(t *testing.T) {
 		{"bearer", "call failed: Authorization: Bearer abc123SECRET\n", []string{"abc123SECRET"}},
 		{"bare bearer", "call failed: got Bearer abc123SECRET back\n", []string{"abc123SECRET"}},
 		{"api key", "call failed: Api-Key AQVNsecretkey\n", []string{"AQVNsecretkey"}},
+		{"short secret only the authorization rule sees", "call failed: Authorization: Bearer short1\n", []string{"short1"}},
 		{"basic auth", "call failed: Authorization: Basic dXNlcjpwYXNz\n", []string{"dXNlcjpwYXNz"}},
 		{"header with colon", "denied x-api-key: AQVNsecret\n", []string{"AQVNsecret"}},
 		{"token in url", "get https://x.example/?token=tok123&a=1: boom\n", []string{"tok123"}},
