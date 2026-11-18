@@ -231,17 +231,63 @@ func TestWriterNeverBlocksWhenMoniumHangs(t *testing.T) {
 	}
 }
 
-func TestWriterSurvivesMoniumErrors(t *testing.T) {
+// После отказа Monium (503) отправка не останавливается: следующая строка доходит,
+// а недоставленная пачка попадает в Dropped (ревью #696: прежний тест этого не проверял).
+func TestWriterKeepsSendingAfterMoniumError(t *testing.T) {
 	var got received
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		got.handler(503)(w, r)
+		status := 200
+		if calls.Add(1) == 1 {
+			status = 503
+		}
+		got.handler(status)(w, r)
 	}))
 	defer srv.Close()
-	run(t, config(srv.URL), "boom\n")
-	if calls.Load() == 0 {
-		t.Error("no attempt to send: the 503 path was not exercised")
+	w, err := monium.New(config(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() { defer close(done); w.Run(ctx) }()
+	_, _ = w.Write([]byte("lost\n"))
+	for deadline := time.Now().Add(3 * time.Second); calls.Load() < 1 && time.Now().Before(deadline); {
+		time.Sleep(5 * time.Millisecond)
+	}
+	_, _ = w.Write([]byte("kept\n"))
+	cancel()
+	<-done
+	recs := records(t, &got)
+	if len(recs) != 2 || recs[1] != "kept" {
+		t.Errorf("records %q: the line after the 503 must arrive", recs)
+	}
+	if w.Dropped() != 1 {
+		t.Errorf("Dropped = %d, want 1 (the batch answered with 503)", w.Dropped())
+	}
+}
+
+// Хвост больше одной пачки уходит несколькими запросами и в том же порядке.
+func TestWriterSplitsLargeBacklog(t *testing.T) {
+	var got received
+	srv := httptest.NewServer(got.handler(200))
+	defer srv.Close()
+	lines := make([]string, 250)
+	for i := range lines {
+		lines[i] = "line-" + strconv.Itoa(i) + "\n"
+	}
+	run(t, config(srv.URL), lines...)
+	recs := records(t, &got)
+	if len(recs) != 250 {
+		t.Fatalf("records = %d, want 250", len(recs))
+	}
+	for i, r := range recs {
+		if r != "line-"+strconv.Itoa(i) {
+			t.Fatalf("record %d = %q: order broken", i, r)
+		}
+	}
+	if got.count() < 3 {
+		t.Errorf("requests = %d: 250 records must not fit into fewer than 3 batches of 100", got.count())
 	}
 }
 
