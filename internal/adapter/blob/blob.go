@@ -79,9 +79,23 @@ type Purger interface {
 }
 
 // ValidPurgePrefix refuses a prefix that could reach beyond one person: пустой,
-// корень, одна ступень (`users/`), без окончания и с неверным ключом.
-// ponytail: stub, filled in by the next commit.
-func ValidPurgePrefix(prefix string) error { return nil }
+// корень, одна ступень (`users/`), без «/» или «.» на конце и с неверным
+// ключом. «/» берет дерево (`users/a/`), «.» — один файл (`auth/seen/a.`):
+// имя человека не содержит ни «/», ни «.», поэтому `users/a/` не задевает
+// `users/a-b/`, а `auth/seen/a.` — `auth/seen/ab.json`.
+func ValidPurgePrefix(prefix string) error {
+	body, tree := strings.CutSuffix(prefix, "/")
+	if !tree && !strings.HasSuffix(prefix, ".") {
+		return fmt.Errorf("%w: purge prefix %q must end with / or .", ErrInvalidKey, prefix)
+	}
+	if err := ValidKey(body); err != nil {
+		return err
+	}
+	if !strings.Contains(body, "/") {
+		return fmt.Errorf("%w: purge prefix %q is one level deep", ErrInvalidKey, prefix)
+	}
+	return nil
+}
 
 // ValidKey refuses keys that could name something outside their own place:
 // абсолютный путь, сегменты `.` и `..`, пустой сегмент, обратная косая черта

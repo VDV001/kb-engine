@@ -245,5 +245,70 @@ func (s *Store) Delete(_ context.Context, key string) error {
 	return nil
 }
 
-// Purge removes every file under prefix (stub, filled in by the next commit).
-func (s *Store) Purge(_ context.Context, prefix string) (int, error) { return 0, nil }
+// Purge removes every file under prefix (blob.Purger): «users/a/» — дерево,
+// «auth/seen/a.» — файлы, имя которых начинается с «a.». Опустевшие каталоги
+// уходят вместе с файлами. Версий на диске нет, поэтому уходит все.
+func (s *Store) Purge(ctx context.Context, prefix string) (int, error) {
+	if err := blob.ValidPurgePrefix(prefix); err != nil {
+		return 0, err
+	}
+	body, tree := strings.CutSuffix(prefix, "/")
+	target := s.path(body)
+	removed := 0
+	err := filelock.WithContext(ctx, filepath.Join(s.root, strings.TrimSuffix(LockName, filelock.Suffix)), func() error {
+		if tree {
+			// Файл с таким именем не под префиксом «users/a/»: только каталог.
+			if fi, err := os.Lstat(target); err != nil || !fi.IsDir() {
+				return nil
+			}
+			n, err := removeCounting(target)
+			removed = n
+			s.pruneEmpty(filepath.Dir(target))
+			return err
+		}
+		dir, base := filepath.Split(target)
+		entries, err := os.ReadDir(dir)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		for _, e := range entries {
+			if !strings.HasPrefix(e.Name(), base) {
+				continue
+			}
+			n, err := removeCounting(filepath.Join(dir, e.Name()))
+			removed += n
+			if err != nil {
+				return err
+			}
+		}
+		s.pruneEmpty(filepath.Clean(dir))
+		return nil
+	})
+	return removed, err
+}
+
+// removeCounting removes a file or a directory with its content and returns
+// how many files went.
+func removeCounting(path string) (int, error) {
+	n := 0
+	_ = filepath.WalkDir(path, func(_ string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			n++
+		}
+		return nil
+	})
+	return n, os.RemoveAll(path)
+}
+
+// pruneEmpty removes dir and its parents while they are empty, never the root.
+func (s *Store) pruneEmpty(dir string) {
+	for dir != s.root && strings.HasPrefix(dir, s.root+string(filepath.Separator)) {
+		if os.Remove(dir) != nil { // не пуст — стоп
+			return
+		}
+		dir = filepath.Dir(dir)
+	}
+}
