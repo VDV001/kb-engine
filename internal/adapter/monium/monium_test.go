@@ -264,3 +264,37 @@ func TestNewRefusesIncompleteConfig(t *testing.T) {
 		})
 	}
 }
+
+// Остановка не должна зависеть от Monium: у контейнера на выход считанные секунды (ревью #696).
+func TestWriterStopIsBoundedWhenMoniumHangs(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
+	defer srv.Close()
+	defer close(release)
+	cfg := config(srv.URL)
+	cfg.FlushTimeout = 300 * time.Millisecond
+	w, err := monium.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 250 { // три пачки по 100: без общего срока это 3 запроса по sendTimeout
+		_, _ = w.Write([]byte("boom\n"))
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() { defer close(done); w.Run(ctx) }()
+	time.Sleep(50 * time.Millisecond) // первая пачка уже ушла и зависла на сервере
+	start := time.Now()
+	cancel()
+	select {
+	case <-done:
+		if d := time.Since(start); d > 2*time.Second {
+			t.Errorf("Run took %v to stop", d)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run did not stop within 3 s: the flush has no overall deadline")
+	}
+	if w.Dropped() == 0 {
+		t.Error("lines left in the queue were not counted as dropped")
+	}
+}

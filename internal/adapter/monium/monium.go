@@ -41,6 +41,8 @@ type Config struct {
 	Client   *http.Client // nil — клиент с таймаутом sendTimeout
 	Now      func() time.Time
 	Queue    int // 0 — DefaultQueue
+	// FlushTimeout bounds the whole send of what is left when Run stops; 0 — 8 s.
+	FlushTimeout time.Duration
 }
 
 type record struct {
