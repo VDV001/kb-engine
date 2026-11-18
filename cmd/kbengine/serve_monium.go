@@ -52,7 +52,7 @@ func startMonium(getenv func(string) string, stderr io.Writer) (io.Writer, func(
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { defer close(done); mon.Run(ctx) }()
-	out := io.MultiWriter(stderr, mon)
+	out := io.MultiWriter(mon, stderr) // mon первым: он не возвращает ошибок, и сбой stderr не отнимает строку у Monium
 	log.SetOutput(out)
 	return out, func() { cancel(); <-done }, nil
 }

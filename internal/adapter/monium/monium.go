@@ -1,4 +1,5 @@
-// Package monium ships the server's error lines to Monium over OTLP JSON (#440).
+// Package monium ships the server's stderr lines to Monium over OTLP JSON (#440): every
+// line goes as ERROR, because the server writes only errors and warnings there.
 // Cloud Logging is closed to new clients (22.10.2026) and the container's stdout
 // never reaches Monium on its own, so the server sends its errors itself.
 package monium

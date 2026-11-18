@@ -42,7 +42,7 @@ KB_PUSH_CONTACT="${KB_PUSH_CONTACT:-}"
 KB_MONIUM_PROJECT="${KB_MONIUM_PROJECT:-}"
 KB_MONIUM_SECRET="${KB_MONIUM_SECRET:-}"
 [[ -n "$KB_MONIUM_PROJECT" && -n "$KB_MONIUM_SECRET" || -z "$KB_MONIUM_PROJECT" && -z "$KB_MONIUM_SECRET" ]] || { echo "KB_MONIUM_PROJECT и KB_MONIUM_SECRET задаются вместе" >&2; exit 2; }
-[[ "$KB_MONIUM_PROJECT" != *,* ]] || { echo "KB_MONIUM_PROJECT: без запятых" >&2; exit 2; }
+[[ "$KB_MONIUM_PROJECT$KB_MONIUM_SECRET" != *,* ]] || { echo "KB_MONIUM_PROJECT и KB_MONIUM_SECRET: без запятых" >&2; exit 2; }
 registry=kb-engine sa=kb-server key=kb-bucket container=kb-server
 say() { printf '%s\n' "$*" >&2; }
 die() { say "✘ $*"; exit 1; }
