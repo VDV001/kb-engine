@@ -2075,26 +2075,26 @@ body:not(.no-mk-spark) .mk-legend i.fc { border-image: linear-gradient(90deg, va
 @keyframes upd-run { to { background-position: -300% 0; } }
 @keyframes upd-bob { 50% { transform: translateY(2px); } }
 #update-cell.hot { background: none; }
-#update-cell.hot #update-btn { background: linear-gradient(100deg, var(--z-sp1), var(--z-sp2), var(--z-sp3), var(--z-sp4), var(--z-sp5), var(--z-sp6), var(--z-sp1)); background-size: 300% 100%; animation: upd-run 5s linear infinite; color: #10131a; font-weight: 600; border-radius: 6px; padding: 5px 12px; margin: 0 6px; box-shadow: 0 0 0 0 var(--z-sp5); }
+#update-cell.hot #update-btn { background: linear-gradient(100deg, var(--z-sp1), var(--z-sp2), var(--z-sp3), var(--z-sp4), var(--z-sp5), var(--z-sp6), var(--z-sp1)); background-size: 300% 100%; animation: upd-run 5s linear infinite; color: #10131a; font-weight: 600; border-radius: var(--z-radius); padding: 5px 12px; margin: 0 6px; box-shadow: 0 0 0 0 var(--z-sp5); }
 #update-cell.hot #update-btn svg { stroke: #10131a; stroke-width: 2; animation: upd-bob 1.2s ease-in-out infinite; }
 #update-cell.hot #update-btn:hover { filter: brightness(1.08); }
 #update-cell.hot #update-btn:disabled { animation-play-state: paused; opacity: .8; }
-.upd-run { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; cursor: pointer; font: 600 12px var(--z-font); color: #10131a; padding: 8px 14px; border-radius: 6px; background: linear-gradient(100deg, var(--z-sp1), var(--z-sp2), var(--z-sp3), var(--z-sp4), var(--z-sp5), var(--z-sp6), var(--z-sp1)); background-size: 300% 100%; animation: upd-run 5s linear infinite; }
+.upd-run { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; cursor: pointer; font: 600 12px var(--z-font); color: #10131a; padding: 8px 14px; border-radius: var(--z-radius); background: linear-gradient(100deg, var(--z-sp1), var(--z-sp2), var(--z-sp3), var(--z-sp4), var(--z-sp5), var(--z-sp6), var(--z-sp1)); background-size: 300% 100%; animation: upd-run 5s linear infinite; }
 .upd-run svg { width: 14px; height: 14px; fill: none; stroke: #10131a; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .upd-run:hover { filter: brightness(1.08); }
 .upd-run:disabled { opacity: .7; cursor: default; animation-play-state: paused; }
 @media (prefers-reduced-motion: reduce) { #update-cell.hot #update-btn, .upd-run { animation: none; } #update-cell.hot #update-btn svg { animation: none; } }
 .settings-ver { margin-top: auto; padding: 12px 6px 4px; display: flex; flex-direction: column; gap: 8px; font: 11px var(--z-font); color: var(--z-muted); }
-.settings-ver .upd-run { width: 100%; padding: 8px 12px; justify-content: flex-start; text-align: left; }
-.settings-ver .upd-run-t { display: grid; gap: 1px; line-height: 1.25; white-space: nowrap; }
+.settings-ver .upd-run { width: 100%; padding: 8px 12px; }
+.settings-ver .upd-run-t { display: flex; align-items: baseline; gap: 5px; white-space: nowrap; }
 .settings-ver .upd-run-t b { font-size: 13px; }
-.settings-ver .upd-run-t small { font: 500 11px var(--z-font); opacity: .8; }
+.settings-ver .upd-run-t small { font: 500 12px var(--z-font); }
 .settings-ver .sv-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .settings-ver .sv-row b { color: var(--z-ink); font-weight: 500; font-size: 12px; }
 .settings-ver .sv-build { color: var(--z-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .upd-dlg { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: #0008; }
 .upd-dlg[hidden] { display: none; }
-.upd-card { width: min(460px, calc(100% - 32px)); background: var(--z-bg); border: 1px solid var(--z-rule-2); border-radius: 10px; padding: 20px 22px 16px; box-shadow: 0 16px 48px #0008; font: 13px/1.5 var(--z-font); color: var(--z-ink-2); }
+.upd-card { width: min(460px, calc(100% - 32px)); background: var(--z-bg); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 20px 22px 16px; box-shadow: 0 16px 48px #0008; font: 13px/1.5 var(--z-font); color: var(--z-ink-2); }
 .upd-card h3 { margin: 0 0 4px; font: 600 15px var(--z-font); color: var(--z-ink); }
 .upd-ver { margin: 0 0 10px; color: var(--z-ink); }
 .upd-ver b { font-weight: 600; background: var(--sp-all); -webkit-background-clip: text; background-clip: text; color: transparent; }
