@@ -8,6 +8,10 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+### Fixed
+- Плашка «обновить до …», кнопка «Обновить» и карточка диалога обновления
+  скруглены общим радиусом окна (`--z-radius`), а не своими 6 и 10 пикселями.
+
 ## [0.41.4] — 2026-11-18
 
 ### Changed
