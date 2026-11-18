@@ -87,7 +87,9 @@ BUCKET=<бакет> YC=~/yandex-cloud/bin/yc deploy/yandex/deploy.sh --verify  #
   секретом Lockbox `KB_MONIUM_SECRET` (ключ `api_key`, переменная `KB_MONIUM_API_KEY`) всё, что
   идет в stderr, уходит в Monium по OTLP на `ingest.monium.yandex.cloud` (запись 4,40 ₽ за ГБ,
   хранение бесплатно, 31 день). Без пары переменных отправка выключена, как и раньше. Сбой
-  Monium сервер не замечает: очередь ограничена, лишнее отбрасывается, повторов нет.
+  Monium сервер не замечает: очередь ограничена, лишнее отбрасывается, повторов нет; число
+  недоставленных строк видно во второй строке `/healthz` (`log-dropped: N`), а при старте в
+  Monium приходит маркер `logs are shipped to Monium`.
 
 Проверка функции без алерта: `TG_CHAT=<id> deploy/yandex/healthcheck.sh --verify` — живой сервер,
 `ok: true`, сообщений нет. Новая версия функции всегда получает тег `$latest`, даже с `--tags test`:

@@ -153,6 +153,11 @@ verify() {
     else
       say "· вход своим токеном не проверен: PROBE_TOKEN_FILE не задан"
     fi
+    # Отправка ошибок в Monium включена — /healthz называет число строк, что не дошли (#697).
+    if [[ -n "$KB_MONIUM_PROJECT" ]]; then
+      hz="$(curl -s --max-time 30 "${url%/}/healthz" || true)"
+      check "healthz называет потери логов (log-dropped)" 'grep -q "^log-dropped: [0-9]" <<<"$hz"'
+    fi
     # Страница телефона и подтверждение приложения Android — без токена (#622).
     code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "${url%/}/m/" || true)"
     check "страница телефона /m/ — 200 (было $code)" '[[ "$code" == 200 ]]'

@@ -45,6 +45,8 @@ type tenantOption func(*pushConfig)
 type pushConfig struct {
 	contact   string            // KB_PUSH_CONTACT: mailto: или https: для VAPID; пусто — push выключен
 	transport http.RoundTripper // nil — http.DefaultTransport
+	// logDropped — сколько строк журнала не дошло до Monium; nil — отправка выключена (#697).
+	logDropped func() uint64
 }
 
 // pushContactFromEnv reads KB_PUSH_CONTACT; неверный — ошибка с именем переменной.
@@ -60,7 +62,7 @@ func pushContactFromEnv() (string, error) {
 }
 
 // withLogDropped adds how many log lines never reached Monium to /healthz (#697).
-func withLogDropped(f func() uint64) tenantOption { return func(*pushConfig) {} }
+func withLogDropped(f func() uint64) tenantOption { return func(c *pushConfig) { c.logDropped = f } }
 
 // withPush replaces the push contact and transport (tests).
 func withPush(contact string, rt http.RoundTripper) tenantOption {
@@ -99,6 +101,7 @@ func tenantsHandler(ctx context.Context, store blob.Store, stderr io.Writer, opt
 		// сервера; не задано — 404, как без приложения.
 		assetLinks: phonepage.AssetLinks(os.Getenv("KB_ANDROID_APP")),
 		now:        time.Now,
+		logDropped: cfg.logDropped,
 		mail:       httpapi.MailHandler(svc, logf),
 	}
 }
@@ -129,6 +132,8 @@ type tenants struct {
 	mail   http.Handler
 	// phonePage — страница телефона /m/ (#622).
 	phonePage http.Handler
+	// logDropped — для /healthz: сколько строк журнала не дошло до Monium; nil — не показывать.
+	logDropped func() uint64
 	// assetLinks — /.well-known/assetlinks.json приложения Android (#622).
 	assetLinks http.Handler
 
@@ -173,7 +178,13 @@ func (t *tenants) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// в Kubernetes перезапускался бы по кругу (как в httpapi.RequireBearer).
 	switch r.URL.Path {
 	case "/healthz":
+		// Первая строка всегда «ok»: проба и UptimeRobot смотрят на код и слово. Вторая —
+		// одно число, и только при включенной отправке: если Monium недоступен, больше
+		// этого не увидит никто (#697).
 		_, _ = io.WriteString(w, "ok\n")
+		if t.logDropped != nil {
+			fmt.Fprintf(w, "log-dropped: %d\n", t.logDropped())
+		}
 		return
 	case "/readyz":
 		_, _ = io.WriteString(w, "ready\n")
@@ -434,13 +445,13 @@ func runServeTenants(location, s3TokenFile, addr, pprofAddr, tlsCert, tlsKey str
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 2
 	}
-	errOut, stopMonium, err := startMonium(os.Getenv, stderr)
+	mon, err := startMonium(os.Getenv, stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 2
 	}
-	defer stopMonium()
-	h := tenantsHandler(context.Background(), store, errOut)
+	defer mon.stop()
+	h := tenantsHandler(context.Background(), store, mon.out, mon.tenantOptions()...)
 	srv := newServeServer(addr, h, "", tlsCfg)
 	fmt.Fprintf(stdout, "kbengine: serving people's bases on %s (tenants %s; tokens %s, TLS %s)\n", addr, location, userauth.RegistryKey, onOff(tlsCfg != nil))
 	startPprof(pprofAddr, stdout, stderr)
