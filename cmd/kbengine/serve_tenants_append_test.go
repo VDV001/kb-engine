@@ -159,3 +159,32 @@ func TestAppendScopeRateLimit(t *testing.T) {
 		}
 	}
 }
+
+// Обходы через свертку регистра ключей (ревью #705): encoding/json читает "URL" и "ſource"
+// (U+017F) как url и source, поэтому проверка точного ключа их пропускала.
+func TestAppendScopeFoldedKeysDoNotBypass(t *testing.T) {
+	f := newTenants(t)
+	setAlphaScope(t, f, domain.ScopeAppend)
+
+	for _, key := range []string{"URL", "Url", "uRl"} {
+		rec := do(f.h, http.MethodPost, "/api/entries",
+			`{"title":"x","category":"golang","`+key+`":"javascript:alert(1)","verdict":"keep"}`, f.tokA)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("key %q with a javascript: address: %d, want 400", key, rec.Code)
+		}
+	}
+	if rec := do(f.h, http.MethodPost, "/api/entries",
+		`{"title":"x","category":"golang","url":" https://h/space","verdict":"keep"}`, f.tokA); rec.Code != http.StatusBadRequest {
+		t.Errorf("an address with a leading space: %d, want 400", rec.Code)
+	}
+
+	for i, key := range []string{"Source", "SOURCE", "ſource", "sourcE"} {
+		body := fmt.Sprintf(`{"title":"fold%d","category":"golang","url":"https://h/fold%d","verdict":"keep","%s":"bot-inbox"}`, i, i, key)
+		if rec := do(f.h, http.MethodPost, "/api/entries", body, f.tokA); rec.Code != http.StatusCreated && rec.Code != http.StatusBadRequest {
+			t.Fatalf("key %q: %d %s", key, rec.Code, rec.Body.String())
+		}
+	}
+	if body := readable(t, get(f.h, "/api/entries", f.tokA)); strings.Contains(body, "bot-inbox") {
+		t.Errorf("a folded source key got through: %s", body)
+	}
+}
