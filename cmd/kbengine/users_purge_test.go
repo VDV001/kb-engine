@@ -223,7 +223,7 @@ func (l *lateWriter) Purge(ctx context.Context, prefix string) (int, error) {
 	n, err := l.Store.Purge(ctx, prefix)
 	if prefix == "users/anna/" && !l.done {
 		l.done = true
-		_, _ = l.Store.Put(ctx, "users/anna/kb/late.md", []byte("late"), "")
+		_, _ = l.Put(ctx, "users/anna/kb/late.md", []byte("late"), "")
 	}
 	return n, err
 }

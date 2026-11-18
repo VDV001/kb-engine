@@ -94,7 +94,7 @@ func usersTarget(sub string, args []string, stderr io.Writer) (*usersTargetOf, i
 	var wait *time.Duration
 	if sub == "purge" {
 		confirm = fs.String("confirm", "", "the same name again: the removal cannot be undone")
-		wait = fs.Duration("wait", userauth.RefreshEvery+10*time.Second, "pause between the revoke and the removal, so other server instances stop admitting the token")
+		wait = fs.Duration("wait", userauth.MaxStale+10*time.Second, "pause between the revoke and the removal, so every server instance stops admitting the token (a failed registry read keeps the old list for MaxStale)")
 	}
 	if code, stop := parseFlags(fs, args); stop {
 		return nil, code
@@ -112,6 +112,10 @@ func usersTarget(sub string, args []string, stderr io.Writer) (*usersTargetOf, i
 	if sub == "purge" {
 		if *confirm != id.String() {
 			fmt.Fprintf(stderr, "users purge: --confirm <имя> обязателен и равен --id: удаление необратимо\n")
+			return nil, 2
+		}
+		if *wait < 0 {
+			fmt.Fprintf(stderr, "users purge: --wait не может быть отрицательным\n")
 			return nil, 2
 		}
 		tg.confirm, tg.wait = *confirm, *wait
@@ -251,7 +255,7 @@ func usersPurge(tg *usersTargetOf, stderr io.Writer) int {
 	} else {
 		fmt.Fprintf(stderr, "users purge: вход %s закрыт\n", tg.id)
 	}
-	if registered && tg.wait > 0 {
+	if tg.wait > 0 { // и при повторе: отозвать второй раз нечем, но экземпляры могли еще не узнать
 		fmt.Fprintf(stderr, "users purge: жду %s, пока все экземпляры сервера узнают об отзыве\n", tg.wait)
 		if err := usersPurgeSleep(ctx, tg.wait); err != nil {
 			fmt.Fprintf(stderr, "users purge: прервано (%v): вход закрыт, данные целы; повтори kbengine users purge --tenants %s --id %s --confirm %s\n", err, shellQuote(tg.loc), tg.id, tg.id)
@@ -263,11 +267,21 @@ func usersPurge(tg *usersTargetOf, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "users purge: %v; уже удалено: база %d, файлы ящика %d, входы телефонов %d; повтор безопасен\n", err, rep.Base, rep.Mail, rep.Seen)
 		return 1
 	}
+	// Второй проход: запрос, впущенный до того, как экземпляр узнал об отзыве,
+	// мог записать уже после удаления.
+	if late, err := userauth.Purge(ctx, tg.store, tg.id); err != nil {
+		fmt.Fprintf(stderr, "users purge: проверка после удаления: %v; повтори команду\n", err)
+		return 1
+	} else if late != (userauth.PurgeReport{}) {
+		fmt.Fprintf(stderr, "users purge: после удаления появились записи (база %d, ящик %d, входы %d), они убраны; отчет ниже неполон, повтори команду еще раз и проверь, что список пуст\n", late.Base, late.Mail, late.Seen)
+		return 1
+	}
 	if !registered && rep == (userauth.PurgeReport{}) {
 		fmt.Fprintf(stderr, "users purge: %s нет ни в реестре, ни в хранилище: опечатка в имени?\n", tg.id)
 		return 1
 	}
 	fmt.Fprintf(stderr, "users purge: %s удален: база %d, файлы ящика %d, входы телефонов %d (объекты со всеми версиями)\n", tg.id, rep.Base, rep.Mail, rep.Seen)
+	fmt.Fprintf(stderr, "users purge: логи сервера в Monium (ошибки, без тел запросов и токенов) не удаляются, они живут по сроку хранения Monium\n")
 	fmt.Fprintf(stderr, "users purge: имя и хэш токена еще 30 дней лежат в старых версиях общих реестров auth/*.json: файлы общие, версии по одной не вычистить, не задев чужих\n")
 	return 0
 }

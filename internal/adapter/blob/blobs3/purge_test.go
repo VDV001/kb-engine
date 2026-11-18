@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -366,4 +367,61 @@ func TestLiveYandexPurge(t *testing.T) {
 		}
 		return s
 	})
+}
+
+// Главное свойство Purge на живом бакете: после перезаписи и метки удаления
+// под префиксом не остается ни версий, ни меток. Контракт RunPurger этого не
+// видит (Purge на метках тоже «уносит» ключ из Get), поэтому список версий
+// читается напрямую.
+func TestLiveYandexPurgeLeavesNoVersionsOrMarkers(t *testing.T) {
+	bkt, tokFile := os.Getenv("KB_BLOB_LIVE_BUCKET"), os.Getenv("KB_BLOB_LIVE_TOKEN_FILE")
+	if bkt == "" || tokFile == "" {
+		t.Skip("KB_BLOB_LIVE_BUCKET / KB_BLOB_LIVE_TOKEN_FILE not set")
+	}
+	raw, err := os.ReadFile(tokFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok := strings.TrimSpace(string(raw))
+	prefix := fmt.Sprintf("test/purge-%s/versions/", rand.Text()[:12])
+	s, err := blobs3.New(blobs3.Config{Endpoint: blobs3.YandexEndpoint, Bucket: bkt, Token: blobs3.StaticToken(tok), Prefix: prefix})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	etag, err := s.Put(ctx, "users/a/kb/x", []byte("v1"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Put(ctx, "users/a/kb/x", []byte("v2"), etag); err != nil { // вторая версия
+		t.Fatal(err)
+	}
+	if _, err := s.Put(ctx, "users/a/mail/f", []byte("m"), ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete(ctx, "users/a/mail/f"); err != nil { // метка удаления
+		t.Fatal(err)
+	}
+	if n, err := s.Purge(ctx, "users/a/"); err != nil || n != 2 {
+		t.Fatalf("Purge = %d, %v; want 2 keys, nil", n, err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		blobs3.YandexEndpoint+"/"+bkt+"/?versions&prefix="+prefix+"users/a/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+tok)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list versions: %d", resp.StatusCode)
+	}
+	// «<Version[ >]», а не «<Version»: в шапке ответа есть <VersionIdMarker>.
+	if left := regexp.MustCompile(`<(?:Version|DeleteMarker)[ >]`).FindAllString(string(body), -1); len(left) != 0 {
+		t.Errorf("%d versions or markers left after Purge: %s", len(left), body)
+	}
 }

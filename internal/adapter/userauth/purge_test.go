@@ -221,7 +221,14 @@ func TestRevokeAndPurgeFinishWhatAHalfDoneRevokeLeft(t *testing.T) {
 	if got := pushOwners(t, s); len(got) != 0 {
 		t.Errorf("push left after Revoke: %v", got)
 	}
+	if seen, err := (&userauth.Visits{Store: s}).Seen(ctx, anna); err != nil || len(seen) != 0 {
+		t.Errorf("phone visits left after Revoke: %v, %v", seen, err)
+	}
+	// Purge такого человека не врет «удален»: файл входов уходит с остальным.
+	if _, err := userauth.Purge(ctx, s, anna); err != nil {
+		t.Fatal(err)
+	}
 	if exists(t, s, userauth.SeenKey(anna)) {
-		t.Error("phone visits left after Revoke")
+		t.Error("visits file survived Purge")
 	}
 }

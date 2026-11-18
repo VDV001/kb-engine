@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -78,21 +79,23 @@ type Purger interface {
 	Purge(ctx context.Context, prefix string) (int, error)
 }
 
-// ValidPurgePrefix refuses a prefix that could reach beyond one person: пустой,
-// корень, одна ступень (`users/`), без «/» или «.» на конце и с неверным
-// ключом. «/» берет дерево (`users/a/`), «.» — один файл (`auth/seen/a.`):
-// имя человека не содержит ни «/», ни «.», поэтому `users/a/` не задевает
+// purgePrefix is every prefix Purge accepts: the tree of one person
+// (`users/<id>/`, `mailfiles/users/<id>/`) or the file of one person
+// (`auth/seen/<id>.`). Имя — как у domain.UserID: a-z, 0-9, дефис не по краям,
+// до 32 знаков; ни «/», ни «.» в нем нет, поэтому `users/a/` не задевает
 // `users/a-b/`, а `auth/seen/a.` — `auth/seen/ab.json`.
+var purgePrefix = regexp.MustCompile(`^(?:(?:users|mailfiles/users)/[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?/|auth/seen/[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?\.)$`)
+
+// ValidPurgePrefix refuses everything but the places of one person: широкий
+// префикс (`mailfiles/users/`, `auth/seen/`), общий реестр (`auth/users.`),
+// корень и чужой каталог снимали бы чужих людей или весь сервер, поэтому
+// список разрешенных форм закрыт, а не «кроме перечисленного».
 func ValidPurgePrefix(prefix string) error {
-	body, tree := strings.CutSuffix(prefix, "/")
-	if !tree && !strings.HasSuffix(prefix, ".") {
-		return fmt.Errorf("%w: purge prefix %q must end with a slash or a dot", ErrInvalidKey, prefix)
-	}
-	if err := ValidKey(body); err != nil {
+	if err := ValidKey(strings.TrimSuffix(prefix, "/")); err != nil {
 		return err
 	}
-	if !strings.Contains(body, "/") {
-		return fmt.Errorf("%w: purge prefix %q is one level deep", ErrInvalidKey, prefix)
+	if !purgePrefix.MatchString(prefix) {
+		return fmt.Errorf("%w: purge prefix %q is not the place of one person", ErrInvalidKey, prefix)
 	}
 	return nil
 }
