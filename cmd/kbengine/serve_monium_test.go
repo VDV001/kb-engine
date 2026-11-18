@@ -2,12 +2,15 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestMoniumFromEnv(t *testing.T) {
@@ -79,4 +82,24 @@ func TestStartMonium(t *testing.T) {
 			t.Errorf("stderr lost lines: %q", got)
 		}
 	})
+}
+
+// По SIGTERM платформа ждет считанные секунды: сервер обязан вернуться из serve,
+// иначе отложенная досылка очереди Monium не выполнится (ревью #696).
+func TestListenAndServeUntilStopsOnContext(t *testing.T) {
+	srv := &http.Server{Addr: "127.0.0.1:0", Handler: http.NotFoundHandler()}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- listenAndServeUntil(ctx, srv) }()
+	time.Sleep(100 * time.Millisecond) // дать серверу подняться
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("stop by context is not an error, got %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		_ = srv.Close() // чтобы горутина не осталась
+		t.Fatal("server kept running after the context ended")
+	}
 }

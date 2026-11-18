@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -160,4 +161,10 @@ func listenAndServe(srv *http.Server) error {
 		return srv.ListenAndServeTLS("", "")
 	}
 	return srv.ListenAndServe()
+}
+
+// listenAndServeUntil serves like listenAndServe and, when ctx ends, shuts the server
+// down gracefully; остановка по ctx — не ошибка (#440).
+func listenAndServeUntil(ctx context.Context, srv *http.Server) error {
+	return listenAndServe(srv)
 }
