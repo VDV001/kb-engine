@@ -52,5 +52,5 @@ export const APPEND_SOURCE = 'api-append'
 // Теги карточки шпаргалки для показа: сам признак «cheatsheet» не повторяется,
 // он и так объясняет, почему запись на вкладке.
 export function cardTagsOf(e: Pick<Entry, 'tags'>): string[] {
-  return (e.tags ?? []).filter((t) => t !== CHEATSHEET_TAG)
+  return [...new Set(e.tags ?? [])].filter((t) => t !== CHEATSHEET_TAG)
 }

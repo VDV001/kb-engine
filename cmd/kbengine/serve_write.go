@@ -83,9 +83,6 @@ func (s storeCatalogWriter) AddEntry(ctx context.Context, a httpapi.EntryAdd) (h
 		if err != nil {
 			return nil, err
 		}
-		if a.Source == appendSource && appendedEntries(cat) >= maxAppendEntries {
-			return nil, fmt.Errorf("%w: append tokens have added %d entries, the most allowed; the owner clears the quota", httpapi.ErrQuota, maxAppendEntries)
-		}
 		added, rep, err := ingest.Plan(cat, []domain.EntryParams{params}, s.now())
 		if err != nil {
 			return nil, refusal(err)
@@ -93,6 +90,11 @@ func (s storeCatalogWriter) AddEntry(ctx context.Context, a httpapi.EntryAdd) (h
 		if rep.Added == 0 {
 			out = alreadyThere(cat, a)
 			return nil, errNothingToWrite
+		}
+		// Предел - после разбора и дедупа: повтор лежащего адреса и кривая запись получают свои
+		// ответы (200 «уже есть», 400), а не 403 (ревью #718).
+		if a.Source == appendSource && appendedEntries(cat) >= maxAppendEntries {
+			return nil, fmt.Errorf("%w: append tokens have added %d entries, the most allowed; the owner clears the quota", httpapi.ErrQuota, maxAppendEntries)
 		}
 		out = httpapi.AddedEntry{ID: added[0].ID(), Title: added[0].Title(), CategoryUnchecked: rep.CategoriesUnchecked}
 		return catalogjson.AppendEntriesDoc(raw, added)
