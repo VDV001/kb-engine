@@ -205,3 +205,33 @@ func TestAppendScopeRequiresURL(t *testing.T) {
 		}
 	}
 }
+
+// Предел записей, добавленных токенами append (#711): частота ограничена (1/с,
+// всплеск 30), а общее число нет, и телефон без присмотра мог бы раздуть каталог,
+// который каждое добавление переписывает целиком. Считаются только записи с
+// source=api-append: полный токен соседа и ручные записи предел не едят.
+func TestAppendScopeStopsAtTheQuota(t *testing.T) {
+	old := maxAppendEntries
+	maxAppendEntries = 2
+	t.Cleanup(func() { maxAppendEntries = old })
+	f := newTenants(t)
+	setAlphaScope(t, f, domain.ScopeAppend)
+	add := func(token, n string) int {
+		return do(f.h, http.MethodPost, "/api/entries",
+			`{"title":"quota `+n+`","category":"golang","url":"https://h/quota/`+n+`","verdict":"keep"}`, token).Code
+	}
+	if code := add(f.tokB, "full"); code != http.StatusCreated {
+		t.Fatalf("the full token's add: %d", code)
+	}
+	for _, n := range []string{"one", "two"} {
+		if code := add(f.tokA, n); code != http.StatusCreated {
+			t.Fatalf("append add %s: %d", n, code)
+		}
+	}
+	if code := add(f.tokA, "three"); code != http.StatusForbidden {
+		t.Errorf("append add over the quota: %d, want 403", code)
+	}
+	if code := add(f.tokB, "full-again"); code != http.StatusCreated {
+		t.Errorf("the full token stopped by the append quota: %d", code)
+	}
+}

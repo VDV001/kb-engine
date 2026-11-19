@@ -53,6 +53,9 @@ func addParams(a httpapi.EntryAdd) (domain.EntryParams, error) {
 	return params, nil
 }
 
+// maxAppendEntries is how many entries append tokens may have added in total (#711).
+var maxAppendEntries = 1000
+
 func (s storeCatalogWriter) AddEntry(ctx context.Context, a httpapi.EntryAdd) (httpapi.AddedEntry, error) {
 	params, err := addParams(a)
 	if err != nil {
