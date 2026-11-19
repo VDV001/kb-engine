@@ -158,3 +158,23 @@ type tooLongKeychain struct{ fakeKeychain }
 
 func (tooLongKeychain) Has(string) (bool, error) { return false, nil }
 func (tooLongKeychain) Set(string, string) error { return keychain.ErrTooLong }
+
+// Ревью #714: ключ без адреса и хоста заводится из терминала флагом --kind key,
+// а find показывает, что это ключ: название стоит в колонке логина, роли у ключа нет.
+func TestCreds_addKeyWithoutAddress(t *testing.T) {
+	file, kc, _ := credsEnv(t)
+	code, out, errs := credsRun(t, secret+"\n", "add", "--file", file, "--kind", "key", "--product", "Мой склад", "--env", "прод", "--login", "read-only", "--rights", "чтение")
+	if code != 0 || !strings.Contains(out, "moi-sklad-prod-key-read-only") {
+		t.Fatalf("add key: %d %q %q", code, out, errs)
+	}
+	if kc["moi-sklad-prod-key-read-only"] != secret {
+		t.Fatalf("в Связке: %v", kc)
+	}
+	code, out, errs = credsRun(t, "", "find", "--file", file, "склад")
+	if code != 0 || !strings.Contains(out, "read-only") || !strings.Contains(out, "ключ") {
+		t.Fatalf("find: %d %q %q", code, out, errs)
+	}
+	if code, _, errs := credsRun(t, secret+"\n", "add", "--file", file, "--kind", "token", "--product", "p", "--env", "dev", "--login", "l", "--host", "h"); code == 0 || !strings.Contains(errs, "вид") {
+		t.Errorf("незнакомый вид принят: %d %q", code, errs)
+	}
+}
