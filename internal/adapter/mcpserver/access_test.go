@@ -121,3 +121,23 @@ func TestServer_searchAccess_noteIsNotSearchable(t *testing.T) {
 		t.Fatalf("фрагмент заметки нашелся: %s", raw)
 	}
 }
+
+// Ревью #714: агент отличает ключ от учетки по полю kind, а не по догадке, что
+// «логин» без адреса - это название ключа; секрета и заметки у ключа нет, как у учетки.
+func TestServer_searchAccess_kind(t *testing.T) {
+	key, err := domain.NewCredential(domain.CredentialDTO{Kind: domain.KindKey, Product: "Склад-Про", Env: domain.EnvProd, Login: "read-only", Rights: "чтение", Note: notePassword})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs := connectAccess(t, stubAccess{cards: []domain.Credential{accessCard(t), key}})
+	raw, _ := json.Marshal(callTool(t, cs, "search_access", map[string]any{"query": "склад"}))
+	text := string(raw)
+	for _, want := range []string{`kind\":\"account\"`, `kind\":\"key\"`} { // компактный JSON внутри JSON
+		if !strings.Contains(text, want) {
+			t.Errorf("в ответе нет %s: %s", want, text)
+		}
+	}
+	if strings.Contains(text, notePassword) {
+		t.Errorf("заметка ключа в ответе: %s", text)
+	}
+}
