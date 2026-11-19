@@ -20,6 +20,12 @@ func TestNewExternalURL(t *testing.T) {
 		{"без схемы", "habr.com/ru/articles/2/", true},
 		{"без хоста", "https:///path", true},
 		{"пусто", "", true},
+		// #711: схемы, которые выполняются или читают диск по клику, и адрес с учеткой
+		// («trusted.com@evil»: человек читает первый хост, браузер идет на второй).
+		{"javascript", "javascript:alert(1)", true},
+		{"data", "data:text/html,<script>1</script>", true},
+		{"file", "file:///etc/passwd", true},
+		{"userinfo", "https://trusted.com@evil.com/", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := domain.NewExternalURL(tc.raw)
