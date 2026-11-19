@@ -51,5 +51,5 @@ export function opensInBrowser(file?: string): boolean {
 // Теги карточки шпаргалки для показа: сам признак «cheatsheet» не повторяется,
 // он и так объясняет, почему запись на вкладке.
 export function cardTagsOf(e: Pick<Entry, 'tags'>): string[] {
-  return []
+  return (e.tags ?? []).filter((t) => t !== CHEATSHEET_TAG)
 }

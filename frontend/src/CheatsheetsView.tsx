@@ -1,5 +1,5 @@
 import type { Entry } from './api'
-import { artefactHref, cheatsheetsOf, opensInBrowser } from './artefacts'
+import { APPEND_SOURCE, artefactHref, cardTagsOf, cheatsheetsOf, opensInBrowser } from './artefacts'
 import { Card, Section } from './components/ui'
 import { Icon } from './components/Icon'
 
@@ -50,6 +50,18 @@ export function CheatsheetsView({ entries }: { entries: readonly Entry[] }) {
                 {e.description && (
                   <p className="mt-2 line-clamp-3 text-sm text-on-surface-variant">
                     {e.description}
+                  </p>
+                )}
+                {(cardTagsOf(e).length > 0 || e.source === APPEND_SOURCE) && (
+                  <p className="mt-2 flex flex-wrap gap-1.5 text-xs text-on-surface-variant">
+                    {e.source === APPEND_SOURCE && (
+                      <span className="rounded border border-outline-variant px-1.5 py-0.5">добавлено по токену</span>
+                    )}
+                    {cardTagsOf(e).map((t) => (
+                      <span key={t} className="rounded bg-surface-container px-1.5 py-0.5">
+                        {t}
+                      </span>
+                    ))}
                   </p>
                 )}
                 <p className="mt-3 font-label text-[10px] font-semibold tracking-wider text-on-surface-variant uppercase">
