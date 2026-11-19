@@ -232,15 +232,7 @@ func TestScopesAppendIsStoredAndFailsClosed(t *testing.T) {
 // Такой файл битый, а битый файл закрывает запись всем. Контроль: нормальный файл жив.
 func TestScopesHandEditedFileClosesWrites(t *testing.T) {
 	ctx := context.Background()
-	for _, c := range []struct{ name, file string }{
-		{"null", `null`},
-		{"duplicate top key", `{"scopes":[{"id":"alpha","scope":"append"}],"scopes":[]}`},
-		{"duplicate id", `{"scopes":[{"id":"alpha","scope":"read"},{"id":"alpha","scope":"append"}]}`},
-		{"duplicate field in entry", `{"scopes":[{"id":"alpha","id":"beta","scope":"read"}]}`},
-		{"data after the object", `{"scopes":[]} {"scopes":[{"id":"alpha","scope":"read"}]}`},
-		{"stray closing brace", `{"scopes":[]}}`},
-		{"empty file", ``},
-	} {
+	for _, c := range badScopesFiles {
 		s := newStore(t)
 		if _, err := s.Put(ctx, userauth.ScopesKey, []byte(c.file), ""); err != nil {
 			t.Fatal(err)
@@ -263,5 +255,39 @@ func TestScopesHandEditedFileClosesWrites(t *testing.T) {
 	}
 	if !writable(sc, id(t, "anna")) {
 		t.Error("a well-formed file closed the neighbour")
+	}
+}
+
+// badScopesFiles are hand-edited files the server must not read as a list of limits.
+// encoding/json matches field names without regard to case ("ID", "ſcopes" with U+017F).
+var badScopesFiles = []struct{ name, file string }{
+	{"null", `null`},
+	{"duplicate top key", `{"scopes":[{"id":"alpha","scope":"append"}],"scopes":[]}`},
+	{"duplicate id", `{"scopes":[{"id":"alpha","scope":"read"},{"id":"alpha","scope":"append"}]}`},
+	{"duplicate field in entry", `{"scopes":[{"id":"alpha","id":"beta","scope":"read"}]}`},
+	{"data after the object", `{"scopes":[]} {"scopes":[{"id":"alpha","scope":"read"}]}`},
+	{"stray closing brace", `{"scopes":[]}}`},
+	{"empty file", ``},
+	{"top key differs by case", `{"scopes":[],"Scopes":[{"id":"alpha","scope":"read"}]}`},
+	{"entry field differs by case", `{"scopes":[{"id":"alpha","ID":"beta","scope":"read"}]}`},
+	{"key folds through U+017F", `{"scopes":[],"ſcopes":[{"id":"alpha","scope":"read"}]}`},
+	{"repeat after a nested value", `{"scopes":[{"id":"alpha","scope":"read"}],"x":[{"a":1}],"x":2}`},
+}
+
+// SetScope перезаписывает файл целиком: на файле, который читатель считает битым, она
+// молча сняла бы ограничения, которые читатель ради безопасности закрыл (ревью #710).
+func TestSetScopeRefusesABrokenFile(t *testing.T) {
+	ctx := context.Background()
+	for _, c := range badScopesFiles {
+		s := newStore(t)
+		if _, err := s.Put(ctx, userauth.ScopesKey, []byte(c.file), ""); err != nil {
+			t.Fatal(err)
+		}
+		if err := userauth.SetScope(ctx, s, id(t, "bob"), domain.ScopeRead); err == nil {
+			t.Errorf("%s: SetScope rewrote a file the reader rejects", c.name)
+		}
+		if o, err := s.Get(ctx, userauth.ScopesKey); err != nil || string(o.Data) != c.file {
+			t.Errorf("%s: the broken file was changed: %q %v", c.name, o.Data, err)
+		}
 	}
 }
