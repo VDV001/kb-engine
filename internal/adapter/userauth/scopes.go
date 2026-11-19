@@ -172,6 +172,9 @@ func decodeScopes(data []byte) (map[domain.UserID]domain.Scope, error) {
 	// (#704, N4). Поля берутся из того же дерева, второго разбора нет (ревью #710).
 	dec := json.NewDecoder(bytes.NewReader(data))
 	doc, err := readStrict(dec)
+	if errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("%w: the file is empty", errAmbiguousScopes)
+	}
 	if err != nil {
 		return nil, err
 	}
