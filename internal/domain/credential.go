@@ -58,8 +58,10 @@ func (e Env) Risky() bool { return e == EnvProd }
 type CredentialKind string
 
 const (
+	// KindAccount — учетка: логин, пароль, адрес или хост.
 	KindAccount CredentialKind = "account"
-	KindKey     CredentialKind = "key"
+	// KindKey — ключ: название вместо логина, адрес и хост не нужны.
+	KindKey CredentialKind = "key"
 )
 
 // CredentialDTO is a credential card as stored and typed: поля открыты, правила
@@ -90,22 +92,8 @@ func NewCredential(d CredentialDTO) (Credential, error) {
 	for _, f := range []*string{&d.ID, &d.Product, &d.URL, &d.Host, &d.Login, &d.Role, &d.Rights, &d.IssuedBy, &d.Note} {
 		*f = strings.TrimSpace(*f)
 	}
-	switch d.Kind {
-	case "", KindAccount:
-		d.Kind = KindAccount
-	case KindKey:
-	default:
-		return Credential{}, fmt.Errorf("%w: вид %q — учетка или ключ", ErrInvalidCredential, d.Kind)
-	}
-	switch {
-	case d.Product == "":
-		return Credential{}, fmt.Errorf("%w: нет продукта", ErrInvalidCredential)
-	case d.Login == "" && d.Kind == KindKey:
-		return Credential{}, fmt.Errorf("%w: нет названия ключа", ErrInvalidCredential)
-	case d.Login == "":
-		return Credential{}, fmt.Errorf("%w: нет логина", ErrInvalidCredential)
-	case d.URL == "" && d.Host == "" && d.Kind == KindAccount:
-		return Credential{}, fmt.Errorf("%w: нет ни адреса, ни хоста", ErrInvalidCredential)
+	if err := d.checkKind(); err != nil {
+		return Credential{}, err
 	}
 	env, err := ParseEnv(string(d.Env))
 	if err != nil {
@@ -120,6 +108,28 @@ func NewCredential(d CredentialDTO) (Credential, error) {
 		return Credential{}, fmt.Errorf("%w: id %q — латиница, цифры и дефис, до 64 знаков", ErrInvalidCredential, d.ID)
 	}
 	return Credential{d: d}, nil
+}
+
+// checkKind приводит пустой вид к учетке и проверяет поля, обязательные для вида.
+func (d *CredentialDTO) checkKind() error {
+	switch d.Kind {
+	case "", KindAccount:
+		d.Kind = KindAccount
+	case KindKey:
+	default:
+		return fmt.Errorf("%w: вид %q — учетка или ключ", ErrInvalidCredential, d.Kind)
+	}
+	switch {
+	case d.Product == "":
+		return fmt.Errorf("%w: нет продукта", ErrInvalidCredential)
+	case d.Login == "" && d.Kind == KindKey:
+		return fmt.Errorf("%w: нет названия ключа", ErrInvalidCredential)
+	case d.Login == "":
+		return fmt.Errorf("%w: нет логина", ErrInvalidCredential)
+	case d.URL == "" && d.Host == "" && d.Kind == KindAccount:
+		return fmt.Errorf("%w: нет ни адреса, ни хоста", ErrInvalidCredential)
+	}
+	return nil
 }
 
 // Revise returns the card with the details of d. Пустые продукт, среда и логин
