@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/domain"
@@ -33,6 +35,17 @@ type scopeDTO struct {
 // записи пишет, как прежде). Повтор и снятие отсутствующей записи — не ошибка и
 // не запись в хранилище.
 func SetScope(ctx context.Context, s blob.Store, id domain.UserID, scope domain.Scope) error {
+	// Файл, который читатель считает битым, переписывать нельзя: update читает мягко (последний
+	// ключ побеждает) и молча снял бы ограничения, которые читатель закрыл (ревью #710).
+	switch o, err := s.Get(ctx, ScopesKey); {
+	case errors.Is(err, blob.ErrNotFound):
+	case err != nil:
+		return fmt.Errorf("userauth: read %s: %w", ScopesKey, err)
+	default:
+		if _, derr := decodeScopes(o.Data); derr != nil {
+			return fmt.Errorf("userauth: %s is broken, fix or delete it before changing scopes: %w", ScopesKey, derr)
+		}
+	}
 	return update(ctx, s, ScopesKey, func(d *scopesDTO) error {
 		before := slices.Clone(d.Scopes)
 		d.Scopes = slices.DeleteFunc(d.Scopes, func(e scopeDTO) bool { return e.ID == id.String() })
@@ -235,11 +248,24 @@ func (t *keyTracker) key(tok json.Token) (bool, error) {
 	if !top.wantKey || !ok {
 		return false, nil
 	}
-	if top.keys[k] {
+	if f := foldKey(k); top.keys[f] {
 		return false, fmt.Errorf("%w: key %q repeated", errAmbiguousScopes, k)
+	} else {
+		top.keys[f], top.wantKey = true, false
 	}
-	top.keys[k], top.wantKey = true, false
 	return true, nil
+}
+
+// foldKey is the form encoding/json compares field names in: без учета регистра, с
+// Юникод-свёрткой ("ID" и "id", "ſcopes" и "scopes" - одно поле).
+func foldKey(k string) string {
+	return strings.Map(func(r rune) rune {
+		lo := r
+		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+			lo = min(lo, f)
+		}
+		return lo
+	}, k)
 }
 
 // value consumes tok as (part of) a value and reports whether the top-level value ended.
