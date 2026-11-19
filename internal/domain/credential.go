@@ -101,7 +101,7 @@ func NewCredential(d CredentialDTO) (Credential, error) {
 	}
 	d.Env = env
 	if d.ID == "" {
-		d.ID = derivedID(d.Product, env, d.Login)
+		d.ID = derivedID(d.Kind, d.Product, env, d.Login)
 	}
 	d.ID = strings.ToLower(d.ID)
 	if !credentialID.MatchString(d.ID) {
@@ -149,15 +149,20 @@ func (c Credential) Revise(d CredentialDTO) (Credential, error) {
 	}
 	d.Kind = old.Kind // вид не меняется: ключ не становится учеткой правкой
 	d.ID = old.ID
-	if old.ID == derivedID(old.Product, old.Env, old.Login) {
+	if old.ID == derivedID(old.Kind, old.Product, old.Env, old.Login) {
 		d.ID = ""
 	}
 	return NewCredential(d)
 }
 
-// derivedID is the id built from product, environment and login.
-func derivedID(product string, env Env, login string) string {
-	return slug(product) + "-" + string(env) + "-" + slug(login)
+// derivedID is the id built from product, environment and login; у ключа перед
+// названием стоит «key», чтобы учетка admin и ключ admin не получали один id.
+func derivedID(kind CredentialKind, product string, env Env, login string) string {
+	id := slug(product) + "-" + string(env) + "-"
+	if kind == KindKey {
+		id += "key-"
+	}
+	return id + slug(login)
 }
 
 // slug is a name in Latin letters, digits and dashes: «Склад-Про» → sklad-pro.
