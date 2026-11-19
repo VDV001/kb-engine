@@ -326,3 +326,29 @@ func TestAccessDesk_updateFixesTheEnvironment(t *testing.T) {
 		t.Errorf("пароль не переехал: %q %v", pw, err)
 	}
 }
+
+// Ключ из окна (#712): без адреса и хоста, название вместо логина, секрет там же,
+// где пароли; вид доходит до страницы, чтобы вкладка «Ключи» отделила его от учеток,
+// а правка вид не меняет.
+func TestAccessDesk_key(t *testing.T) {
+	d, _ := newAccess(t)
+	if err := d.Open(); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Add(accessIn{Kind: "key", Product: "Мой склад", Env: "прод", Login: "ключ на чтение", Rights: "чтение"}, secretPW); err != nil {
+		t.Fatalf("ключ без адреса не сохранён: %v", err)
+	}
+	if err := d.Add(accessIn{Product: "Мой склад", Env: "прод", Login: "admin"}, secretPW); err == nil {
+		t.Fatal("учетка без адреса принята")
+	}
+	list, err := d.List("ключ")
+	if err != nil || len(list) != 1 || list[0].Kind != "key" {
+		t.Fatalf("список %+v, %v", list, err)
+	}
+	if err := d.Update(list[0].ID, accessIn{Kind: "account", Product: "Мой склад", Env: "прод", Rights: "запись"}, ""); err != nil {
+		t.Fatalf("правка ключа: %v", err)
+	}
+	if list, _ = d.List("ключ"); len(list) != 1 || list[0].Kind != "key" || list[0].Rights != "запись" {
+		t.Fatalf("после правки %+v", list)
+	}
+}

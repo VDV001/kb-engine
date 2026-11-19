@@ -54,20 +54,31 @@ func ParseEnv(s string) (Env, error) {
 // среду красным.
 func (e Env) Risky() bool { return e == EnvProd }
 
+// CredentialKind — вид карточки: учетка (по умолчанию) или ключ.
+type CredentialKind string
+
+const (
+	// KindAccount — учетка: логин, пароль, адрес или хост.
+	KindAccount CredentialKind = "account"
+	// KindKey — ключ: название вместо логина, адрес и хост не нужны.
+	KindKey CredentialKind = "key"
+)
+
 // CredentialDTO is a credential card as stored and typed: поля открыты, правила
 // проверяет NewCredential. ID пустой — собирается из продукта, среды и логина.
 type CredentialDTO struct {
-	ID       string    `json:"id"`
-	Product  string    `json:"product"`
-	Env      Env       `json:"env"`
-	URL      string    `json:"url,omitempty"`
-	Host     string    `json:"host,omitempty"`
-	Login    string    `json:"login"`
-	Role     string    `json:"role,omitempty"`
-	Rights   string    `json:"rights,omitempty"`
-	IssuedBy string    `json:"issued_by,omitempty"`
-	IssuedAt time.Time `json:"issued_at,omitzero"`
-	Note     string    `json:"note,omitempty"`
+	ID       string         `json:"id"`
+	Kind     CredentialKind `json:"kind,omitempty"`
+	Product  string         `json:"product"`
+	Env      Env            `json:"env"`
+	URL      string         `json:"url,omitempty"`
+	Host     string         `json:"host,omitempty"`
+	Login    string         `json:"login"`
+	Role     string         `json:"role,omitempty"`
+	Rights   string         `json:"rights,omitempty"`
+	IssuedBy string         `json:"issued_by,omitempty"`
+	IssuedAt time.Time      `json:"issued_at,omitzero"`
+	Note     string         `json:"note,omitempty"`
 }
 
 // Credential is a validated access card without a password.
@@ -81,13 +92,8 @@ func NewCredential(d CredentialDTO) (Credential, error) {
 	for _, f := range []*string{&d.ID, &d.Product, &d.URL, &d.Host, &d.Login, &d.Role, &d.Rights, &d.IssuedBy, &d.Note} {
 		*f = strings.TrimSpace(*f)
 	}
-	switch {
-	case d.Product == "":
-		return Credential{}, fmt.Errorf("%w: нет продукта", ErrInvalidCredential)
-	case d.Login == "":
-		return Credential{}, fmt.Errorf("%w: нет логина", ErrInvalidCredential)
-	case d.URL == "" && d.Host == "":
-		return Credential{}, fmt.Errorf("%w: нет ни адреса, ни хоста", ErrInvalidCredential)
+	if err := d.checkKind(); err != nil {
+		return Credential{}, err
 	}
 	env, err := ParseEnv(string(d.Env))
 	if err != nil {
@@ -102,6 +108,28 @@ func NewCredential(d CredentialDTO) (Credential, error) {
 		return Credential{}, fmt.Errorf("%w: id %q — латиница, цифры и дефис, до 64 знаков", ErrInvalidCredential, d.ID)
 	}
 	return Credential{d: d}, nil
+}
+
+// checkKind приводит пустой вид к учетке и проверяет поля, обязательные для вида.
+func (d *CredentialDTO) checkKind() error {
+	switch d.Kind {
+	case "", KindAccount:
+		d.Kind = KindAccount
+	case KindKey:
+	default:
+		return fmt.Errorf("%w: вид %q — учетка или ключ", ErrInvalidCredential, d.Kind)
+	}
+	switch {
+	case d.Product == "":
+		return fmt.Errorf("%w: нет продукта", ErrInvalidCredential)
+	case d.Login == "" && d.Kind == KindKey:
+		return fmt.Errorf("%w: нет названия ключа", ErrInvalidCredential)
+	case d.Login == "":
+		return fmt.Errorf("%w: нет логина", ErrInvalidCredential)
+	case d.URL == "" && d.Host == "" && d.Kind == KindAccount:
+		return fmt.Errorf("%w: нет ни адреса, ни хоста", ErrInvalidCredential)
+	}
+	return nil
 }
 
 // Revise returns the card with the details of d. Пустые продукт, среда и логин
@@ -119,6 +147,7 @@ func (c Credential) Revise(d CredentialDTO) (Credential, error) {
 	if strings.TrimSpace(d.Login) == "" {
 		d.Login = old.Login
 	}
+	d.Kind = old.Kind // вид не меняется: ключ не становится учеткой правкой
 	d.ID = old.ID
 	if old.ID == derivedID(old.Product, old.Env, old.Login) {
 		d.ID = ""
@@ -149,6 +178,9 @@ func slug(s string) string {
 
 // ID is the stable name of the access: sklad-pro-prod-admin-ops.
 func (c Credential) ID() string { return c.d.ID }
+
+// Kind is the sort of card.
+func (c Credential) Kind() CredentialKind { return c.d.Kind }
 
 // Product is what the access opens.
 func (c Credential) Product() string { return c.d.Product }
@@ -186,13 +218,16 @@ func (c Credential) DTO() CredentialDTO { return c.d }
 // envSay — как среду называют по-русски: поиск «склад прод» находит prod.
 var envSay = map[Env]string{EnvProd: "прод", EnvStage: "стенд предпрод", EnvTest: "тест", EnvDev: "разработка"}
 
+// kindSay — слово, по которому карточку ищут: «склад ключ».
+var kindSay = map[CredentialKind]string{KindKey: "ключ"}
+
 // Matches reports whether every word of q is somewhere in the card, без
 // регистра; пустой запрос подходит всем. Заметку поиск не смотрит: туда пишут
 // что угодно, в том числе пароль, а число найденного у агента (MCP) выдавало
 // бы ее содержимое по подстроке.
 func (c Credential) Matches(q string) bool {
 	d := c.d
-	text := strings.ToLower(strings.Join([]string{d.ID, d.Product, string(d.Env), envSay[d.Env], d.URL, d.Host, d.Login, d.Role, d.Rights, d.IssuedBy}, " "))
+	text := strings.ToLower(strings.Join([]string{d.ID, d.Product, string(d.Env), envSay[d.Env], kindSay[d.Kind], d.URL, d.Host, d.Login, d.Role, d.Rights, d.IssuedBy}, " "))
 	for w := range strings.FieldsSeq(strings.ToLower(q)) {
 		if !strings.Contains(text, w) {
 			return false

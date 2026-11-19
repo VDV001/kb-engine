@@ -68,6 +68,7 @@ func (k windowSecrets) Has(account string) (bool, error) {
 
 // accessIn is a card typed in the window.
 type accessIn struct {
+	Kind     string `json:"kind"` // key — ключ без адреса; пусто — учетка
 	Product  string `json:"product"`
 	Env      string `json:"env"`
 	URL      string `json:"url"`
@@ -83,6 +84,7 @@ type accessIn struct {
 // accessView is a card for the page — без пароля.
 type accessView struct {
 	ID       string `json:"id"`
+	Kind     string `json:"kind"`
 	Product  string `json:"product"`
 	Env      string `json:"env"`
 	EnvName  string `json:"envName"`
@@ -111,7 +113,7 @@ func (d *accessDesk) List(q string) ([]accessView, error) {
 	}
 	out := make([]accessView, 0, len(list))
 	for _, c := range list {
-		v := accessView{ID: c.ID(), Product: c.Product(), Env: string(c.Env()), EnvName: envNames[c.Env()], Risky: c.Env().Risky(),
+		v := accessView{ID: c.ID(), Kind: string(c.Kind()), Product: c.Product(), Env: string(c.Env()), EnvName: envNames[c.Env()], Risky: c.Env().Risky(),
 			URL: c.URL(), Host: c.Host(), Login: c.Login(), Role: c.Role(), Rights: c.Rights(), IssuedBy: c.IssuedBy(), Note: c.Note()}
 		if !c.IssuedAt().IsZero() {
 			v.IssuedAt = c.IssuedAt().Format(time.DateOnly)
@@ -162,7 +164,7 @@ func sayTaken(err error) error {
 
 // details turns what the window sent into card details; дата — ГГГГ-ММ-ДД или пусто.
 func (in accessIn) details() (domain.CredentialDTO, error) {
-	dto := domain.CredentialDTO{URL: in.URL, Host: in.Host, Role: in.Role, Rights: in.Rights, IssuedBy: in.IssuedBy, Note: in.Note}
+	dto := domain.CredentialDTO{Kind: domain.CredentialKind(in.Kind), URL: in.URL, Host: in.Host, Role: in.Role, Rights: in.Rights, IssuedBy: in.IssuedBy, Note: in.Note}
 	if in.IssuedAt != "" {
 		at, err := time.Parse(time.DateOnly, in.IssuedAt)
 		if err != nil {
