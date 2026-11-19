@@ -31,8 +31,17 @@ type scopeDTO struct {
 	Scope string `json:"scope"`
 }
 
-// ErrScopesBroken: файл областей не читается как список ограничений, и менять его нельзя.
+// ErrScopesBroken is returned when the scopes file cannot be read as a list of limits: менять его нельзя.
 var ErrScopesBroken = errors.New("scopes file is broken")
+
+// checkScopes refuses a file the reader would not trust. Совет «удалить файл» опасен: нет
+// файла - значит «ограниченных нет», и запись открылась бы всем.
+func checkScopes(data []byte) error {
+	if _, err := decodeScopes(data); err != nil {
+		return fmt.Errorf("%w: %s: repair it or re-create it with the intended entries (removing the file lifts every limit): %w", ErrScopesBroken, ScopesKey, err)
+	}
+	return nil
+}
 
 // SetScope records the scope of a person; ScopeWrite снимает запись (человек без
 // записи пишет, как прежде). Повтор и снятие отсутствующей записи — не ошибка и
@@ -40,16 +49,7 @@ var ErrScopesBroken = errors.New("scopes file is broken")
 func SetScope(ctx context.Context, s blob.Store, id domain.UserID, scope domain.Scope) error {
 	// Файл, который читатель считает битым, переписывать нельзя: update читает мягко (последний
 	// ключ побеждает) и молча снял бы ограничения, которые читатель закрыл (ревью #710).
-	switch o, err := s.Get(ctx, ScopesKey); {
-	case errors.Is(err, blob.ErrNotFound):
-	case err != nil:
-		return fmt.Errorf("userauth: read %s: %w", ScopesKey, err)
-	default:
-		if _, derr := decodeScopes(o.Data); derr != nil {
-			return fmt.Errorf("userauth: %s is broken, fix or delete it before changing scopes: %w", ScopesKey, derr)
-		}
-	}
-	return update(ctx, s, ScopesKey, func(d *scopesDTO) error {
+	return updateKey(ctx, s, ScopesKey, false, checkScopes, func(d *scopesDTO) error {
 		before := slices.Clone(d.Scopes)
 		d.Scopes = slices.DeleteFunc(d.Scopes, func(e scopeDTO) bool { return e.ID == id.String() })
 		if !scope.AllowsWrite() { // read и append хранятся, write - отсутствие записи

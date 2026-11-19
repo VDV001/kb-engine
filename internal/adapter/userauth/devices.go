@@ -450,7 +450,7 @@ func readSeen(ctx context.Context, s blob.Store, id domain.UserID) (seenFileDTO,
 // updateSeen is update for the visits file of id, but a corrupt file reads as
 // empty (see readSeen); errUnchanged из change — писать нечего, файл не заводится зря.
 func updateSeen(ctx context.Context, s blob.Store, id domain.UserID, change func(*seenFileDTO) error) error {
-	return updateKey(ctx, s, SeenKey(id), true, change)
+	return updateKey(ctx, s, SeenKey(id), true, nil, change)
 }
 
 // clearSeen forgets the visits of id's phones that match.

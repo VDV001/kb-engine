@@ -318,18 +318,26 @@ func usersPurge(tg *usersTargetOf, stderr io.Writer) int {
 	if late, err := userauth.Purge(ctx, tg.store, tg.id); err != nil {
 		fmt.Fprintf(stderr, "users purge: проверка после удаления: %v; повтори команду\n", err)
 		return 1
-	} else if late != (userauth.PurgeReport{}) {
+	} else if !late.Empty() {
 		fmt.Fprintf(stderr, "users purge: после удаления появились записи (база %d, ящик %d, входы %d), они убраны; отчет ниже неполон, повтори команду еще раз и проверь, что список пуст\n", late.Base, late.Mail, late.Seen)
 		return 1
 	}
-	if !registered && rep == (userauth.PurgeReport{}) {
+	if !registered && rep.Empty() {
 		fmt.Fprintf(stderr, "users purge: %s нет ни в реестре, ни в хранилище: опечатка в имени?\n", tg.id)
 		return 1
 	}
-	fmt.Fprintf(stderr, "users purge: %s удален: база %d, файлы ящика %d, входы телефонов %d (объекты со всеми версиями)\n", tg.id, rep.Base, rep.Mail, rep.Seen)
+	purgeDone(stderr, tg.id, rep)
+	return 0
+}
+
+// purgeDone tells what a purge removed and what it could not.
+func purgeDone(stderr io.Writer, id domain.UserID, rep userauth.PurgeReport) {
+	fmt.Fprintf(stderr, "users purge: %s удален: база %d, файлы ящика %d, входы телефонов %d (объекты со всеми версиями)\n", id, rep.Base, rep.Mail, rep.Seen)
+	if rep.ScopeKept {
+		fmt.Fprintf(stderr, "users purge: %s: запись об области осталась в auth/scopes.json: файл битый и не переписан; почини его (имя при новом выпуске получит прежнюю область)\n", id)
+	}
 	fmt.Fprintf(stderr, "users purge: логи сервера в Monium (ошибки, без тел запросов и токенов) не удаляются, они живут по сроку хранения Monium\n")
 	fmt.Fprintf(stderr, "users purge: имя и хэш токена еще 30 дней лежат в старых версиях общих реестров auth/*.json: файлы общие, версии по одной не вычистить, не задев чужих\n")
-	return 0
 }
 
 // usersPurgePreview shows what the name stands for and changes nothing: имя,

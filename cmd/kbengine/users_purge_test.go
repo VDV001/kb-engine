@@ -278,3 +278,39 @@ func TestUsersPurgePreviewOfAnUnknownName(t *testing.T) {
 		t.Errorf("exit %d, stderr %q; want 2 saying the name is nowhere", code, errb)
 	}
 }
+
+// Битый файл областей не оставляет данные удаленного человека (ревью #710): purge доходит до
+// конца, файл не переписывает, а команда говорит, что запись об области осталась. Тут же
+// `users scope` на таком файле отказывает, а не молча снимает чужие ограничения.
+func TestUsersPurgeOnABrokenScopesFile(t *testing.T) {
+	dir, _ := purgeFixture(t)
+	broken := `{"scopes":[{"id":"anna","scope":"read"}],"scopes":[]}`
+	path := filepath.Join(dir, filepath.FromSlash(userauth.ScopesKey))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(broken), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errb bytes.Buffer
+	if code := run([]string{"users", "scope", "--tenants", dir, "--id", "anna-b", "--scope", "read"}, &out, &errb); code == 0 || !strings.Contains(errb.String(), "broken") {
+		t.Errorf("users scope on a broken file: exit %d, %s", code, errb.String())
+	}
+
+	code, _, errb2 := purge("--tenants", dir, "--id", "anna", "--confirm", "anna", "--wait", "0s")
+	if code != 0 {
+		t.Fatalf("purge on a broken scopes file: exit %d, %s", code, errb2)
+	}
+	for _, key := range []string{"users/anna/kb/notes/n.md", "mailfiles/users/anna/f1"} {
+		if present(t, dir, key) {
+			t.Errorf("%s survived", key)
+		}
+	}
+	if !strings.Contains(errb2, "auth/scopes.json") {
+		t.Errorf("the report does not say the scope entry stayed: %s", errb2)
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != broken {
+		t.Errorf("the broken file was rewritten: %q %v", got, err)
+	}
+}
