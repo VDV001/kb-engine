@@ -225,3 +225,42 @@ func TestScopesAppendIsStoredAndFailsClosed(t *testing.T) {
 	}
 	_ = advance
 }
+
+// Ручная правка файла областей не должна открыть запись молча (#704, N4): encoding/json
+// берет последний из повторных ключей, принимает `null` и хвост после объекта, и каждый
+// из этих файлов выглядел бы как «ограниченных нет» или как «последняя запись побеждает».
+// Такой файл битый, а битый файл закрывает запись всем. Контроль: нормальный файл жив.
+func TestScopesHandEditedFileClosesWrites(t *testing.T) {
+	ctx := context.Background()
+	for _, c := range []struct{ name, file string }{
+		{"null", `null`},
+		{"duplicate top key", `{"scopes":[{"id":"alpha","scope":"append"}],"scopes":[]}`},
+		{"duplicate id", `{"scopes":[{"id":"alpha","scope":"read"},{"id":"alpha","scope":"append"}]}`},
+		{"duplicate field in entry", `{"scopes":[{"id":"alpha","id":"beta","scope":"read"}]}`},
+		{"data after the object", `{"scopes":[]} {"scopes":[{"id":"alpha","scope":"read"}]}`},
+		{"empty file", ``},
+	} {
+		s := newStore(t)
+		if _, err := s.Put(ctx, userauth.ScopesKey, []byte(c.file), ""); err != nil {
+			t.Fatal(err)
+		}
+		now, _ := clock(t18)
+		sc := userauth.NewScopes(ctx, s, now)
+		if writable(sc, id(t, "alpha")) || writable(sc, id(t, "anna")) {
+			t.Errorf("%s: a hand-edited file left someone writable", c.name)
+		}
+	}
+
+	s := newStore(t)
+	if _, err := s.Put(ctx, userauth.ScopesKey, []byte(`{"scopes":[{"id":"alpha","scope":"append"}]}`), ""); err != nil {
+		t.Fatal(err)
+	}
+	now, _ := clock(t18)
+	sc := userauth.NewScopes(ctx, s, now)
+	if got, ok := sc.Scope(id(t, "alpha")); !ok || got != domain.ScopeAppend {
+		t.Errorf("a well-formed file: %v, %v; want append", got, ok)
+	}
+	if !writable(sc, id(t, "anna")) {
+		t.Error("a well-formed file closed the neighbour")
+	}
+}
