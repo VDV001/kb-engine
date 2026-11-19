@@ -8,6 +8,7 @@ import (
 
 // Карточка доступа подписывает логин отдельной строкой «логин» (владелец 09.11: «не очень
 // понятно, что из этого логин») и дает «Изменить»; форма правки позволяет исправить продукт, среду и логин.
+// У ключа (#712) та же строка зовется «название»: логина у него нет.
 func TestAccessCard_labelsTheLoginAndOffersEdit(t *testing.T) {
 	js, err := os.ReadFile("frontend/app.js")
 	if err != nil {
@@ -17,7 +18,7 @@ func TestAccessCard_labelsTheLoginAndOffersEdit(t *testing.T) {
 	start := strings.Index(src, "function acCardHTML(")
 	end := strings.Index(src, "const acProducts")
 	card := src[start:end]
-	for _, want := range []string{`<dt>логин</dt>`, `data-ac="edit"`} {
+	for _, want := range []string{`"название" : "логин"`, `data-ac="edit"`} {
 		if !strings.Contains(card, want) {
 			t.Errorf("в карточке нет %s", want)
 		}

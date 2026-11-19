@@ -5341,65 +5341,66 @@ function acCardHTML(c) {
     <div class="crumb"><i class="ac-sw"></i>продукт</div>
     <h3>${esc(c.product)} <span class="ac-env ${esc(c.env)}">${esc(c.envName)}</span></h3>
     <dl class="ac-kv">
-      <dt>логин</dt><dd><code class="ac-login" title="Это имя пользователя для входа">${esc(c.login)}</code></dd>
-      <dt>пароль</dt><dd><div class="ac-secret"><code class="${open ? "open" : ""}">${open ? esc(open.pw) : "••••••••••••"}</code>
+      <dt>${c.kind === "key" ? "название" : "логин"}</dt><dd><code class="ac-login" title="${c.kind === "key" ? "Как называется ключ" : "Это имя пользователя для входа"}">${esc(c.login)}</code></dd>
+      <dt>${c.kind === "key" ? "ключ" : "пароль"}</dt><dd><div class="ac-secret"><code class="${open ? "open" : ""}">${open ? esc(open.pw) : "••••••••••••"}</code>
         <button class="ac-btn" data-ac="${open ? "hide" : "show"}" data-id="${esc(c.id)}">${open ? "Скрыть" : "Показать · Touch ID"}</button>
         <button class="ac-btn pri" data-ac="copy" data-id="${esc(c.id)}">Скопировать на 30 с</button>
         ${open ? `<span class="ac-cd" data-cd="${esc(c.id)}">скроется через ${open.left} с</span>` : ""}</div></dd>
       ${row("адрес", c.url)}${row("хост", c.host)}${row("роль", c.role)}${row("права", c.rights)}${row("выдал", [c.issuedBy, c.issuedAt].filter(Boolean).join(", "))}${row("заметка", c.note)}</dl>
-    <div class="ac-note">Пароль — в Связке ключей этого Мака; агенту через MCP уходит только карточка, без пароля и заметки.
-      ${ac.confirmDel === c.id ? `<span class="ac-del">Снять доступ ${esc(c.login)}? Пароль уйдет из Связки, это не отменить. <button class="ac-btn" data-ac="del-yes" data-id="${esc(c.id)}">Да, снять · Touch ID</button> <button class="ac-btn" data-ac="del-no">Нет</button></span>`
+    <div class="ac-note">${c.kind === "key" ? "Ключ" : "Пароль"} — в Связке ключей этого Мака; агенту через MCP уходит только карточка, без ${c.kind === "key" ? "ключа" : "пароля"} и заметки.
+      ${ac.confirmDel === c.id ? `<span class="ac-del">Снять доступ ${esc(c.login)}? ${c.kind === "key" ? "Ключ" : "Пароль"} уйдет из Связки, это не отменить. <button class="ac-btn" data-ac="del-yes" data-id="${esc(c.id)}">Да, снять · Touch ID</button> <button class="ac-btn" data-ac="del-no">Нет</button></span>`
         : `<button class="ac-btn" data-ac="edit" data-id="${esc(c.id)}" title="Поменять адрес, заметку или пароль">Изменить</button> <button class="ac-btn ac-del-btn" data-ac="del" data-id="${esc(c.id)}">Удалить</button>`}</div></div>`;
 }
 const acProducts = () => [...new Set(state.ac.list.map((c) => c.product))];
 function acAddHTML() {
   // Черновик живет в state.ac.draft: перерисовка (фильтр среды, поиск) не стирает набранное. Пароль в
   // состояние не кладется: он остается только в поле и после перерисовки вводится заново.
-  const d = state.ac.draft;
+  const d = state.ac.draft, key = state.ac.mode === "key";
   const f = (k, t, type = "text") => `<label>${t}<input name="${k}" type="${type}" autocomplete="off" spellcheck="false"${k !== "password" && d[k] ? ` value="${esc(d[k])}"` : ""}></label>`;
   const env = (v, t) => `<option value="${v}"${(d.env || "prod") === v ? " selected" : ""}>${t}</option>`;
   return `<form class="ac-add" id="ac-add">
     ${f("product", "продукт (куда доступ)")}<label>среда<select name="env">${env("prod", "прод")}${env("stage", "стенд")}${env("test", "тест")}${env("dev", "dev")}</select></label>
-    ${f("login", "логин (имя для входа)")}${f("url", "адрес (ссылка для входа)")}${f("host", "хост (сервер или IP)")}${f("role", "роль")}${f("rights", "права")}${f("issuedBy", "кто выдал")}${f("issuedAt", "когда выдан", "date")}${f("note", "заметка (видна только в окне)")}
-    ${f("password", "пароль", "password")}
+    ${key ? `<input type="hidden" name="kind" value="key">${f("login", "название ключа (чтобы различать)")}${f("rights", "права")}${f("issuedBy", "кто выдал")}${f("issuedAt", "когда выдан", "date")}${f("url", "адрес (необязательно)")}${f("note", "заметка (видна только в окне)")}${f("password", "ключ (секрет)", "password")}`
+    : `${f("login", "логин (имя для входа)")}${f("url", "адрес (ссылка для входа)")}${f("host", "хост (сервер или IP)")}${f("role", "роль")}${f("rights", "права")}${f("issuedBy", "кто выдал")}${f("issuedAt", "когда выдан", "date")}${f("note", "заметка (видна только в окне)")}
+    ${f("password", "пароль", "password")}`}
     <div class="ac-acts"><button type="button" class="ac-btn" data-ac="add-cancel">Отмена</button><button class="ac-btn pri" type="submit">Сохранить</button></div></form>`;
 }
 // Правка доступа: можно исправить и продукт, среду, логин (ошибся при вводе): адрес карточки пересчитается,
 // пароль в Связке переедет сам. Пароль необязателен: пусто — прежний остается. Поля держит черновик.
 function acEditHTML(c) {
-  const d = state.ac.draft, v = (k, cur) => esc(d[k] !== undefined ? d[k] : cur || "");
+  const d = state.ac.draft, key = c.kind === "key", v = (k, cur) => esc(d[k] !== undefined ? d[k] : cur || "");
   const f = (k, t, cur, type = "text") => `<label>${t}<input name="${k}" type="${type}" value="${v(k, cur)}" autocomplete="off" spellcheck="false"></label>`;
   const env = d.env !== undefined ? d.env : c.env;
   const opt = (val, t) => `<option value="${val}"${env === val ? " selected" : ""}>${t}</option>`;
   return `<form class="ac-add ac-edit" id="ac-edit" data-id="${esc(c.id)}">
     <p class="ac-edit-who">Изменить доступ. Если поправить продукт, среду или логин, карточка и пароль перенесутся сами.</p>
-    ${f("product", "продукт (куда доступ)", c.product)}<label>среда<select name="env">${opt("prod", "прод")}${opt("stage", "стенд")}${opt("test", "тест")}${opt("dev", "dev")}</select></label>${f("login", "логин (имя для входа)", c.login)}
+    ${f("product", "продукт (куда доступ)", c.product)}<label>среда<select name="env">${opt("prod", "прод")}${opt("stage", "стенд")}${opt("test", "тест")}${opt("dev", "dev")}</select></label>${f("login", key ? "название ключа" : "логин (имя для входа)", c.login)}
     ${f("url", "адрес (ссылка для входа)", c.url)}${f("host", "хост (сервер или IP)", c.host)}${f("role", "роль", c.role)}${f("rights", "права", c.rights)}
     ${f("issuedBy", "кто выдал", c.issuedBy)}${f("issuedAt", "когда выдан", c.issuedAt, "date")}${f("note", "заметка (видна только в окне)", c.note)}
-    ${f("password", "новый пароль (пусто — не менять)", "", "password")}
+    ${f("password", key ? "новый ключ (пусто — не менять)" : "новый пароль (пусто — не менять)", "", "password")}
     <div class="ac-acts"><button type="button" class="ac-btn" data-ac="edit-cancel">Отмена</button><button class="ac-btn pri" type="submit">Сохранить · Touch ID</button></div></form>`;
 }
 // Хвост экрана учеток: форма, список и карточка (как было до машин).
 function acAccTailHTML(ac, list, cur, groups) {
   return `${ac.adding ? acAddHTML() : ""}${ac.editing && cur && cur.id === ac.editing ? acEditHTML(cur) : ""}
-    ${list.length ? `<div class="ac-grid"><div class="ac-list" role="listbox" aria-label="Доступы">${groups}</div>${acCardHTML(cur)}</div>` : `<p class="muted">${ac.list.length ? "Под этот фильтр доступов нет." : "Доступов пока нет: «Добавить доступ» или kbengine creds add в терминале."}</p>`}`;
+    ${list.length ? `<div class="ac-grid"><div class="ac-list" role="listbox" aria-label="Доступы">${groups}</div>${acCardHTML(cur)}</div>` : `<p class="muted">${ac.list.length ? "Под этот фильтр ничего нет." : ac.mode === "key" ? "Ключей пока нет: «Добавить ключ» хранит секрет без логина и адреса." : "Доступов пока нет: «Добавить доступ» или kbengine creds add в терминале."}</p>`}`;
 }
 function acInsideHTML() {
   const ac = state.ac, L = acLook(), sec = acLockSec();
-  const list = ac.list.filter((c) => !ac.env || c.env === ac.env);
+  const list = ac.list.filter((c) => (ac.mode === "key") === (c.kind === "key") && (!ac.env || c.env === ac.env));
   const cur = list.find((c) => c.id === ac.sel) || list[0];
   const prods = acProducts();
   const groups = [...new Set(list.map((c) => c.product))].map((p) => {
     const items = list.filter((c) => c.product === p), n = items.length;
-    return `<div class="ac-grp" style="--c:var(${AC_HUES[prods.indexOf(p) % AC_HUES.length]})"><div class="ac-gh"><b>${esc(p)}</b><span class="n">${n} ${plural(n, "доступ", "доступа", "доступов")}</span></div>
-      ${items.map((c) => `<button class="ac-acc" data-ac="sel" data-id="${esc(c.id)}" aria-selected="${cur && c.id === cur.id}"><span><i class="ac-lbl">логин</i> ${esc(c.login)}</span><span class="ac-env ${esc(c.env)}">${esc(c.envName)}</span><small>${esc(c.role || c.url || c.host)}</small></button>`).join("")}</div>`;
+    return `<div class="ac-grp" style="--c:var(${AC_HUES[prods.indexOf(p) % AC_HUES.length]})"><div class="ac-gh"><b>${esc(p)}</b><span class="n">${ac.mode === "key" ? `${n} ${plural(n, "ключ", "ключа", "ключей")}` : `${n} ${plural(n, "доступ", "доступа", "доступов")}`}</span></div>
+      ${items.map((c) => `<button class="ac-acc" data-ac="sel" data-id="${esc(c.id)}" aria-selected="${cur && c.id === cur.id}"><span><i class="ac-lbl">${c.kind === "key" ? "ключ" : "логин"}</i> ${esc(c.login)}</span><span class="ac-env ${esc(c.env)}">${esc(c.envName)}</span><small>${esc(c.role || c.url || c.host)}</small></button>`).join("")}</div>`;
   }).join("");
   return `<div class="ac-inside">
     <div class="ac-meta"><span class="mini"><i class="ac-led on"></i>«${esc(L.name)}» открыто</span>
       <span class="mini">${sec ? `закроется через <b id="ac-idle">${acFmt(ac.left)}</b> без дела` : "само не закрывается"} <button class="ac-btn" data-ac="close">Закрыть</button></span></div>
     <div class="ac-find"><input id="ac-q" type="search" placeholder="найти доступ: продукт, среда, логин, роль, адрес" value="${esc(ac.q)}" autocomplete="off" spellcheck="false">
       ${["", "prod", "stage", "test", "dev"].map((e) => `<button class="look-chip" data-ac="env" data-env="${e}" aria-pressed="${ac.env === e}">${e ? { prod: "прод", stage: "стенд", test: "тест", dev: "dev" }[e] : "все"}</button>`).join("")}
-      ${acModeHTML()}<button class="ac-btn pri" data-ac="${ac.mode === "mach" ? "madd" : "add"}">${(ac.mode === "mach" ? ac.madding : ac.adding) ? "Свернуть форму" : ac.mode === "mach" ? "Добавить машину" : "Добавить доступ"}</button></div>
+      ${acModeHTML()}<button class="ac-btn pri" data-ac="${ac.mode === "mach" ? "madd" : "add"}">${(ac.mode === "mach" ? ac.madding : ac.adding) ? "Свернуть форму" : ac.mode === "mach" ? "Добавить машину" : ac.mode === "key" ? "Добавить ключ" : "Добавить доступ"}</button></div>
     ${ac.mode === "mach" ? acMachTailHTML() : acAccTailHTML(ac, list, cur, groups)}
   </div>`;
 }
@@ -5459,8 +5460,8 @@ for (const ev of ["click", "keydown", "input"]) $("#access-view").addEventListen
 // уходит карточка без пароля, пути ключа, подсказки про токен и заметки. Скан читает проекты по ssh.
 const MA_AUTH = { password: "Пароль", key: "Ключ ssh", token: "Сертификат или токен" };
 function acModeHTML() {
-  if (!native().MachineList) return "";
-  return `<span class="ac-seg" role="group" aria-label="Что показывать">${[["acc", "Учетки"], ["mach", "Машины"]]
+  const modes = [["acc", "Учетки"], ["key", "Ключи"], ...(native().MachineList ? [["mach", "Машины"]] : [])]; // сборка без машин: «Ключи» остаются
+  return `<span class="ac-seg" role="group" aria-label="Что показывать">${modes
     .map(([k, t]) => `<button class="look-chip" data-ac="mode" data-mode="${k}" aria-pressed="${state.ac.mode === k}">${t}</button>`).join("")}</span>`;
 }
 const maProjectsText = (m) => ((m && m.projects) || []).map((p) => [p.name, p.path, p.port, p.what].join(" | ").replace(/( \| )+$/, "")).join("\n");
@@ -5559,7 +5560,7 @@ async function acMCopyCmd(btn, id) {
 // Действия машин из общего обработчика кликов; true — клик обработан здесь.
 async function acMachClick(b, ac, id) {
   switch (b.dataset.ac) {
-    case "mode": ac.mode = b.dataset.mode; ac.scan = null; ac.confirmDel = ""; ac.mconfirm = ""; acRender(); break;
+    case "mode": ac.mode = b.dataset.mode; ac.adding = false; ac.editing = ""; ac.draft = {}; ac.scan = null; ac.confirmDel = ""; ac.mconfirm = ""; acRender(); break;
     case "msel": ac.msel = id; ac.mconfirm = ""; ac.mediting = ""; ac.mdraft = {}; ac.scan = null; acRender(); break;
     case "madd": ac.madding = !ac.madding; ac.mediting = ""; acRender(); if (ac.madding) $("#mach-add [name=name]").focus(); break;
     case "madd-cancel": ac.madding = false; ac.mdraft = {}; acRender(); break;
