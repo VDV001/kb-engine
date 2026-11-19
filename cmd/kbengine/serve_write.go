@@ -53,6 +53,16 @@ func addParams(a httpapi.EntryAdd) (domain.EntryParams, error) {
 	return params, nil
 }
 
+// appendCtxKey marks a request that came with an append token: guardAppend ставит
+// метку, AddEntry доверяет source=api-append только с ней (#718, ревью).
+type appendCtxKey struct{}
+
+func withAppendToken(ctx context.Context) context.Context {
+	return context.WithValue(ctx, appendCtxKey{}, true)
+}
+
+func fromAppendToken(ctx context.Context) bool { return ctx.Value(appendCtxKey{}) == true }
+
 // maxAppendEntries is how many entries append tokens may have added in total (#711):
 // каждое добавление переписывает каталог целиком, а частота ограничена только 1/с.
 //
@@ -73,6 +83,12 @@ func appendedEntries(cat *domain.Catalog) int {
 }
 
 func (s storeCatalogWriter) AddEntry(ctx context.Context, a httpapi.EntryAdd) (httpapi.AddedEntry, error) {
+	// api-append ставит сервер токену append; от полного токена это значение не принимается
+	// (иначе он занимал бы предел телефона и выдавал свое за телефонное).
+	viaAppend := fromAppendToken(ctx)
+	if !viaAppend && a.Source == appendSource {
+		a.Source = "api"
+	}
 	params, err := addParams(a)
 	if err != nil {
 		return httpapi.AddedEntry{}, err
@@ -93,7 +109,7 @@ func (s storeCatalogWriter) AddEntry(ctx context.Context, a httpapi.EntryAdd) (h
 		}
 		// Предел - после разбора и дедупа: повтор лежащего адреса и кривая запись получают свои
 		// ответы (200 «уже есть», 400), а не 403 (ревью #718).
-		if a.Source == appendSource && appendedEntries(cat) >= maxAppendEntries {
+		if viaAppend && appendedEntries(cat) >= maxAppendEntries {
 			return nil, fmt.Errorf("%w: append tokens have added %d entries, the most allowed; the owner clears the quota", httpapi.ErrQuota, maxAppendEntries)
 		}
 		out = httpapi.AddedEntry{ID: added[0].ID(), Title: added[0].Title(), CategoryUnchecked: rep.CategoriesUnchecked}

@@ -599,6 +599,7 @@ func (t *tenants) guardAppend(w http.ResponseWriter, r *http.Request, id domain.
 		http.Error(w, msg, http.StatusBadRequest)
 		return true
 	}
+	*r = *r.WithContext(withAppendToken(r.Context())) // AddEntry доверяет api-append только с этой меткой
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	r.ContentLength = int64(len(body))
 	r.Header.Set("Content-Length", strconv.Itoa(len(body)))
