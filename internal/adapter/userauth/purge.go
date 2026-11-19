@@ -17,6 +17,9 @@ type PurgeReport struct {
 	Base int // users/<id>/: база, финансы, журнал ящика
 	Mail int // mailfiles/users/<id>/: файлы ящика
 	Seen int // auth/seen/<id>.json: входы телефонов
+
+	// ScopeKept: запись об области осталась в файле scopes.json, потому что он битый.
+	ScopeKept bool
 }
 
 // Purge removes a person from the server with their data: вход, телефоны и push

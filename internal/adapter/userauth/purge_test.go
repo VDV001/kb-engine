@@ -272,3 +272,28 @@ func TestRevokeOfAPersonWithNothingToCleanWritesNothing(t *testing.T) {
 		}
 	}
 }
+
+// Purge не должен застревать на битом файле областей: отзыв уже сделан, и если запись об
+// области не снять, данные человека остались бы навсегда (ревью #710). Запись остается в
+// файле (он битый, перезаписывать его нельзя), отчет об этом говорит.
+func TestPurgeSurvivesABrokenScopesFile(t *testing.T) {
+	ctx := context.Background()
+	s, a, _, _ := personFixture(t)
+	broken := `{"scopes":[{"id":"a","scope":"read"}],"scopes":[]}`
+	if _, err := s.Put(ctx, userauth.ScopesKey, []byte(broken), ""); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := userauth.Purge(ctx, s, a)
+	if err != nil {
+		t.Fatalf("Purge on a broken scopes file: %v", err)
+	}
+	if rep.Base == 0 || exists(t, s, userauth.CatalogKey(a)) || exists(t, s, "mailfiles/users/a/f1") {
+		t.Errorf("the person's data stayed: %+v", rep)
+	}
+	if !rep.ScopeKept {
+		t.Error("the report does not say the scope entry stayed in the broken file")
+	}
+	if o, err := s.Get(ctx, userauth.ScopesKey); err != nil || string(o.Data) != broken {
+		t.Errorf("the broken file was rewritten: %q %v", o.Data, err)
+	}
+}

@@ -31,6 +31,9 @@ type scopeDTO struct {
 	Scope string `json:"scope"`
 }
 
+// ErrScopesBroken: файл областей не читается как список ограничений, и менять его нельзя.
+var ErrScopesBroken = errors.New("scopes file is broken")
+
 // SetScope records the scope of a person; ScopeWrite снимает запись (человек без
 // записи пишет, как прежде). Повтор и снятие отсутствующей записи — не ошибка и
 // не запись в хранилище.

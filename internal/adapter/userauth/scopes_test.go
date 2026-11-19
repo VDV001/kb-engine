@@ -283,8 +283,14 @@ func TestSetScopeRefusesABrokenFile(t *testing.T) {
 		if _, err := s.Put(ctx, userauth.ScopesKey, []byte(c.file), ""); err != nil {
 			t.Fatal(err)
 		}
-		if err := userauth.SetScope(ctx, s, id(t, "bob"), domain.ScopeRead); err == nil {
-			t.Errorf("%s: SetScope rewrote a file the reader rejects", c.name)
+		for _, sc := range []domain.Scope{domain.ScopeRead, domain.ScopeWrite} { // и снятие записи
+			err := userauth.SetScope(ctx, s, id(t, "bob"), sc)
+			if !errors.Is(err, userauth.ErrScopesBroken) {
+				t.Errorf("%s (%v): SetScope on a file the reader rejects: %v", c.name, sc, err)
+			} else if strings.Contains(err.Error(), "delete") {
+				// Удаленный файл читается как «ограниченных нет»: совет удалить открыл бы запись всем.
+				t.Errorf("%s: the error advises deleting the file: %v", c.name, err)
+			}
 		}
 		if o, err := s.Get(ctx, userauth.ScopesKey); err != nil || string(o.Data) != c.file {
 			t.Errorf("%s: the broken file was changed: %q %v", c.name, o.Data, err)
