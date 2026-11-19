@@ -72,6 +72,7 @@ describe('артефакты базы', () => {
     expect(cardTagsOf(entry({ tags: ['cheatsheet', 'cloud-phone', 'go'] }))).toEqual(['cloud-phone', 'go'])
     expect(cardTagsOf(entry({ tags: ['cheatsheet'] }))).toEqual([])
     expect(cardTagsOf(entry({ tags: undefined }))).toEqual([])
+    expect(cardTagsOf(entry({ tags: ['go', 'cheatsheet', 'go'] }))).toEqual(['go']) // дубль дал бы одинаковые key в разметке
   })
 
   it('источник append назван константой, а не строкой в разметке', () => {

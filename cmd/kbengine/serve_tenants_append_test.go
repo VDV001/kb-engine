@@ -215,14 +215,16 @@ func TestAppendScopeStopsAtTheQuota(t *testing.T) {
 	maxAppendEntries = 2
 	t.Cleanup(func() { maxAppendEntries = old })
 	f := newTenants(t)
-	setAlphaScope(t, f, domain.ScopeAppend)
 	add := func(token, n string) int {
 		return do(f.h, http.MethodPost, "/api/entries",
 			`{"title":"quota `+n+`","category":"golang","url":"https://h/quota/`+n+`","verdict":"keep"}`, token).Code
 	}
-	if code := add(f.tokB, "full"); code != http.StatusCreated {
+	// Ручная запись в том же каталоге (полный токен, source=api) предел не ест (ревью #718:
+	// прежний тест писал полным токеном соседа в другой каталог и этого не проверял).
+	if code := add(f.tokA, "manual"); code != http.StatusCreated {
 		t.Fatalf("the full token's add: %d", code)
 	}
+	setAlphaScope(t, f, domain.ScopeAppend)
 	for _, n := range []string{"one", "two"} {
 		if code := add(f.tokA, n); code != http.StatusCreated {
 			t.Fatalf("append add %s: %d", n, code)
@@ -231,7 +233,9 @@ func TestAppendScopeStopsAtTheQuota(t *testing.T) {
 	if code := add(f.tokA, "three"); code != http.StatusForbidden {
 		t.Errorf("append add over the quota: %d, want 403", code)
 	}
-	if code := add(f.tokB, "full-again"); code != http.StatusCreated {
-		t.Errorf("the full token stopped by the append quota: %d", code)
+	// Повтор уже лежащего адреса за пределом - не новая запись, а «уже есть» (ревью #718):
+	// 403 заставил бы телефон считать повтор отказом.
+	if code := add(f.tokA, "one"); code != http.StatusOK {
+		t.Errorf("repeat of an existing address over the quota: %d, want 200", code)
 	}
 }

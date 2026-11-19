@@ -91,3 +91,32 @@ func TestRun_inbox_flagsRequired(t *testing.T) {
 		t.Fatal("expected non-zero exit when --inbox is missing")
 	}
 }
+
+// Ревью #718: один адрес не по правилу в пачке не должен хоронить всю пачку. Раньше
+// такая статья доходила до NewEntry и отказ молчал, теперь Plan отвергает адрес, и без
+// отбора в collectInboxParams `inbox` вернул бы 1 и не добавил ничего, а следующий запуск
+// упирался бы в ту же статью. Плохая статья пропускается с названием в stderr.
+func TestRun_inbox_badURLSkipsOnlyThatArticle(t *testing.T) {
+	dir := t.TempDir()
+	catalogPath := filepath.Join(dir, "catalog.json")
+	if err := os.WriteFile(catalogPath, []byte(`{"meta":{},"entries":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inboxDir := filepath.Join(dir, "inbox")
+	if err := os.MkdirAll(inboxDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(inboxDir, "batch.json"), []byte(`[
+		{"title":"Bad","url":"ftp://h/x","hub":"go","createdAt":"2026-06-01T00:00:00.000Z"},
+		{"title":"Good","url":"https://habr.com/ru/articles/777/","hub":"go","createdAt":"2026-06-02T00:00:00.000Z"}
+	]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out, errb bytes.Buffer
+	if code := run([]string{"inbox", "--catalog", catalogPath, "--inbox", inboxDir, "--processed", filepath.Join(dir, "processed")}, &out, &errb); code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "added 1") || !strings.Contains(errb.String(), "Bad") {
+		t.Errorf("stdout %q, stderr %q: ждали added 1 и название плохой статьи в stderr", out.String(), errb.String())
+	}
+}
