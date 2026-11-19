@@ -54,20 +54,29 @@ func ParseEnv(s string) (Env, error) {
 // среду красным.
 func (e Env) Risky() bool { return e == EnvProd }
 
+// CredentialKind — вид карточки: учетка (по умолчанию) или ключ.
+type CredentialKind string
+
+const (
+	KindAccount CredentialKind = "account"
+	KindKey     CredentialKind = "key"
+)
+
 // CredentialDTO is a credential card as stored and typed: поля открыты, правила
 // проверяет NewCredential. ID пустой — собирается из продукта, среды и логина.
 type CredentialDTO struct {
-	ID       string    `json:"id"`
-	Product  string    `json:"product"`
-	Env      Env       `json:"env"`
-	URL      string    `json:"url,omitempty"`
-	Host     string    `json:"host,omitempty"`
-	Login    string    `json:"login"`
-	Role     string    `json:"role,omitempty"`
-	Rights   string    `json:"rights,omitempty"`
-	IssuedBy string    `json:"issued_by,omitempty"`
-	IssuedAt time.Time `json:"issued_at,omitzero"`
-	Note     string    `json:"note,omitempty"`
+	ID       string         `json:"id"`
+	Kind     CredentialKind `json:"kind,omitempty"`
+	Product  string         `json:"product"`
+	Env      Env            `json:"env"`
+	URL      string         `json:"url,omitempty"`
+	Host     string         `json:"host,omitempty"`
+	Login    string         `json:"login"`
+	Role     string         `json:"role,omitempty"`
+	Rights   string         `json:"rights,omitempty"`
+	IssuedBy string         `json:"issued_by,omitempty"`
+	IssuedAt time.Time      `json:"issued_at,omitzero"`
+	Note     string         `json:"note,omitempty"`
 }
 
 // Credential is a validated access card without a password.
@@ -149,6 +158,9 @@ func slug(s string) string {
 
 // ID is the stable name of the access: sklad-pro-prod-admin-ops.
 func (c Credential) ID() string { return c.d.ID }
+
+// Kind is the sort of card.
+func (c Credential) Kind() CredentialKind { return c.d.Kind }
 
 // Product is what the access opens.
 func (c Credential) Product() string { return c.d.Product }

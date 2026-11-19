@@ -121,3 +121,39 @@ func TestNewPassword(t *testing.T) {
 		}
 	}
 }
+
+// Ключ (#712) — карточка без адреса и хоста: «ключ на чтение» к продукту не
+// ведет никуда, он просто лежит. Название ключа занимает место логина, поэтому
+// два ключа к одному продукту и среде различаются названием. Учетка без адреса
+// по-прежнему отказ, а вид по умолчанию — учетка: старые файлы читаются как были.
+func TestNewCredential_key(t *testing.T) {
+	k, err := domain.NewCredential(domain.CredentialDTO{Kind: domain.KindKey, Product: "Мой склад", Env: domain.EnvProd, Login: "ключ на чтение", Rights: "чтение"})
+	if err != nil {
+		t.Fatalf("ключ без адреса и хоста отвергнут: %v", err)
+	}
+	if k.Kind() != domain.KindKey || k.ID() != "moi-sklad-prod-kliuch-na-chtenie" {
+		t.Fatalf("ключ = %+v", k.DTO())
+	}
+	other, err := domain.NewCredential(domain.CredentialDTO{Kind: domain.KindKey, Product: "Мой склад", Env: domain.EnvProd, Login: "ключ на запись"})
+	if err != nil || other.ID() == k.ID() {
+		t.Fatalf("два ключа к одному продукту слились: %v %q", err, other.ID())
+	}
+	if _, err := domain.NewCredential(domain.CredentialDTO{Kind: domain.KindKey, Product: "Мой склад", Env: domain.EnvProd}); !errors.Is(err, domain.ErrInvalidCredential) {
+		t.Errorf("ключ без названия принят: %v", err)
+	}
+	acc := domain.CredentialDTO{Product: "Мой склад", Env: domain.EnvProd, Login: "admin"}
+	if _, err := domain.NewCredential(acc); !errors.Is(err, domain.ErrInvalidCredential) {
+		t.Errorf("учетка без адреса принята: %v", err)
+	}
+	acc.Host = "192.0.2.1"
+	a, err := domain.NewCredential(acc)
+	if err != nil || a.Kind() != domain.KindAccount {
+		t.Errorf("пустой вид должен читаться как учетка: %v %q", err, a.Kind())
+	}
+	if _, err := domain.NewCredential(domain.CredentialDTO{Kind: "token", Product: "p", Env: domain.EnvDev, Login: "l", Host: "h"}); !errors.Is(err, domain.ErrInvalidCredential) {
+		t.Errorf("незнакомый вид принят: %v", err)
+	}
+	if !k.Matches("ключ склад прод") {
+		t.Error("поиск не находит ключ по слову «ключ»")
+	}
+}
