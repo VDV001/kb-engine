@@ -23,10 +23,6 @@ export function artefactHref(file?: string): string {
 // достаточно проставить тег при заведении записи.
 const CHEATSHEET_TAG = 'cheatsheet'
 
-// Записи, пришедшие по токену append (телефон, облачная сессия), несут свои теги и
-// source=api-append (#711): без них такую шпаргалку не отличить от своей.
-export const APPEND_SOURCE = 'api-append'
-
 export function cheatsheetsOf(entries: readonly Entry[]): Entry[] {
   return entries
     .filter((e) => e.file && (e.tags ?? []).includes(CHEATSHEET_TAG))
@@ -47,6 +43,11 @@ export function cheatsheetsOf(entries: readonly Entry[]): Entry[] {
 export function opensInBrowser(file?: string): boolean {
   return !!file && /\.(html?|md)$/i.test(file)
 }
+
+// Записи, пришедшие по токену append (телефон, облачная сессия), несут свои теги и
+// source=api-append (#711): без них такую шпаргалку не отличить от своей. Константа
+// стоит ниже CHEATSHEET_TAG, чтобы не сдвигать якорь карты архитектуры.
+export const APPEND_SOURCE = 'api-append'
 
 // Теги карточки шпаргалки для показа: сам признак «cheatsheet» не повторяется,
 // он и так объясняет, почему запись на вкладке.
