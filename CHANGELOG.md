@@ -8,6 +8,12 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+### Added
+- **Ключи видны агенту и терминалу (#715).** `search_access` отдает поле `kind` (`account` или `key`),
+  описание инструмента объясняет, что у ключа в `login` лежит название. `kbengine creds add --kind key`
+  заводит ключ без адреса и хоста, `creds find` в колонке роли показывает «ключ». Секрета и заметки
+  в ответе по-прежнему нет.
+
 ## [0.42.0] — 2026-11-19
 
 ### Added

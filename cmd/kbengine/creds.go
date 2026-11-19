@@ -89,11 +89,12 @@ func credsAdd(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	file := fs.String("file", credsDefaultFile(), "файл карточек")
 	var d domain.CredentialDTO
-	var env, at string
+	var env, at, kind string
+	fs.StringVar(&kind, "kind", "", "вид: key - ключ без адреса и хоста (логин тогда - название ключа); пусто - учетка")
 	fs.StringVar(&d.ID, "id", "", "id (иначе из продукта, среды и логина)")
 	fs.StringVar(&d.Product, "product", "", "продукт")
 	fs.StringVar(&env, "env", "", "среда: прод, стенд, тест, dev")
-	fs.StringVar(&d.Login, "login", "", "логин")
+	fs.StringVar(&d.Login, "login", "", "логин (у ключа - название)")
 	fs.StringVar(&d.URL, "url", "", "адрес входа")
 	fs.StringVar(&d.Host, "host", "", "хост")
 	fs.StringVar(&d.Role, "role", "", "роль")
@@ -104,7 +105,7 @@ func credsAdd(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	d.Env = domain.Env(env)
+	d.Env, d.Kind = domain.Env(env), domain.CredentialKind(kind)
 	if at != "" {
 		t, err := time.Parse(time.DateOnly, at)
 		if err != nil {
@@ -204,7 +205,11 @@ func credsFind(args []string, stdout, stderr io.Writer) int {
 		if where == "" {
 			where = c.Host()
 		}
-		fmt.Fprintf(stdout, "%-28s %-16s %-6s %-16s %-16s %s\n", c.ID(), c.Product(), envName[c.Env()], c.Login(), c.Role(), where)
+		role := c.Role()
+		if c.Kind() == domain.KindKey && role == "" {
+			role = "ключ" // у ключа роли нет: колонка показывает вид
+		}
+		fmt.Fprintf(stdout, "%-28s %-16s %-6s %-16s %-16s %s\n", c.ID(), c.Product(), envName[c.Env()], c.Login(), role, where)
 	}
 	return 0
 }
