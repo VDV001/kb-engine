@@ -28,6 +28,7 @@ type accessArgs struct {
 // агент, уходит провайдеру модели, а в заметку пишут что угодно — и пароль.
 type accessOut struct {
 	ID       string `json:"id"`
+	Kind     string `json:"kind"` // account или key: у ключа login - название ключа
 	Product  string `json:"product"`
 	Env      string `json:"env"`
 	URL      string `json:"url,omitempty"`
@@ -46,8 +47,9 @@ func addAccessTool(s *mcp.Server, j journal, a AccessFinder) {
 	addTool(s, j, &mcp.Tool{
 		Name: "search_access",
 		Description: "Доступы владельца к продуктам: продукт, среда (prod, stage, test, dev), адрес, " +
-			"хост, логин, роль, права, кто выдал. Паролей здесь нет и не будет: пароль человек " +
-			"кладет в буфер сам командой из поля how_to_get_password (Touch ID спросит Мак). " +
+			"хост, логин, роль, права, кто выдал. Поле kind: account (учетка) или key (API-ключ или токен: " +
+			"в login лежит название ключа, адреса и хоста может не быть). Паролей и ключей здесь нет и не " +
+			"будет: секрет человек кладет в буфер сам командой из поля how_to_get_password (Touch ID спросит Мак). " +
 			"Не проси пароль и не предлагай вставить его в чат.",
 	}, func(in accessArgs) []string {
 		if in.Query == "" {
@@ -61,7 +63,7 @@ func addAccessTool(s *mcp.Server, j journal, a AccessFinder) {
 		}
 		out := make([]accessOut, 0, len(found))
 		for _, c := range found {
-			o := accessOut{ID: c.ID(), Product: c.Product(), Env: string(c.Env()), URL: c.URL(), Host: c.Host(), Login: c.Login(),
+			o := accessOut{ID: c.ID(), Kind: string(c.Kind()), Product: c.Product(), Env: string(c.Env()), URL: c.URL(), Host: c.Host(), Login: c.Login(),
 				Role: c.Role(), Rights: c.Rights(), IssuedBy: c.IssuedBy(), Password: "kbengine creds copy " + c.ID()}
 			if !c.IssuedAt().IsZero() {
 				o.IssuedAt = c.IssuedAt().Format(time.DateOnly)
