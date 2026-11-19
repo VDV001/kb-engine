@@ -335,7 +335,7 @@ func TestAccessDesk_key(t *testing.T) {
 	if err := d.Open(); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.Add(accessIn{Kind: "key", Product: "Мой склад", Env: "прод", Login: "ключ на чтение", Rights: "чтение"}, secretPW); err != nil {
+	if err := d.Add(accessIn{Kind: "key", Product: "Мой склад", Env: "прод", Login: "read-only", Rights: "чтение"}, secretPW); err != nil {
 		t.Fatalf("ключ без адреса не сохранён: %v", err)
 	}
 	if err := d.Add(accessIn{Product: "Мой склад", Env: "прод", Login: "admin"}, secretPW); err == nil {

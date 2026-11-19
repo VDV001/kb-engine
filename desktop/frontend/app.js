@@ -5373,17 +5373,18 @@ function acEditHTML(c) {
   const env = d.env !== undefined ? d.env : c.env;
   const opt = (val, t) => `<option value="${val}"${env === val ? " selected" : ""}>${t}</option>`;
   return `<form class="ac-add ac-edit" id="ac-edit" data-id="${esc(c.id)}">
-    <p class="ac-edit-who">Изменить доступ. Если поправить продукт, среду или логин, карточка и пароль перенесутся сами.</p>
+    <p class="ac-edit-who">${key ? "Изменить ключ. Если поправить продукт, среду или название, карточка и ключ перенесутся сами." : "Изменить доступ. Если поправить продукт, среду или логин, карточка и пароль перенесутся сами."}</p>
     ${f("product", "продукт (куда доступ)", c.product)}<label>среда<select name="env">${opt("prod", "прод")}${opt("stage", "стенд")}${opt("test", "тест")}${opt("dev", "dev")}</select></label>${f("login", key ? "название ключа" : "логин (имя для входа)", c.login)}
-    ${f("url", "адрес (ссылка для входа)", c.url)}${f("host", "хост (сервер или IP)", c.host)}${f("role", "роль", c.role)}${f("rights", "права", c.rights)}
+    ${f("url", key ? "адрес (необязательно)" : "адрес (ссылка для входа)", c.url)}${key ? "" : f("host", "хост (сервер или IP)", c.host) + f("role", "роль", c.role)}${f("rights", "права", c.rights)}
     ${f("issuedBy", "кто выдал", c.issuedBy)}${f("issuedAt", "когда выдан", c.issuedAt, "date")}${f("note", "заметка (видна только в окне)", c.note)}
     ${f("password", key ? "новый ключ (пусто — не менять)" : "новый пароль (пусто — не менять)", "", "password")}
     <div class="ac-acts"><button type="button" class="ac-btn" data-ac="edit-cancel">Отмена</button><button class="ac-btn pri" type="submit">Сохранить · Touch ID</button></div></form>`;
 }
 // Хвост экрана учеток: форма, список и карточка (как было до машин).
 function acAccTailHTML(ac, list, cur, groups) {
+  const ofKind = ac.list.filter((c) => (ac.mode === "key") === (c.kind === "key")).length; // пусто ли у этой вкладки, а не у всего хранилища
   return `${ac.adding ? acAddHTML() : ""}${ac.editing && cur && cur.id === ac.editing ? acEditHTML(cur) : ""}
-    ${list.length ? `<div class="ac-grid"><div class="ac-list" role="listbox" aria-label="Доступы">${groups}</div>${acCardHTML(cur)}</div>` : `<p class="muted">${ac.list.length ? "Под этот фильтр ничего нет." : ac.mode === "key" ? "Ключей пока нет: «Добавить ключ» хранит секрет без логина и адреса." : "Доступов пока нет: «Добавить доступ» или kbengine creds add в терминале."}</p>`}`;
+    ${list.length ? `<div class="ac-grid"><div class="ac-list" role="listbox" aria-label="Доступы">${groups}</div>${acCardHTML(cur)}</div>` : `<p class="muted">${ofKind ? "Под этот фильтр ничего нет." : ac.mode === "key" ? "Ключей пока нет: «Добавить ключ» хранит секрет без логина и адреса." : "Доступов пока нет: «Добавить доступ» или kbengine creds add в терминале."}</p>`}`;
 }
 function acInsideHTML() {
   const ac = state.ac, L = acLook(), sec = acLockSec();
@@ -5393,7 +5394,7 @@ function acInsideHTML() {
   const groups = [...new Set(list.map((c) => c.product))].map((p) => {
     const items = list.filter((c) => c.product === p), n = items.length;
     return `<div class="ac-grp" style="--c:var(${AC_HUES[prods.indexOf(p) % AC_HUES.length]})"><div class="ac-gh"><b>${esc(p)}</b><span class="n">${ac.mode === "key" ? `${n} ${plural(n, "ключ", "ключа", "ключей")}` : `${n} ${plural(n, "доступ", "доступа", "доступов")}`}</span></div>
-      ${items.map((c) => `<button class="ac-acc" data-ac="sel" data-id="${esc(c.id)}" aria-selected="${cur && c.id === cur.id}"><span><i class="ac-lbl">${c.kind === "key" ? "ключ" : "логин"}</i> ${esc(c.login)}</span><span class="ac-env ${esc(c.env)}">${esc(c.envName)}</span><small>${esc(c.role || c.url || c.host)}</small></button>`).join("")}</div>`;
+      ${items.map((c) => `<button class="ac-acc" data-ac="sel" data-id="${esc(c.id)}" aria-selected="${cur && c.id === cur.id}"><span><i class="ac-lbl">${c.kind === "key" ? "ключ" : "логин"}</i> ${esc(c.login)}</span><span class="ac-env ${esc(c.env)}">${esc(c.envName)}</span><small>${esc(c.role || c.url || c.host || c.rights || c.issuedBy)}</small></button>`).join("")}</div>`;
   }).join("");
   return `<div class="ac-inside">
     <div class="ac-meta"><span class="mini"><i class="ac-led on"></i>«${esc(L.name)}» открыто</span>

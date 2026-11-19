@@ -131,7 +131,7 @@ func TestNewCredential_key(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ключ без адреса и хоста отвергнут: %v", err)
 	}
-	if k.Kind() != domain.KindKey || k.ID() != "moi-sklad-prod-klyuch-na-chtenie" {
+	if k.Kind() != domain.KindKey || k.ID() != "moi-sklad-prod-key-klyuch-na-chtenie" {
 		t.Fatalf("ключ = %+v", k.DTO())
 	}
 	other, err := domain.NewCredential(domain.CredentialDTO{Kind: domain.KindKey, Product: "Мой склад", Env: domain.EnvProd, Login: "ключ на запись"})
@@ -155,5 +155,47 @@ func TestNewCredential_key(t *testing.T) {
 	}
 	if !k.Matches("ключ склад прод") {
 		t.Error("поиск не находит ключ по слову «ключ»")
+	}
+}
+
+// Ревью #714: учетка admin и ключ с названием admin к одному продукту и среде
+// не должны получать один id, иначе добавление второй карточки отвечает
+// «такой доступ уже есть» про карточку с другой вкладки.
+func TestNewCredential_keyIDDiffersFromAccountID(t *testing.T) {
+	acc, err := domain.NewCredential(domain.CredentialDTO{Product: "Склад", Env: domain.EnvProd, Login: "admin", Host: "192.0.2.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := domain.NewCredential(domain.CredentialDTO{Kind: domain.KindKey, Product: "Склад", Env: domain.EnvProd, Login: "admin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if acc.ID() == key.ID() {
+		t.Fatalf("id учетки и ключа совпали: %q", acc.ID())
+	}
+	// Правка ключа пересчитывает собранный id тем же правилом, а не превращает его в учеточный.
+	rev, err := key.Revise(domain.CredentialDTO{Login: "reader"})
+	if err != nil || rev.ID() != "sklad-prod-key-reader" {
+		t.Fatalf("после правки id = %q, %v", rev.ID(), err)
+	}
+}
+
+// Ревью #714: прежний тест искал ключ по слову «ключ», которое стояло в самом
+// названии, и оставался зеленым без kindSay. Здесь название слова не содержит, а
+// учетка по слову «ключ» находиться не должна.
+func TestCredential_matchesKeyByKindWord(t *testing.T) {
+	key, err := domain.NewCredential(domain.CredentialDTO{Kind: domain.KindKey, Product: "Склад", Env: domain.EnvProd, Login: "read-only"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	acc, err := domain.NewCredential(domain.CredentialDTO{Product: "Склад", Env: domain.EnvProd, Login: "admin", Host: "192.0.2.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !key.Matches("склад ключ") {
+		t.Error("ключ read-only не найден по слову «ключ»")
+	}
+	if acc.Matches("склад ключ") {
+		t.Error("учетка найдена по слову «ключ»")
 	}
 }
