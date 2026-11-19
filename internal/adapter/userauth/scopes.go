@@ -164,19 +164,27 @@ func (s *Scopes) fresh(now time.Time) (map[domain.UserID]domain.Scope, bool) {
 }
 
 func decodeScopes(data []byte) (map[domain.UserID]domain.Scope, error) {
-	// encoding/json берет последний из повторных ключей, принимает null и хвост после
-	// объекта: файл, правленный руками, мог бы молча открыть запись (#704, N4).
-	if err := rejectAmbiguousJSON(data); err != nil {
-		return nil, err
-	}
-	var dto scopesDTO
+	// Один проход, одно дерево: encoding/json брал последний из повторных ключей, принимал
+	// null и хвост после объекта, а файл, правленный руками, мог бы молча открыть запись
+	// (#704, N4). Поля берутся из того же дерева, второго разбора нет (ревью #710).
 	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields() // опечатка в имени поля при ручной правке - битый файл, а не «человек пишет»
-	if err := dec.Decode(&dto); err != nil {
+	doc, err := readStrict(dec)
+	if err != nil {
 		return nil, err
 	}
-	set := make(map[domain.UserID]domain.Scope, len(dto.Scopes))
-	for _, e := range dto.Scopes {
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("%w: data after the object", errAmbiguousScopes)
+	}
+	top, ok := doc.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("%w: the file must be a JSON object", errAmbiguousScopes)
+	}
+	entries, err := scopeEntries(top)
+	if err != nil {
+		return nil, err
+	}
+	set := make(map[domain.UserID]domain.Scope, len(entries))
+	for _, e := range entries {
 		id, err := domain.NewUserID(e.ID)
 		if err != nil {
 			return nil, err
@@ -200,60 +208,89 @@ func decodeScopes(data []byte) (map[domain.UserID]domain.Scope, error) {
 
 var errAmbiguousScopes = errors.New("ambiguous scopes file")
 
-// rejectAmbiguousJSON refuses what encoding/json would read in more than one way: не
-// объект, повторный ключ на любой глубине, данные после объекта.
-func rejectAmbiguousJSON(data []byte) error {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	var tr keyTracker
-	for first := true; ; first = false {
-		tok, err := dec.Token()
-		if errors.Is(err, io.EOF) {
-			return nil
+// Имена полей файла в той форме, в какой readStrict хранит ключи (foldKey).
+var keyScopes, keyID, keyScope = foldKey("scopes"), foldKey("id"), foldKey("scope")
+
+// scopeEntries takes the list out of the document: поле scopes и в записи id и scope,
+// имена без учета регистра, как их читал encoding/json; любое другое имя - битый файл.
+func scopeEntries(top map[string]any) ([]scopeDTO, error) {
+	var list []any
+	for k, v := range top {
+		if k != keyScopes {
+			return nil, fmt.Errorf("%w: unknown field %q", errAmbiguousScopes, strings.ToLower(k))
 		}
-		if err != nil {
-			return err
+		switch l := v.(type) {
+		case []any:
+			list = l
+		case nil: // "scopes": null - пустой список, как у encoding/json
+		default:
+			return nil, fmt.Errorf("%w: scopes must be a list", errAmbiguousScopes)
 		}
-		if d, ok := tok.(json.Delim); first && (!ok || d != '{') {
-			return fmt.Errorf("%w: the file must be a JSON object", errAmbiguousScopes)
+	}
+	out := make([]scopeDTO, 0, len(list))
+	for _, item := range list {
+		obj, ok := item.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("%w: a scopes entry must be an object", errAmbiguousScopes)
 		}
-		if isKey, err := tr.key(tok); err != nil {
-			return err
-		} else if isKey {
-			continue
-		}
-		if tr.value(tok) { // объект верхнего уровня закрыт: дальше ничего быть не должно
-			if dec.InputOffset() < int64(len(bytes.TrimRight(data, " \t\r\n"))) {
-				return fmt.Errorf("%w: data after the object", errAmbiguousScopes)
+		var e scopeDTO
+		for k, v := range obj {
+			str, isStr := v.(string)
+			switch {
+			case k == keyID && isStr:
+				e.ID = str
+			case k == keyScope && isStr:
+				e.Scope = str
+			default:
+				return nil, fmt.Errorf("%w: bad field %q in a scopes entry", errAmbiguousScopes, strings.ToLower(k))
 			}
-			return nil
 		}
+		out = append(out, e)
 	}
+	return out, nil
 }
 
-// keyTracker follows the nesting of a token stream and the keys seen in each object.
-type keyTracker struct{ stack []keyFrame }
-
-type keyFrame struct {
-	keys    map[string]bool // nil у массива
-	wantKey bool
-}
-
-// key consumes tok when it is an object key, and fails on a repeated one.
-func (t *keyTracker) key(tok json.Token) (bool, error) {
-	if len(t.stack) == 0 {
-		return false, nil
+// readStrict reads one JSON value into maps, slices and scalars, and fails on a repeated
+// object key at any depth. Ключи хранятся в свернутом виде (foldKey).
+func readStrict(dec *json.Decoder) (any, error) {
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, err
 	}
-	top := &t.stack[len(t.stack)-1]
-	k, ok := tok.(string)
-	if !top.wantKey || !ok {
-		return false, nil
+	d, isDelim := tok.(json.Delim)
+	if !isDelim {
+		return tok, nil
 	}
-	if f := foldKey(k); top.keys[f] {
-		return false, fmt.Errorf("%w: key %q repeated", errAmbiguousScopes, k)
-	} else {
-		top.keys[f], top.wantKey = true, false
+	switch d {
+	case '{':
+		m := map[string]any{}
+		for dec.More() {
+			kt, err := dec.Token()
+			if err != nil {
+				return nil, err
+			}
+			key := foldKey(kt.(string)) // ключ объекта - всегда строка
+			if _, dup := m[key]; dup {
+				return nil, fmt.Errorf("%w: key %q repeated", errAmbiguousScopes, kt)
+			}
+			if m[key], err = readStrict(dec); err != nil {
+				return nil, err
+			}
+		}
+		_, err := dec.Token() // }
+		return m, err
+	default: // [
+		list := []any{}
+		for dec.More() {
+			v, err := readStrict(dec)
+			if err != nil {
+				return nil, err
+			}
+			list = append(list, v)
+		}
+		_, err := dec.Token() // ]
+		return list, err
 	}
-	return true, nil
 }
 
 // foldKey is the form encoding/json compares field names in: без учета регистра, с
@@ -266,26 +303,4 @@ func foldKey(k string) string {
 		}
 		return lo
 	}, k)
-}
-
-// value consumes tok as (part of) a value and reports whether the top-level value ended.
-func (t *keyTracker) value(tok json.Token) bool {
-	d, isDelim := tok.(json.Delim)
-	switch {
-	case isDelim && d == '{':
-		t.stack = append(t.stack, keyFrame{keys: map[string]bool{}, wantKey: true})
-		return false
-	case isDelim && d == '[':
-		t.stack = append(t.stack, keyFrame{})
-		return false
-	case isDelim: // закрытие: } или ]
-		t.stack = t.stack[:len(t.stack)-1]
-		if len(t.stack) == 0 {
-			return true
-		}
-	}
-	if top := &t.stack[len(t.stack)-1]; top.keys != nil { // значение прочитано: дальше ключ
-		top.wantKey = true
-	}
-	return false
 }

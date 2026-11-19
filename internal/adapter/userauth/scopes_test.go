@@ -291,3 +291,44 @@ func TestSetScopeRefusesABrokenFile(t *testing.T) {
 		}
 	}
 }
+
+// Разбор файла не изменил то, что принимал encoding/json: имена полей без учета регистра,
+// пустой список и "scopes": null (#710). А файл неверной формы закрывает запись.
+func TestScopesFileShapes(t *testing.T) {
+	ctx := context.Background()
+	for _, c := range []struct {
+		name, file string
+		ok         bool
+	}{
+		{"mixed-case field names", `{"Scopes":[{"ID":"alpha","Scope":"read"}]}`, true},
+		{"empty object", `{}`, true},
+		{"empty list", `{"scopes":[]}`, true},
+		{"null list", `{"scopes":null}`, true},
+		{"write entry", `{"scopes":[{"id":"alpha","scope":"write"}]}`, true},
+		{"list is an object", `{"scopes":{}}`, false},
+		{"entry is a number", `{"scopes":[1]}`, false},
+		{"id is a number", `{"scopes":[{"id":5,"scope":"read"}]}`, false},
+		{"scope is a list", `{"scopes":[{"id":"alpha","scope":["read"]}]}`, false},
+		{"unknown field in entry", `{"scopes":[{"id":"alpha","scope":"read","note":"x"}]}`, false},
+		{"top is an array", `[]`, false},
+	} {
+		s := newStore(t)
+		if _, err := s.Put(ctx, userauth.ScopesKey, []byte(c.file), ""); err != nil {
+			t.Fatal(err)
+		}
+		now, _ := clock(t18)
+		sc := userauth.NewScopes(ctx, s, now)
+		_, trusted := sc.Scope(id(t, "alpha"))
+		if trusted != c.ok {
+			t.Errorf("%s: trusted = %v, want %v", c.name, trusted, c.ok)
+		}
+	}
+	s := newStore(t)
+	if _, err := s.Put(ctx, userauth.ScopesKey, []byte(`{"Scopes":[{"ID":"alpha","Scope":"read"}]}`), ""); err != nil {
+		t.Fatal(err)
+	}
+	now, _ := clock(t18)
+	if got, ok := userauth.NewScopes(ctx, s, now).Scope(id(t, "alpha")); !ok || got != domain.ScopeRead {
+		t.Errorf("mixed-case file: %v, %v; want read", got, ok)
+	}
+}
