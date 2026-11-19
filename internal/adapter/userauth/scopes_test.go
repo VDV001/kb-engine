@@ -238,6 +238,7 @@ func TestScopesHandEditedFileClosesWrites(t *testing.T) {
 		{"duplicate id", `{"scopes":[{"id":"alpha","scope":"read"},{"id":"alpha","scope":"append"}]}`},
 		{"duplicate field in entry", `{"scopes":[{"id":"alpha","id":"beta","scope":"read"}]}`},
 		{"data after the object", `{"scopes":[]} {"scopes":[{"id":"alpha","scope":"read"}]}`},
+		{"stray closing brace", `{"scopes":[]}}`},
 		{"empty file", ``},
 	} {
 		s := newStore(t)

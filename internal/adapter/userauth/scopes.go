@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"slices"
 	"sync"
 	"time"
@@ -149,6 +151,11 @@ func (s *Scopes) fresh(now time.Time) (map[domain.UserID]domain.Scope, bool) {
 }
 
 func decodeScopes(data []byte) (map[domain.UserID]domain.Scope, error) {
+	// encoding/json берет последний из повторных ключей, принимает null и хвост после
+	// объекта: файл, правленный руками, мог бы молча открыть запись (#704, N4).
+	if err := rejectAmbiguousJSON(data); err != nil {
+		return nil, err
+	}
 	var dto scopesDTO
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields() // опечатка в имени поля при ручной правке - битый файл, а не «человек пишет»
@@ -165,9 +172,94 @@ func decodeScopes(data []byte) (map[domain.UserID]domain.Scope, error) {
 		if err != nil {
 			return nil, err
 		}
-		if !scope.AllowsWrite() {
-			set[id] = scope
+		if _, dup := set[id]; dup {
+			return nil, fmt.Errorf("%w: %q listed twice", errAmbiguousScopes, e.ID)
+		}
+		set[id] = scope
+	}
+	for id, scope := range set {
+		if scope.AllowsWrite() { // «write» в файле - то же, что отсутствие записи
+			delete(set, id)
 		}
 	}
 	return set, nil
+}
+
+var errAmbiguousScopes = errors.New("ambiguous scopes file")
+
+// rejectAmbiguousJSON refuses what encoding/json would read in more than one way: не
+// объект, повторный ключ на любой глубине, данные после объекта.
+func rejectAmbiguousJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	var tr keyTracker
+	for first := true; ; first = false {
+		tok, err := dec.Token()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if d, ok := tok.(json.Delim); first && (!ok || d != '{') {
+			return fmt.Errorf("%w: the file must be a JSON object", errAmbiguousScopes)
+		}
+		if isKey, err := tr.key(tok); err != nil {
+			return err
+		} else if isKey {
+			continue
+		}
+		if tr.value(tok) { // объект верхнего уровня закрыт: дальше ничего быть не должно
+			if dec.InputOffset() < int64(len(bytes.TrimRight(data, " \t\r\n"))) {
+				return fmt.Errorf("%w: data after the object", errAmbiguousScopes)
+			}
+			return nil
+		}
+	}
+}
+
+// keyTracker follows the nesting of a token stream and the keys seen in each object.
+type keyTracker struct{ stack []keyFrame }
+
+type keyFrame struct {
+	keys    map[string]bool // nil у массива
+	wantKey bool
+}
+
+// key consumes tok when it is an object key, and fails on a repeated one.
+func (t *keyTracker) key(tok json.Token) (bool, error) {
+	if len(t.stack) == 0 {
+		return false, nil
+	}
+	top := &t.stack[len(t.stack)-1]
+	k, ok := tok.(string)
+	if !top.wantKey || !ok {
+		return false, nil
+	}
+	if top.keys[k] {
+		return false, fmt.Errorf("%w: key %q repeated", errAmbiguousScopes, k)
+	}
+	top.keys[k], top.wantKey = true, false
+	return true, nil
+}
+
+// value consumes tok as (part of) a value and reports whether the top-level value ended.
+func (t *keyTracker) value(tok json.Token) bool {
+	d, isDelim := tok.(json.Delim)
+	switch {
+	case isDelim && d == '{':
+		t.stack = append(t.stack, keyFrame{keys: map[string]bool{}, wantKey: true})
+		return false
+	case isDelim && d == '[':
+		t.stack = append(t.stack, keyFrame{})
+		return false
+	case isDelim: // закрытие: } или ]
+		t.stack = t.stack[:len(t.stack)-1]
+		if len(t.stack) == 0 {
+			return true
+		}
+	}
+	if top := &t.stack[len(t.stack)-1]; top.keys != nil { // значение прочитано: дальше ключ
+		top.wantKey = true
+	}
+	return false
 }

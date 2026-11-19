@@ -84,7 +84,7 @@ var usersPurgeSleep = func(ctx context.Context, d time.Duration) error {
 	}
 }
 
-const usersUsage = "usage: kbengine users add|revoke|purge|scope --tenants <s3://bucket | dir> --id <name> [add: --token-out <new file> --scope read|append|write] [scope: --scope read|write] [purge: --confirm <name> --wait <duration> --yes]"
+const usersUsage = "usage: kbengine users add|revoke|purge|scope --tenants <s3://bucket | dir> --id <name> [add: --token-out <new file> --scope read|append|write] [scope: --scope read|append|write] [purge: --confirm <name> --wait <duration> --yes]"
 
 // usersFlags are the flags specific to one subcommand.
 type usersFlags struct {
