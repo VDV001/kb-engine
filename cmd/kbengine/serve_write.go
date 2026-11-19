@@ -53,8 +53,24 @@ func addParams(a httpapi.EntryAdd) (domain.EntryParams, error) {
 	return params, nil
 }
 
-// maxAppendEntries is how many entries append tokens may have added in total (#711).
+// maxAppendEntries is how many entries append tokens may have added in total (#711):
+// каждое добавление переписывает каталог целиком, а частота ограничена только 1/с.
+//
+// ponytail: число считается проходом по всему каталогу на каждое добавление, O(n) при
+// каталоге в пару МБ; путь апгрейда - счетчик рядом с файлом областей. Предел снимает
+// владелец: удалить лишние записи с source=api-append.
 var maxAppendEntries = 1000
+
+// appendedEntries counts the entries an append token added.
+func appendedEntries(cat *domain.Catalog) int {
+	n := 0
+	for _, e := range cat.Entries() {
+		if e.Source() == appendSource {
+			n++
+		}
+	}
+	return n
+}
 
 func (s storeCatalogWriter) AddEntry(ctx context.Context, a httpapi.EntryAdd) (httpapi.AddedEntry, error) {
 	params, err := addParams(a)
@@ -66,6 +82,9 @@ func (s storeCatalogWriter) AddEntry(ctx context.Context, a httpapi.EntryAdd) (h
 		cat, err := catalogjson.Decode(bytes.NewReader(raw))
 		if err != nil {
 			return nil, err
+		}
+		if a.Source == appendSource && appendedEntries(cat) >= maxAppendEntries {
+			return nil, fmt.Errorf("%w: append tokens have added %d entries, the most allowed; the owner clears the quota", httpapi.ErrQuota, maxAppendEntries)
 		}
 		added, rep, err := ingest.Plan(cat, []domain.EntryParams{params}, s.now())
 		if err != nil {
