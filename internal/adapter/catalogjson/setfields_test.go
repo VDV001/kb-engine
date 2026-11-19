@@ -2,12 +2,14 @@ package catalogjson_test
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
+	"github.com/daniil/kb-engine/internal/domain"
 )
 
 // Каталог с полем, которого домен не знает («exotic»), и с записью, у которой
@@ -364,5 +366,15 @@ func TestSetFields_supersedesMustExist(t *testing.T) {
 	}
 	if _, err := catalogjson.SetFields(path, []int{1}, catalogjson.Changes{SupersedesID: new(2)}); err != nil {
 		t.Errorf("корректное замещение отвергнуто: %v", err)
+	}
+}
+
+// Правка адреса (PATCH и kbengine set) не пускает ничего, кроме http и https без учетки (#711).
+func TestSetFieldsDoc_refusesNonWebURL(t *testing.T) {
+	for _, u := range []string{"javascript:alert(1)", "ftp://h/x", "https://trusted.com@evil.com/"} {
+		_, _, err := catalogjson.SetFieldsDoc([]byte(setFixture), []int{1}, catalogjson.Changes{URL: u})
+		if !errors.Is(err, domain.ErrInvalidLocation) {
+			t.Errorf("%q принят: %v", u, err)
+		}
 	}
 }

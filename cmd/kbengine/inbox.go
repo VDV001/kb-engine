@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/botinbox"
@@ -89,6 +90,14 @@ func collectInboxParams(files []string, now time.Time, stderr io.Writer) ([]doma
 			if err != nil {
 				fmt.Fprintf(stderr, "inbox: skipping article %q: %v\n", a.Title, err)
 				continue
+			}
+			// Адрес не по правилу домена хоронил бы всю пачку: Plan отказывает целиком, а следующий
+			// запуск упирался бы в ту же статью (ревью #718). Пропуск с названием, как у битой статьи.
+			if u := strings.TrimSpace(p.URL); u != "" {
+				if _, err := domain.NewExternalURL(u); err != nil {
+					fmt.Fprintf(stderr, "inbox: skipping article %q: %v\n", a.Title, err)
+					continue
+				}
 			}
 			params = append(params, p)
 		}

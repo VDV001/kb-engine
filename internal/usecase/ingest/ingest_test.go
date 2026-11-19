@@ -140,3 +140,14 @@ func TestPlan_InvalidParamsError(t *testing.T) {
 		t.Errorf("err = %v, want ErrInvalidEntry", err)
 	}
 }
+
+// Адрес не http и не https не попадает в каталог ни через бота, ни через CLI, ни
+// через POST /api/entries: все они идут через Plan (#711).
+func TestPlan_RefusesNonWebURL(t *testing.T) {
+	for _, u := range []string{"javascript:alert(1)", "ftp://h/x", "file:///etc/passwd", "https://trusted.com@evil.com/"} {
+		_, _, err := ingest.Plan(catalogWith(t, nil), []domain.EntryParams{params(t, "T", u)}, now)
+		if !errors.Is(err, domain.ErrInvalidLocation) {
+			t.Errorf("%q принят: %v", u, err)
+		}
+	}
+}

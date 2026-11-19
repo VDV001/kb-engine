@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -203,5 +204,72 @@ func TestAppendScopeRequiresURL(t *testing.T) {
 		if rec := do(f.h, http.MethodPost, "/api/entries", body, f.tokA); rec.Code != http.StatusBadRequest {
 			t.Errorf("%s: %d, want 400", body, rec.Code)
 		}
+	}
+}
+
+// Предел записей, добавленных токенами append (#711): частота ограничена (1/с,
+// всплеск 30), а общее число нет, и телефон без присмотра мог бы раздуть каталог,
+// который каждое добавление переписывает целиком. Считаются только записи с
+// source=api-append: полный токен соседа и ручные записи предел не едят.
+func TestAppendScopeStopsAtTheQuota(t *testing.T) {
+	old := maxAppendEntries
+	maxAppendEntries = 2
+	t.Cleanup(func() { maxAppendEntries = old })
+	f := newTenants(t)
+	add := func(token, n string) int {
+		return do(f.h, http.MethodPost, "/api/entries",
+			`{"title":"quota `+n+`","category":"golang","url":"https://h/quota/`+n+`","verdict":"keep"}`, token).Code
+	}
+	// Ручная запись в том же каталоге (полный токен, source=api) предел не ест (ревью #718:
+	// прежний тест писал полным токеном соседа в другой каталог и этого не проверял).
+	if code := add(f.tokA, "manual"); code != http.StatusCreated {
+		t.Fatalf("the full token's add: %d", code)
+	}
+	setAlphaScope(t, f, domain.ScopeAppend)
+	for _, n := range []string{"one", "two"} {
+		if code := add(f.tokA, n); code != http.StatusCreated {
+			t.Fatalf("append add %s: %d", n, code)
+		}
+	}
+	if code := add(f.tokA, "three"); code != http.StatusForbidden {
+		t.Errorf("append add over the quota: %d, want 403", code)
+	}
+	// Повтор уже лежащего адреса за пределом - не новая запись, а «уже есть» (ревью #718):
+	// 403 заставил бы телефон считать повтор отказом.
+	if code := add(f.tokA, "one"); code != http.StatusOK {
+		t.Errorf("repeat of an existing address over the quota: %d, want 200", code)
+	}
+}
+
+// Ревью #718, находка 4: source=api-append ставит только сервер токену append. Полный
+// токен, приславший это значение в теле, получает обычный api: иначе он занимал бы предел
+// телефона и выдавал свои записи за телефонные. Положительный контроль: токен append
+// по-прежнему получает api-append.
+func TestAppendSourceIsNotForgeableByFullToken(t *testing.T) {
+	f := newTenants(t)
+	post := func(token, n string) {
+		t.Helper()
+		if rec := do(f.h, http.MethodPost, "/api/entries",
+			`{"title":"forge `+n+`","category":"golang","url":"https://h/forge/`+n+`","source":"api-append","verdict":"keep"}`, token); rec.Code != http.StatusCreated {
+			t.Fatalf("add %s: %d %s", n, rec.Code, rec.Body.String())
+		}
+	}
+	post(f.tokA, "full")
+	setAlphaScope(t, f, domain.ScopeAppend)
+	post(f.tokA, "phone")
+	body := readable(t, get(f.h, "/api/entries", f.tokA))
+	var list []struct {
+		Title  string `json:"title"`
+		Source string `json:"source"`
+	}
+	if err := json.Unmarshal([]byte(body), &list); err != nil {
+		t.Fatalf("entries: %v: %s", err, body)
+	}
+	got := map[string]string{}
+	for _, e := range list {
+		got[e.Title] = e.Source
+	}
+	if got["forge full"] != "api" || got["forge phone"] != "api-append" {
+		t.Errorf("sources = %v, want full -> api, phone -> api-append", got)
 	}
 }

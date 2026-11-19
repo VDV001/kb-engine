@@ -31,8 +31,12 @@ func NewExternalURL(raw string) (ExternalURL, error) {
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return ExternalURL{}, fmt.Errorf("%w: url %q is not http(s) — a file path belongs in file, not url", ErrInvalidLocation, raw)
 	}
-	if u.Host == "" {
+	if u.Hostname() == "" { // не Host: у "https://:8080/x" Host есть, а хоста нет
 		return ExternalURL{}, fmt.Errorf("%w: url %q has no host", ErrInvalidLocation, raw)
+	}
+	// «https://trusted.com@evil.com/»: человек читает первый хост, браузер идет на второй.
+	if u.User != nil {
+		return ExternalURL{}, fmt.Errorf("%w: url %q carries a user name before the host", ErrInvalidLocation, raw)
 	}
 	return ExternalURL{raw: trimmed}, nil
 }

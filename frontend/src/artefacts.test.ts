@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { artefactHref, cheatsheetsOf, opensInBrowser } from './artefacts'
+import { APPEND_SOURCE, artefactHref, cardTagsOf, cheatsheetsOf, opensInBrowser } from './artefacts'
 import { appURL } from './appurl'
 
 const entry = (over: Record<string, unknown> = {}) =>
@@ -64,5 +64,18 @@ describe('артефакты базы', () => {
     expect(opensInBrowser('creations/data/table.xlsx')).toBe(false)
     expect(opensInBrowser('creations/archive.zip')).toBe(false)
     expect(opensInBrowser(undefined)).toBe(false)
+  })
+
+  // Теги клиента (#711): запись с телефона приходит с тегами вроде cloud-phone, и на
+  // карточке они видны; сам cheatsheet не повторяется, а порядок остается авторским.
+  it('показывает теги карточки без самого признака шпаргалки', () => {
+    expect(cardTagsOf(entry({ tags: ['cheatsheet', 'cloud-phone', 'go'] }))).toEqual(['cloud-phone', 'go'])
+    expect(cardTagsOf(entry({ tags: ['cheatsheet'] }))).toEqual([])
+    expect(cardTagsOf(entry({ tags: undefined }))).toEqual([])
+    expect(cardTagsOf(entry({ tags: ['go', 'cheatsheet', 'go'] }))).toEqual(['go']) // дубль дал бы одинаковые key в разметке
+  })
+
+  it('источник append назван константой, а не строкой в разметке', () => {
+    expect(APPEND_SOURCE).toBe('api-append')
   })
 })

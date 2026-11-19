@@ -11,7 +11,6 @@ import (
 	"maps"
 	"math"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"slices"
@@ -600,6 +599,7 @@ func (t *tenants) guardAppend(w http.ResponseWriter, r *http.Request, id domain.
 		http.Error(w, msg, http.StatusBadRequest)
 		return true
 	}
+	*r = *r.WithContext(withAppendToken(r.Context())) // AddEntry доверяет api-append только с этой меткой
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	r.ContentLength = int64(len(body))
 	r.Header.Set("Content-Length", strconv.Itoa(len(body)))
@@ -619,7 +619,7 @@ func appendBody(raw []byte) ([]byte, string) {
 		switch {
 		case strings.EqualFold(k, "url"):
 			var s string
-			if err := json.Unmarshal(v, &s); err != nil || !httpURL(s) {
+			if err := json.Unmarshal(v, &s); err != nil || !webURL(s) {
 				return nil, "url must be http or https"
 			}
 		case strings.EqualFold(k, "source"):
@@ -634,12 +634,12 @@ func appendBody(raw []byte) ([]byte, string) {
 	return body, ""
 }
 
-// httpURL reports whether s is an absolute http or https address with a host.
-func httpURL(s string) bool {
-	u, err := url.Parse(s)
-	// Пробелы по краям и userinfo ("trusted.com@evil") отказ: запись хранит строку как есть.
-	return err == nil && s == strings.TrimSpace(s) && u.User == nil &&
-		(u.Scheme == "http" || u.Scheme == "https") && u.Hostname() != ""
+// webURL reports whether s is an address the catalog accepts, written exactly as
+// stored: правило адреса живет в domain, здесь только запрет пробелов по краям
+// (запись хранит строку как есть, а ExternalURL их обрезает).
+func webURL(s string) bool {
+	ext, err := domain.NewExternalURL(s)
+	return err == nil && ext.String() == s
 }
 
 // serveBase serves a request of a known person from their own base: сначала

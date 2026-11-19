@@ -43,3 +43,14 @@ export function cheatsheetsOf(entries: readonly Entry[]): Entry[] {
 export function opensInBrowser(file?: string): boolean {
   return !!file && /\.(html?|md)$/i.test(file)
 }
+
+// Записи, пришедшие по токену append (телефон, облачная сессия), несут свои теги и
+// source=api-append (#711): без них такую шпаргалку не отличить от своей. Константа
+// стоит ниже CHEATSHEET_TAG, чтобы не сдвигать якорь карты архитектуры.
+export const APPEND_SOURCE = 'api-append'
+
+// Теги карточки шпаргалки для показа: сам признак «cheatsheet» не повторяется,
+// он и так объясняет, почему запись на вкладке.
+export function cardTagsOf(e: Pick<Entry, 'tags'>): string[] {
+  return [...new Set(e.tags ?? [])].filter((t) => t !== CHEATSHEET_TAG)
+}

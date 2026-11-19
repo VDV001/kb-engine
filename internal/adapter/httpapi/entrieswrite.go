@@ -23,6 +23,9 @@ var ErrBadWrite = errors.New("bad write")
 // ErrNoEntry — правка записи, которой в каталоге нет: ответ 404.
 var ErrNoEntry = errors.New("no such entry")
 
+// ErrQuota is returned when a token may add no more entries (#711).
+var ErrQuota = errors.New("quota reached")
+
 // maxWriteBody bounds a write request: запись каталога — это несколько строк,
 // а не загрузка файла.
 const maxWriteBody = 64 << 10
@@ -218,6 +221,8 @@ func writeWriteError(w http.ResponseWriter, subject string, err error) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrNoEntry):
 		http.Error(w, err.Error(), http.StatusNotFound)
+	case errors.Is(err, ErrQuota):
+		http.Error(w, err.Error(), http.StatusForbidden) // не 429: повтор не поможет, предел снимает владелец
 	case errors.Is(err, blob.ErrTransient):
 		log.Printf("%s write: %v", subject, err)
 		http.Error(w, "the store is failing; retry", http.StatusServiceUnavailable)
