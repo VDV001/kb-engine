@@ -26,6 +26,8 @@ func TestNewExternalURL(t *testing.T) {
 		{"data", "data:text/html,<script>1</script>", true},
 		{"file", "file:///etc/passwd", true},
 		{"userinfo", "https://trusted.com@evil.com/", true},
+		{"только порт вместо хоста", "https://:8080/x", true},
+		{"порт без хоста, без пути", "http://:80", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := domain.NewExternalURL(tc.raw)

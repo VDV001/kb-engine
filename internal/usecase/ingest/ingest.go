@@ -48,6 +48,11 @@ func Plan(c *domain.Catalog, params []domain.EntryParams, now time.Time) ([]doma
 			rep.SkippedNoURL++
 			continue
 		}
+		ext, err := domain.NewExternalURL(url)
+		if err != nil {
+			return nil, Report{}, fmt.Errorf("ingest entry %q: %w", p.Title, err)
+		}
+		url, p.URL = ext.String(), ext.String()
 		if _, dup := seen[url]; dup {
 			rep.SkippedDuplicate++
 			continue
