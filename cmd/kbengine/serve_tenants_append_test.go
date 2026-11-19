@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -237,5 +238,38 @@ func TestAppendScopeStopsAtTheQuota(t *testing.T) {
 	// 403 заставил бы телефон считать повтор отказом.
 	if code := add(f.tokA, "one"); code != http.StatusOK {
 		t.Errorf("repeat of an existing address over the quota: %d, want 200", code)
+	}
+}
+
+// Ревью #718, находка 4: source=api-append ставит только сервер токену append. Полный
+// токен, приславший это значение в теле, получает обычный api: иначе он занимал бы предел
+// телефона и выдавал свои записи за телефонные. Положительный контроль: токен append
+// по-прежнему получает api-append.
+func TestAppendSourceIsNotForgeableByFullToken(t *testing.T) {
+	f := newTenants(t)
+	post := func(token, n string) {
+		t.Helper()
+		if rec := do(f.h, http.MethodPost, "/api/entries",
+			`{"title":"forge `+n+`","category":"golang","url":"https://h/forge/`+n+`","source":"api-append","verdict":"keep"}`, token); rec.Code != http.StatusCreated {
+			t.Fatalf("add %s: %d %s", n, rec.Code, rec.Body.String())
+		}
+	}
+	post(f.tokA, "full")
+	setAlphaScope(t, f, domain.ScopeAppend)
+	post(f.tokA, "phone")
+	body := readable(t, get(f.h, "/api/entries", f.tokA))
+	var list []struct {
+		Title  string `json:"title"`
+		Source string `json:"source"`
+	}
+	if err := json.Unmarshal([]byte(body), &list); err != nil {
+		t.Fatalf("entries: %v: %s", err, body)
+	}
+	got := map[string]string{}
+	for _, e := range list {
+		got[e.Title] = e.Source
+	}
+	if got["forge full"] != "api" || got["forge phone"] != "api-append" {
+		t.Errorf("sources = %v, want full -> api, phone -> api-append", got)
 	}
 }
