@@ -131,7 +131,7 @@ func TestNewCredential_key(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ключ без адреса и хоста отвергнут: %v", err)
 	}
-	if k.Kind() != domain.KindKey || k.ID() != "moi-sklad-prod-kliuch-na-chtenie" {
+	if k.Kind() != domain.KindKey || k.ID() != "moi-sklad-prod-klyuch-na-chtenie" {
 		t.Fatalf("ключ = %+v", k.DTO())
 	}
 	other, err := domain.NewCredential(domain.CredentialDTO{Kind: domain.KindKey, Product: "Мой склад", Env: domain.EnvProd, Login: "ключ на запись"})
