@@ -17,7 +17,13 @@ type PurgeReport struct {
 	Base int // users/<id>/: база, финансы, журнал ящика
 	Mail int // mailfiles/users/<id>/: файлы ящика
 	Seen int // auth/seen/<id>.json: входы телефонов
+
+	// ScopeKept: запись об области осталась в файле scopes.json, потому что он битый.
+	ScopeKept bool
 }
+
+// Empty reports whether nothing was removed (запись об области в счет не идет).
+func (r PurgeReport) Empty() bool { return r.Base == 0 && r.Mail == 0 && r.Seen == 0 }
 
 // Purge removes a person from the server with their data: вход, телефоны и push
 // (Revoke), затем база, файлы ящика и входы телефонов со всеми версиями
@@ -41,11 +47,15 @@ func Purge(ctx context.Context, s blob.Store, id domain.UserID) (PurgeReport, er
 	if err := Revoke(ctx, s, id); err != nil && !errors.Is(err, domain.ErrNoSuchUser) {
 		return PurgeReport{}, err
 	}
-	// Запись об области уходит с человеком: имя не остается ограниченным в файле.
-	if err := SetScope(ctx, s, id, domain.ScopeWrite); err != nil {
+	// Запись об области уходит с человеком: имя не остается ограниченным в файле. Битый
+	// файл не переписать, и из-за него данные оставлять нельзя: отзыв уже сделан. Запись об
+	// области остается (имя при повторном выпуске получит прежнее ограничение, а не снятое).
+	var rep PurgeReport
+	if err := SetScope(ctx, s, id, domain.ScopeWrite); errors.Is(err, ErrScopesBroken) {
+		rep.ScopeKept = true
+	} else if err != nil {
 		return PurgeReport{}, fmt.Errorf("userauth: purge scope of %s: %w", id, err)
 	}
-	var rep PurgeReport
 	for _, step := range []struct {
 		prefix string
 		into   *int

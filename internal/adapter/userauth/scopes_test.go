@@ -225,3 +225,141 @@ func TestScopesAppendIsStoredAndFailsClosed(t *testing.T) {
 	}
 	_ = advance
 }
+
+// Ручная правка файла областей не должна открыть запись молча (#704, N4): encoding/json
+// берет последний из повторных ключей, принимает `null` и хвост после объекта, и каждый
+// из этих файлов выглядел бы как «ограниченных нет» или как «последняя запись побеждает».
+// Такой файл битый, а битый файл закрывает запись всем. Контроль: нормальный файл жив.
+func TestScopesHandEditedFileClosesWrites(t *testing.T) {
+	ctx := context.Background()
+	for _, c := range badScopesFiles {
+		s := newStore(t)
+		if _, err := s.Put(ctx, userauth.ScopesKey, []byte(c.file), ""); err != nil {
+			t.Fatal(err)
+		}
+		now, _ := clock(t18)
+		sc := userauth.NewScopes(ctx, s, now)
+		if writable(sc, id(t, "alpha")) || writable(sc, id(t, "anna")) {
+			t.Errorf("%s: a hand-edited file left someone writable", c.name)
+		}
+	}
+
+	s := newStore(t)
+	if _, err := s.Put(ctx, userauth.ScopesKey, []byte(`{"scopes":[{"id":"alpha","scope":"append"}]}`), ""); err != nil {
+		t.Fatal(err)
+	}
+	now, _ := clock(t18)
+	sc := userauth.NewScopes(ctx, s, now)
+	if got, ok := sc.Scope(id(t, "alpha")); !ok || got != domain.ScopeAppend {
+		t.Errorf("a well-formed file: %v, %v; want append", got, ok)
+	}
+	if !writable(sc, id(t, "anna")) {
+		t.Error("a well-formed file closed the neighbour")
+	}
+}
+
+// badScopesFiles are hand-edited files the server must not read as a list of limits.
+// encoding/json matches field names without regard to case ("ID", "ſcopes" with U+017F).
+var badScopesFiles = []struct{ name, file string }{
+	{"null", `null`},
+	{"duplicate top key", `{"scopes":[{"id":"alpha","scope":"append"}],"scopes":[]}`},
+	{"duplicate id", `{"scopes":[{"id":"alpha","scope":"read"},{"id":"alpha","scope":"append"}]}`},
+	{"duplicate field in entry", `{"scopes":[{"id":"alpha","id":"beta","scope":"read"}]}`},
+	{"data after the object", `{"scopes":[]} {"scopes":[{"id":"alpha","scope":"read"}]}`},
+	{"stray closing brace", `{"scopes":[]}}`},
+	{"empty file", ``},
+	{"top key differs by case", `{"scopes":[],"Scopes":[{"id":"alpha","scope":"read"}]}`},
+	{"entry field differs by case", `{"scopes":[{"id":"alpha","ID":"beta","scope":"read"}]}`},
+	{"key folds through U+017F", `{"scopes":[],"ſcopes":[{"id":"alpha","scope":"read"}]}`},
+	{"repeat after a nested value", `{"scopes":[{"id":"alpha","scope":"read"}],"x":[{"a":1}],"x":2}`},
+}
+
+// SetScope перезаписывает файл целиком: на файле, который читатель считает битым, она
+// молча сняла бы ограничения, которые читатель ради безопасности закрыл (ревью #710).
+func TestSetScopeRefusesABrokenFile(t *testing.T) {
+	ctx := context.Background()
+	for _, c := range badScopesFiles {
+		s := newStore(t)
+		if _, err := s.Put(ctx, userauth.ScopesKey, []byte(c.file), ""); err != nil {
+			t.Fatal(err)
+		}
+		for _, sc := range []domain.Scope{domain.ScopeRead, domain.ScopeWrite} { // и снятие записи
+			err := userauth.SetScope(ctx, s, id(t, "bob"), sc)
+			if !errors.Is(err, userauth.ErrScopesBroken) {
+				t.Errorf("%s (%v): SetScope on a file the reader rejects: %v", c.name, sc, err)
+			} else if strings.Contains(err.Error(), "delete") {
+				// Удаленный файл читается как «ограниченных нет»: совет удалить открыл бы запись всем.
+				t.Errorf("%s: the error advises deleting the file: %v", c.name, err)
+			}
+		}
+		if o, err := s.Get(ctx, userauth.ScopesKey); err != nil || string(o.Data) != c.file {
+			t.Errorf("%s: the broken file was changed: %q %v", c.name, o.Data, err)
+		}
+	}
+}
+
+// Разбор файла не изменил то, что принимал encoding/json: имена полей без учета регистра,
+// пустой список и "scopes": null (#710). А файл неверной формы закрывает запись.
+func TestScopesFileShapes(t *testing.T) {
+	ctx := context.Background()
+	for _, c := range []struct {
+		name, file string
+		ok         bool
+	}{
+		{"mixed-case field names", `{"Scopes":[{"ID":"alpha","Scope":"read"}]}`, true},
+		{"empty object", `{}`, true},
+		{"empty list", `{"scopes":[]}`, true},
+		{"null list", `{"scopes":null}`, true},
+		{"write entry", `{"scopes":[{"id":"alpha","scope":"write"}]}`, true},
+		{"list is an object", `{"scopes":{}}`, false},
+		{"entry is a number", `{"scopes":[1]}`, false},
+		{"id is a number", `{"scopes":[{"id":5,"scope":"read"}]}`, false},
+		{"scope is a list", `{"scopes":[{"id":"alpha","scope":["read"]}]}`, false},
+		{"unknown field in entry", `{"scopes":[{"id":"alpha","scope":"read","note":"x"}]}`, false},
+		{"top is an array", `[]`, false},
+	} {
+		s := newStore(t)
+		if _, err := s.Put(ctx, userauth.ScopesKey, []byte(c.file), ""); err != nil {
+			t.Fatal(err)
+		}
+		now, _ := clock(t18)
+		sc := userauth.NewScopes(ctx, s, now)
+		_, trusted := sc.Scope(id(t, "alpha"))
+		if trusted != c.ok {
+			t.Errorf("%s: trusted = %v, want %v", c.name, trusted, c.ok)
+		}
+	}
+	s := newStore(t)
+	if _, err := s.Put(ctx, userauth.ScopesKey, []byte(`{"Scopes":[{"ID":"alpha","Scope":"read"}]}`), ""); err != nil {
+		t.Fatal(err)
+	}
+	now, _ := clock(t18)
+	if got, ok := userauth.NewScopes(ctx, s, now).Scope(id(t, "alpha")); !ok || got != domain.ScopeRead {
+		t.Errorf("mixed-case file: %v, %v; want read", got, ok)
+	}
+}
+
+// Причина в журнале называет правило, а не голое «EOF»: оператор ночью должен понять,
+// что именно в файле не так (ревью #710).
+func TestScopesLogNamesTheBrokenRule(t *testing.T) {
+	ctx := context.Background()
+	for _, c := range []struct{ file, want string }{
+		{``, "empty"},
+		{`{"scopes":[],"scopes":[]}`, "repeated"},
+		{`null`, "object"},
+		{`{"scopes":[]} x`, "after"},
+	} {
+		s := newStore(t)
+		if _, err := s.Put(ctx, userauth.ScopesKey, []byte(c.file), ""); err != nil {
+			t.Fatal(err)
+		}
+		now, _ := clock(t18)
+		sc := userauth.NewScopes(ctx, s, now)
+		var logged []string
+		sc.Logf = func(f string, a ...any) { logged = append(logged, fmt.Sprintf(f, a...)) }
+		sc.Scope(id(t, "alpha"))
+		if len(logged) != 1 || !strings.Contains(logged[0], c.want) {
+			t.Errorf("file %q: log %q does not name %q", c.file, logged, c.want)
+		}
+	}
+}

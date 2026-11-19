@@ -177,29 +177,20 @@ func Revoke(ctx context.Context, s blob.Store, id domain.UserID) error {
 // update reads the registry, applies change and writes it back under the
 // version it read, retrying when someone else wrote in between.
 func update[T any](ctx context.Context, s blob.Store, key string, change func(*T) error) error {
-	return updateKey(ctx, s, key, false, change)
+	return updateKey(ctx, s, key, false, nil, change)
 }
 
 // errUnchanged from change: менять нечего, update ничего не пишет и не ошибается.
 var errUnchanged = errors.New("userauth: unchanged")
 
-// updateKey is update; loose — испорченный объект читается пустым: так только
+// updateKey is update; check, если задан, отказывает до разбора и до записи; loose — испорченный объект читается пустым: так только
 // для подсказок окну (входы телефонов), реестры токенов — строго.
-func updateKey[T any](ctx context.Context, s blob.Store, key string, loose bool, change func(*T) error) error {
+func updateKey[T any](ctx context.Context, s blob.Store, key string, loose bool, check func([]byte) error, change func(*T) error) error {
 	for range writeAttempts {
 		var r T
-		o, err := s.Get(ctx, key)
-		switch {
-		case errors.Is(err, blob.ErrNotFound):
-		case err != nil:
-			return fmt.Errorf("userauth: read %s: %w", key, err)
-		default:
-			if err := json.Unmarshal(o.Data, &r); err != nil {
-				if !loose {
-					return fmt.Errorf("userauth: registry %s: %w", key, err)
-				}
-				r = *new(T)
-			}
+		o, err := readForUpdate(ctx, s, key, loose, check, &r)
+		if err != nil {
+			return err
 		}
 		if err := change(&r); errors.Is(err, errUnchanged) {
 			return nil
@@ -221,6 +212,31 @@ func updateKey[T any](ctx context.Context, s blob.Store, key string, loose bool,
 		return nil
 	}
 	return fmt.Errorf("userauth: registry kept changing under %d attempts: %w", writeAttempts, blob.ErrConflict)
+}
+
+// readForUpdate reads the object and decodes it into r (пустой, если объекта нет). check
+// видит те же байты, чей ETag уйдет в запись: между проверкой и записью файл не подменить,
+// а при повторе после конфликта проверка идет заново.
+func readForUpdate[T any](ctx context.Context, s blob.Store, key string, loose bool, check func([]byte) error, r *T) (blob.Object, error) {
+	o, err := s.Get(ctx, key)
+	switch {
+	case errors.Is(err, blob.ErrNotFound):
+		return o, nil
+	case err != nil:
+		return o, fmt.Errorf("userauth: read %s: %w", key, err)
+	}
+	if check != nil {
+		if err := check(o.Data); err != nil {
+			return o, err
+		}
+	}
+	if err := json.Unmarshal(o.Data, r); err != nil {
+		if !loose {
+			return o, fmt.Errorf("userauth: registry %s: %w", key, err)
+		}
+		*r = *new(T)
+	}
+	return o, nil
 }
 
 // refreshTimeout bounds one re-read of the registry.
