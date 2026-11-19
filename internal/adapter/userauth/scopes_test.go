@@ -338,3 +338,28 @@ func TestScopesFileShapes(t *testing.T) {
 		t.Errorf("mixed-case file: %v, %v; want read", got, ok)
 	}
 }
+
+// Причина в журнале называет правило, а не голое «EOF»: оператор ночью должен понять,
+// что именно в файле не так (ревью #710).
+func TestScopesLogNamesTheBrokenRule(t *testing.T) {
+	ctx := context.Background()
+	for _, c := range []struct{ file, want string }{
+		{``, "empty"},
+		{`{"scopes":[],"scopes":[]}`, "repeated"},
+		{`null`, "object"},
+		{`{"scopes":[]} x`, "after"},
+	} {
+		s := newStore(t)
+		if _, err := s.Put(ctx, userauth.ScopesKey, []byte(c.file), ""); err != nil {
+			t.Fatal(err)
+		}
+		now, _ := clock(t18)
+		sc := userauth.NewScopes(ctx, s, now)
+		var logged []string
+		sc.Logf = func(f string, a ...any) { logged = append(logged, fmt.Sprintf(f, a...)) }
+		sc.Scope(id(t, "alpha"))
+		if len(logged) != 1 || !strings.Contains(logged[0], c.want) {
+			t.Errorf("file %q: log %q does not name %q", c.file, logged, c.want)
+		}
+	}
+}
