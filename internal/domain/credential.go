@@ -1,6 +1,8 @@
 package domain
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -162,8 +164,20 @@ func derivedID(kind CredentialKind, product string, env Env, login string) strin
 	if kind == KindKey {
 		id += "key-"
 	}
-	return id + slug(login)
+	id += slug(login)
+	if len(id) <= maxIDLen {
+		return id
+	}
+	// Длинные названия (20.11: «Токен облачной сессии для Claude» и ключ с тем же именем дали
+	// 78 знаков) укорачиваются, а различимость двух длинных имен с общим началом держит
+	// хеш полного имени: id остается допустимым и одним и тем же при каждом вводе.
+	sum := sha256.Sum256([]byte(string(kind) + "|" + product + "|" + string(env) + "|" + login))
+	tail := "-" + hex.EncodeToString(sum[:])[:8]
+	return strings.TrimRight(id[:maxIDLen-len(tail)], "-") + tail
 }
+
+// maxIDLen is the longest id credentialID accepts.
+const maxIDLen = 64
 
 // slug is a name in Latin letters, digits and dashes: «Склад-Про» → sklad-pro.
 func slug(s string) string {

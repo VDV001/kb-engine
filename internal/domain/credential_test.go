@@ -199,3 +199,34 @@ func TestCredential_matchesKeyByKindWord(t *testing.T) {
 		t.Error("учетка найдена по слову «ключ»")
 	}
 }
+
+// Живая проверка 20.11: продукт «Токен облачной сессии для Claude» и ключ с тем же названием
+// дали id в 78 знаков, и окно отвечало «latinica, цифры и дефис, до 64 знаков», хотя человек
+// ввел ничего неправильного. Длинный собранный id укорачивается с хешем полного имени:
+// остается допустимым, предсказуемым и различимым у двух длинных имен с общим началом.
+func TestNewCredential_longNamesGetAValidID(t *testing.T) {
+	const name = "Токен облачной сессии для Claude"
+	for _, kind := range []domain.CredentialKind{domain.KindKey, domain.KindAccount} {
+		c, err := domain.NewCredential(domain.CredentialDTO{Kind: kind, Product: name, Env: domain.EnvProd, Login: name, Host: "192.0.2.1"})
+		if err != nil {
+			t.Fatalf("%s: длинное имя отвергнуто: %v", kind, err)
+		}
+		if len(c.ID()) > 64 {
+			t.Errorf("%s: id %q длиннее 64 знаков (%d)", kind, c.ID(), len(c.ID()))
+		}
+		again, _ := domain.NewCredential(domain.CredentialDTO{Kind: kind, Product: name, Env: domain.EnvProd, Login: name, Host: "192.0.2.1"})
+		if again.ID() != c.ID() {
+			t.Errorf("%s: id не повторяется: %q и %q", kind, c.ID(), again.ID())
+		}
+	}
+	a, errA := domain.NewCredential(domain.CredentialDTO{Kind: domain.KindKey, Product: name, Env: domain.EnvProd, Login: name + " на чтение"})
+	b, errB := domain.NewCredential(domain.CredentialDTO{Kind: domain.KindKey, Product: name, Env: domain.EnvProd, Login: name + " на запись"})
+	if errA != nil || errB != nil || a.ID() == b.ID() {
+		t.Errorf("два длинных ключа с общим началом слились: %q %q (%v %v)", a.ID(), b.ID(), errA, errB)
+	}
+	// Короткие имена остаются как были: уже сохраненные карточки находятся по прежним id.
+	short, _ := domain.NewCredential(domain.CredentialDTO{Product: "Склад-Про", Env: domain.EnvProd, Login: "admin.ops", Host: "h"})
+	if short.ID() != "sklad-pro-prod-admin-ops" {
+		t.Errorf("короткий id изменился: %q", short.ID())
+	}
+}
