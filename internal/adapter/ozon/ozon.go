@@ -112,6 +112,43 @@ func (c Client) Stocks(ctx context.Context) ([]markets.OzonStock, error) {
 	return acc.out, nil
 }
 
+// StockTransit sums Ozon FBO warehouse rows by SKU without including planned supplies or returns.
+func (c Client) StockTransit(ctx context.Context, skus []string) (map[string]markets.OzonStockTransit, error) {
+	out := make(map[string]markets.OzonStockTransit)
+	for batch := range slices.Chunk(skus, 100) { // Seller API allows at most 100 SKUs per request.
+		var res struct {
+			Items []struct {
+				SKU         int64 `json:"sku"`
+				ToCustomer  *int  `json:"outbound_pending_delivery"`
+				ToWarehouse *int  `json:"transit_stock_count"`
+			} `json:"items"`
+		}
+		if err := c.call(ctx, "/v1/analytics/stocks", map[string][]string{"skus": batch}, &res); err != nil {
+			return nil, fmt.Errorf("товары в пути: %w", err)
+		}
+		for _, item := range res.Items {
+			sku := strconv.FormatInt(item.SKU, 10)
+			if !slices.Contains(batch, sku) {
+				continue
+			}
+			transit := markets.OzonStockTransit{ToCustomer: item.ToCustomer, ToWarehouse: item.ToWarehouse}
+			if prev, ok := out[sku]; ok {
+				transit.ToCustomer = sumKnownCounts(prev.ToCustomer, transit.ToCustomer)
+				transit.ToWarehouse = sumKnownCounts(prev.ToWarehouse, transit.ToWarehouse)
+			}
+			out[sku] = transit
+		}
+	}
+	return out, nil
+}
+
+func sumKnownCounts(a, b *int) *int {
+	if a == nil || b == nil {
+		return nil // A partial sum would be displayed as the SKU's full snapshot.
+	}
+	return new(*a + *b)
+}
+
 // stockAcc sums stock pages by SKU and keeps product ids for card names.
 type stockAcc struct {
 	out []markets.OzonStock
@@ -134,6 +171,7 @@ func (a *stockAcc) add(res stockPage) {
 				a.out = append(a.out, markets.OzonStock{SKU: sku, Article: it.OfferID})
 			}
 			a.out[i].Qty += float64(s.Present - s.Reserved)
+			a.out[i].FBO = a.out[i].FBO || s.Type == "fbo"
 		}
 	}
 }
@@ -326,9 +364,10 @@ type stockPage struct {
 		ProductID int64  `json:"product_id"`
 		OfferID   string `json:"offer_id"`
 		Stocks    []struct {
-			SKU      int64 `json:"sku"`
-			Present  int   `json:"present"`
-			Reserved int   `json:"reserved"`
+			Type     string `json:"type"`
+			SKU      int64  `json:"sku"`
+			Present  int    `json:"present"`
+			Reserved int    `json:"reserved"`
 		} `json:"stocks"`
 	} `json:"items"`
 }

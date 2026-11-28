@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -33,6 +34,34 @@ type OzonPosting struct {
 type OzonStock struct {
 	SKU, Article, Name string
 	Qty                float64
+	FBO                bool
+}
+
+// OzonStockTransit is the latest FBO stock snapshot. A nil count means Ozon did not provide it.
+type OzonStockTransit struct {
+	ToCustomer  *int
+	ToWarehouse *int
+}
+
+// OzonFBOSKUs includes products with FBO orders even when they have no current stock row.
+func OzonFBOSKUs(posts []OzonPosting, stock []OzonStock) []string {
+	skus := make(map[string]struct{})
+	for _, s := range stock {
+		if s.FBO && s.SKU != "" {
+			skus[s.SKU] = struct{}{}
+		}
+	}
+	for _, p := range posts {
+		if p.Scheme != "FBO" {
+			continue
+		}
+		for _, item := range p.Items {
+			if item.SKU != "" {
+				skus[item.SKU] = struct{}{}
+			}
+		}
+	}
+	return slices.Sorted(maps.Keys(skus))
 }
 
 // refusedAtPickup — отказ при вручении в причине отмены Ozon.

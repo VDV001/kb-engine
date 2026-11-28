@@ -36,7 +36,7 @@ func TestStockTransitBatchesAndSumsBySKU(t *testing.T) {
 		}
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(payload))}, nil
 	})}
-	got, err := (ozon.Client{HTTP: httpClient}).StockTransit(t.Context(), skus)
+	got, err := (ozon.Client{BaseURL: ozon.DefaultURL, HTTP: httpClient}).StockTransit(t.Context(), skus)
 	if err != nil || calls != 2 || len(got) != 2 {
 		t.Fatalf("balances = %+v, calls = %d, err = %v", got, calls, err)
 	}

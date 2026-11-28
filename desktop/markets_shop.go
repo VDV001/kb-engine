@@ -42,6 +42,10 @@ type shopRow struct {
 	Rating     float64  `json:"rating"`
 	Reviews    float64  `json:"reviews"`
 	Issues     []string `json:"issues"`
+
+	// Товары в пути из последнего снимка FBO. У отчёта-файла эти поля пусты.
+	ToCustomer  *int `json:"toCustomer"`
+	ToWarehouse *int `json:"toWarehouse"`
 	// Деньги товара из начислений кабинета (#580); nil — у отчета-файла их нет.
 	Money *rowMoney `json:"money"`
 	// OnAccount и Profit — для сортировки таблицы; Profit — только с себестоимостью.
