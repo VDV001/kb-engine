@@ -8,6 +8,8 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+## [0.43.0] — 2026-11-28
+
 ### Added
 - **Маркеты → Магазин:** рядом с остатком видно, сколько единиц FBO едет к покупателям
   и сколько — на склады Ozon. Данные берутся на момент загрузки кабинета.
