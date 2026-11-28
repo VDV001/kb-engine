@@ -8,10 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/usecase/selfupdate"
@@ -41,11 +43,18 @@ func (f fakeRelease) Open(ctx context.Context, path string, limit int64) (io.Rea
 
 func signedRelease(t *testing.T, version string, body []byte) (ed25519.PublicKey, fakeRelease) {
 	t.Helper()
-	pub, priv, _ := ed25519.GenerateKey(nil)
+	pub, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pub, releaseSignedWith(priv, version, body)
+}
+
+func releaseSignedWith(priv ed25519.PrivateKey, version string, body []byte) fakeRelease {
 	sum := sha256.Sum256(body)
 	m := fmt.Appendf(nil, `{"version":%q,"expires":%q,"assets":[{"platform":"darwin-arm64","name":"DVK-mac-arm64.zip","sha256":%q,"size":%d},{"platform":"windows-amd64","name":"DVK-Setup.exe","sha256":%q,"size":%d}]}`,
 		version, time.Now().AddDate(0, 0, 60).UTC().Format(time.RFC3339), hex.EncodeToString(sum[:]), len(body), hex.EncodeToString(sum[:]), len(body))
-	return pub, fakeRelease{
+	return fakeRelease{
 		"download/dvk-latest/dvk-manifest.json":      m,
 		"download/dvk-latest/dvk-manifest.json.sig":  selfupdate.SignManifest(priv, m),
 		"download/" + version + "/DVK-mac-arm64.zip": body,
@@ -159,6 +168,59 @@ func TestWatchUpdates(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("the watch outlived the window")
 	}
+}
+
+func TestWatchUpdatesFindsNewReleaseWithinFiveMinutes(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		pub, priv, err := ed25519.GenerateKey(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		src := releaseSignedWith(priv, "v0.40.0", []byte("current"))
+		d := newUpdateDesk("v0.40.0", src, pub, "darwin-arm64", nil)
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		tick := time.NewTicker(updateEvery)
+		defer tick.Stop()
+		emitted := make(chan updateState, 1)
+		published := make(chan struct{})
+		go watchUpdates(ctx, d, tick.C, func(s updateState) {
+			select {
+			case emitted <- s:
+			case <-ctx.Done():
+			}
+			if !s.Available {
+				// The next fetch can read the new manifest after publication.
+				select {
+				case <-published:
+				case <-ctx.Done():
+				}
+			}
+		})
+
+		synctest.Wait()
+		select {
+		case st := <-emitted:
+			if st.Available || st.Error != "" {
+				t.Fatalf("startup check: %+v", st)
+			}
+		default:
+			t.Fatal("missing startup check")
+		}
+
+		maps.Copy(src, releaseSignedWith(priv, "v0.41.0", []byte("new release")))
+		close(published)
+		time.Sleep(5 * time.Minute)
+		synctest.Wait()
+		select {
+		case st := <-emitted:
+			if !st.Available || st.Version != "v0.41.0" || st.Error != "" {
+				t.Fatalf("background check: %+v", st)
+			}
+		default:
+			t.Fatal("the open window did not receive a release within five minutes")
+		}
+	})
 }
 
 // Пока установка не научилась ставить сама, проверенная сборка кладется в

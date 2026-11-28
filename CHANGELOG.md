@@ -8,6 +8,10 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+### Fixed
+- **Обновления DVK в открытом окне.** После стартовой проверки окно ищет новые
+  выпуски каждые пять минут. Кнопка появляется без перезапуска приложения.
+
 ## [0.43.0] — 2026-11-28
 
 ### Added
