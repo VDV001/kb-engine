@@ -22,7 +22,13 @@ import (
 // fakeOzon answers like Seller API: один кабинет, Client-Id 42, ключ k-1.
 func fakeOzon(t *testing.T) *httptest.Server {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(fakeOzonHandler())
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func fakeOzonHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Client-Id") != "42" || r.Header.Get("Api-Key") != "k-1" {
 			w.WriteHeader(http.StatusForbidden)
 			return
@@ -55,12 +61,53 @@ func fakeOzon(t *testing.T) *httptest.Server {
 				`{"id":2,"type":"Cancellation","posting_number":"2-2","product":{"sku":11,"name":"Брюки тестовые","price":{"currency_code":"RUB","price":1000}},"visual":{"status":{"sys_name":"ReturnedToOzon"},"change_moment":"2026-10-11T10:00:00Z"}}]}`))
 		case "/v4/product/info/stocks":
 			_, _ = w.Write([]byte(`{"cursor":"","items":[{"product_id":901,"offer_id":"100_46","stocks":[{"type":"fbo","present":0,"reserved":0,"sku":11}]},{"product_id":903,"offer_id":"300_M","stocks":[{"type":"fbo","present":40,"reserved":0,"sku":33}]}]}`))
+		case "/v1/analytics/stocks":
+			_, _ = w.Write([]byte(`{"items":[{"sku":11,"outbound_pending_delivery":3,"transit_stock_count":0}]}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
-	}))
-	t.Cleanup(srv.Close)
-	return srv
+	})
+}
+
+type ozonShopTestTransport struct{ handler http.Handler }
+
+func (t ozonShopTestTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	w := httptest.NewRecorder()
+	t.handler.ServeHTTP(w, r)
+	return w.Result(), nil
+}
+
+func TestOzonShopTransitSnapshot(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	row, err := s.AddOzon("Тестовый магазин", "42", "k-1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Transport: ozonShopTestTransport{fakeOzonHandler()}}
+	now := time.Date(2026, 11, 13, 15, 0, 0, 0, time.Local)
+	v, err := s.ozonShop(t.Context(), "https://example.invalid", client, row.ID, now, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(v shopView) {
+		t.Helper()
+		if len(v.Products) != 2 {
+			t.Fatalf("products: %d, want 2", len(v.Products))
+		}
+		if p := v.Products[0]; p.ToCustomer == nil || *p.ToCustomer != 3 || p.ToWarehouse == nil || *p.ToWarehouse != 0 {
+			t.Errorf("transit for SKU 11 = %+v, want 3 to customers and 0 in supplies", p)
+		}
+		if p := v.Products[1]; p.ToCustomer != nil || p.ToWarehouse != nil {
+			t.Errorf("transit for SKU 33 = %+v, want unknown counts", p)
+		}
+	}
+	check(v)
+	s.shopLoads.drop(row.ID)
+	v, err = s.ozonShopLast(row.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(v)
 }
 
 // Кабинет Ozon — подключение окна: Client-Id в config.json, ключ в Связке;

@@ -326,7 +326,7 @@ server. `~/` in the `--files-config` path is expanded.
 
 ## Stack
 
-Go 1.26 · standard library · React + Vite + Tailwind · golangci-lint v2 · just ·
+Go 1.27 · standard library · React + Vite + Tailwind · golangci-lint v2.15 · just ·
 GitHub Actions CI.
 
 ## Development

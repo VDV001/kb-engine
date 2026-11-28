@@ -196,8 +196,7 @@ func readAccounts(f *excelize.File, now func() time.Time) ([]domain.Account, err
 		// the ONLY reason worth swallowing — a sheet that exists but cannot be
 		// read is a damaged workbook, and answering with an empty account list
 		// would hide it: balances live here.
-		var missing excelize.ErrSheetNotExist
-		if errors.As(err, &missing) {
+		if _, ok := errors.AsType[excelize.ErrSheetNotExist](err); ok {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("%s: %w", sheetAccounts, err)

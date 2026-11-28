@@ -144,8 +144,11 @@ func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Cli
 		return shopView{}, ozonErr(c.Name, err)
 	}
 	stage("stock")
+	// ponytail: use the FBO snapshot only. FBS requires a separate source with equivalent quantities.
+	// If Ozon refuses analytics, keep the rest of the shop and show unknown quantities.
+	transit, _ := cl.StockTransit(ctx, markets.OzonFBOSKUs(posts, stock))
 	fn := fin()
-	l := shopLoad{Name: c.Name, From: from, To: to, Now: now, At: now, Posts: posts, Stock: stock, Acc: fn.acc, Rets: fn.rets}
+	l := shopLoad{Name: c.Name, From: from, To: to, Now: now, At: now, Posts: posts, Stock: stock, Transit: transit, Acc: fn.acc, Rets: fn.rets}
 	if fn.accErr != nil { // причины — словами сразу: сохраненная загрузка их уже не разберет
 		l.AccWhy = economyErr(c.Name, fn.accErr)
 	}
@@ -194,8 +197,9 @@ type shopLoad struct {
 	At             time.Time // когда загружено
 	Posts          []markets.OzonPosting
 	Stock          []markets.OzonStock
-	Acc            []markets.OzonAccrual `json:"-"` // на диск — SavedAcc: у domain.Money поля закрыты
-	SavedAcc       []savedAccrual        `json:"Acc"`
+	Transit        map[string]markets.OzonStockTransit `json:",omitempty"`
+	Acc            []markets.OzonAccrual               `json:"-"` // на диск — SavedAcc: у domain.Money поля закрыты
+	SavedAcc       []savedAccrual                      `json:"Acc"`
 	Rets           []markets.OzonReturn
 	AccWhy, RetWhy string             // отказ в начислениях и возвратах словами; "" — прочитаны
 	Gaps           []markets.DayRange // дни без данных: окно не загружалось дольше 90 дней
@@ -284,6 +288,11 @@ func (f *folderSettings) shopFor(id string, l shopLoad, from, to time.Time) (sho
 		return shopView{}, err
 	}
 	v := shopViewOf(rep)
+	for i := range v.Products {
+		row := &v.Products[i]
+		transit := l.Transit[row.SKU]
+		row.ToCustomer, row.ToWarehouse = transit.ToCustomer, transit.ToWarehouse
+	}
 	v.File, v.Path, v.Source = "Ozon · "+l.Name, id, "ozon"
 	v.From, v.To, v.WindowFrom, v.WindowTo = from.Format(time.DateOnly), to.Format(time.DateOnly), l.From.Format(time.DateOnly), l.To.Format(time.DateOnly)
 	v.LoadedAt = l.At.Format("02.01.2006 15:04")

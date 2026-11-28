@@ -174,8 +174,7 @@ run_job() {
 		./scripts/gates/capabilities.sh
 		;;
 	ci.yml:govulncheck)
-		command -v govulncheck >/dev/null || go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
-		govulncheck ./...
+		go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
 		;;
 	ci.yml:gitleaks)
 		gitleaks git --no-banner --redact --exit-code 1 .

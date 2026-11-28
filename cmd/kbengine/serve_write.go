@@ -124,8 +124,7 @@ func (s storeCatalogWriter) AddEntry(ctx context.Context, a httpapi.EntryAdd) (h
 // refusal turns a rule's refusal into ErrBadWrite, с тем же текстом о
 // категории, что у kbengine add.
 func refusal(err error) error {
-	var undeclared *ingest.UndeclaredCategoryError
-	if errors.As(err, &undeclared) {
+	if undeclared, ok := errors.AsType[*ingest.UndeclaredCategoryError](err); ok {
 		return fmt.Errorf("%w: %s", httpapi.ErrBadWrite, categoryRefusal(undeclared))
 	}
 	return fmt.Errorf("%w: %w", httpapi.ErrBadWrite, err)

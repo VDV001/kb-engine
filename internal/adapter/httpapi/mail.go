@@ -201,8 +201,7 @@ func (h mailRoutes) post(w http.ResponseWriter, r *http.Request, c mailCaller) {
 		Sealed []byte `json:"sealed"` // base64; поле from не читается: сторону называет токен
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxMailBody)).Decode(&in); err != nil {
-		var tooBig *http.MaxBytesError
-		if errors.As(err, &tooBig) {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			http.Error(w, "body over the mailbox limit", http.StatusRequestEntityTooLarge)
 			return
 		}
@@ -364,8 +363,7 @@ func (h mailRoutes) putFile(w http.ResponseWriter, r *http.Request, c mailCaller
 	}
 	sealed, err := io.ReadAll(http.MaxBytesReader(w, r.Body, domain.MaxMailFile+1))
 	if err != nil {
-		var tooBig *http.MaxBytesError
-		if errors.As(err, &tooBig) {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			http.Error(w, "file piece over the mailbox limit", http.StatusRequestEntityTooLarge)
 			return
 		}

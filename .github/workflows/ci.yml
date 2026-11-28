@@ -9,8 +9,8 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: "1.26"
-  GOLANGCI_LINT_VERSION: v2.12
+  GO_VERSION: "1.27"
+  GOLANGCI_LINT_VERSION: v2.15.0
 
 jobs:
   build:
@@ -302,9 +302,7 @@ jobs:
       - uses: ./.github/actions/frontend-dist
 
       - name: Run govulncheck
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
-          govulncheck ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
 
   gitleaks:
     runs-on: ubuntu-latest

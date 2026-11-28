@@ -16,7 +16,7 @@
 #   offline.sh --self-test  проверка проверки: подсадка «изоляции нет»
 set -euo pipefail
 
-IMAGE=${OFFLINE_IMAGE:-golang:1.26}
+IMAGE=${OFFLINE_IMAGE:-golang:1.27.4}
 NET=${OFFLINE_NET:-none}
 PROBE_PKG=./internal/adapter/embedhttp/
 PROBE_TEST=TestNetworkIsReachable

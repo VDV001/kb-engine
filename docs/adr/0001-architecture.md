@@ -17,8 +17,9 @@ Build the engine in **Go**, following **TDD + DDD + Clean Architecture**.
 
 ### Language
 
-Go 1.26. Strong typing maps well onto DDD invariants, the standard library
-covers HTTP and JSON without heavy dependencies, and a single static binary
+Go, with the minimum toolchain version defined in `go.mod`. Strong typing maps
+well onto DDD invariants, the standard library covers HTTP and JSON without
+heavy dependencies, and a single static binary
 (with the dashboard embedded via `go:embed`) is easy to distribute.
 
 ### Layers (Clean Architecture, dependencies point inward)

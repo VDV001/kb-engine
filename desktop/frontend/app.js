@@ -130,7 +130,7 @@ addEventListener("resize", hideTip);
 const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // hits — слова записи, что нашел движок (match): подсвечиваются целиком, по
 // границе слова. Граница проверяется кодом, а не lookbehind в регулярке: его
-// WebKit понимает только с Safari 16.4, а окно ставится на macOS 12.
+// WebKit понимает только с Safari 16.4, а на первых версиях macOS 13 был Safari 16.0.
 // Сопоставление идет по сырому тексту, экранируются куски: по уже
 // экранированному тексту короткое слово находилось бы внутри «&lt;».
 const isWordChar = (c) => !!c && /[\p{L}\p{N}]/u.test(c);
@@ -6760,6 +6760,8 @@ const SH_COLS = [
   ["refuse", "Отказ", "отказались при получении — часть отмен; Ozon пишет «товар не подошел»: чаще всего размер или посадка", "refused"],
   ["return", "Возвраты", "возвращено к заказанному", "returned"],
   ["stock", "Остаток", "штук на складах на конец периода", "stock"],
+  ["toCustomer", "В пути к клиенту", "доставляется покупателям по FBO, штук на дату загрузки · «—» означает, что данных нет", ""],
+  ["toWarehouse", "В пути на склад", "едет в поставках на склад Ozon по FBO, штук на дату загрузки · «—» означает, что данных нет", ""],
   ["daysOut", "Без остатка", "дней без товара на складах из последних 28", "daysOut"],
   ["avgPrice", "Цена", "средняя цена реализации, ₽", "avgPrice"],
   ["drr", "ДРР", "доля расходов на рекламу в выручке", "drr"],
@@ -6772,7 +6774,7 @@ const shOzon = () => sh.v && sh.v.source === "ozon";
 const SH_REFUSE = 0.4; // как adviceRefusals в домене: «40 % и больше»
 // shCols — колонки, что есть у источника: у кабинета по API нет возвратов, ДРР, рейтинга и дней без остатка, у отчета — отказов.
 // Деньги товара (на счет, прибыль) — только у кабинета: их дают начисления.
-const shCols = () => SH_COLS.filter(([k]) => (shOzon() ? !["return", "daysOut", "drr", "rating"].includes(k) : !["refuse", "onAccount", "profit"].includes(k)));
+const shCols = () => SH_COLS.filter(([k]) => (shOzon() ? !["return", "daysOut", "drr", "rating"].includes(k) : !["refuse", "toCustomer", "toWarehouse", "onAccount", "profit"].includes(k)));
 const shRub = (x) => fmt(Math.round(x) || 0) + " ₽";
 function shVal(k, p) {
   switch (k) {
@@ -6782,6 +6784,7 @@ function shVal(k, p) {
     case "rating": return (p.reviews || p.rating) && Number.isFinite(p.rating) ? String(Math.round(p.rating * 100) / 100).replace(".", ",") : "—"; // отчет отдает 4,9340909…
     case "onAccount": return p.money && (p.money.units || p.money.total) ? shRub(p.onAccount) : "—";
     case "profit": return p.profit !== null && p.profit !== undefined ? shRub(p.profit) : "—";
+    case "toCustomer": case "toWarehouse": return p[k] == null ? "—" : fmt(p[k]);
     default: return fmt(Math.round(p[k] || 0));
   }
 }
@@ -7078,10 +7081,11 @@ function shAdvice() {
 }
 function shList() {
   const fold = (t) => t.toLowerCase().replace(/ё/g, "е"), q = fold(sh.q.trim()), ps = sh.v.products, k = sh.sort;
+  const missingLast = ["profit", "toCustomer", "toWarehouse"].includes(k);
   return ps.map((_, i) => i).filter((i) => (!q || fold(ps[i].name).includes(q) || ps[i].sku.includes(q) || fold(ps[i].article || "").includes(q)) && (!sh.issue || ps[i].issues.includes(sh.issue)) && (!sh.only || sh.only.has(ps[i].sku)))
     .sort((a, b) => (!k && sh.only ? sh.only.get(ps[a].sku) - sh.only.get(ps[b].sku) // совет: по его важности
       : k === "name" ? sh.dir * ps[a].name.localeCompare(ps[b].name, "ru")
-      : k === "profit" && (ps[a].profit == null || ps[b].profit == null) ? (ps[a].profit == null) - (ps[b].profit == null) // «—» — в конце при любом направлении (ревью #598)
+      : missingLast && (ps[a][k] == null || ps[b][k] == null) ? (ps[a][k] == null) - (ps[b][k] == null) // «—» — в конце при любом направлении (ревью #598)
       : sh.dir * ((ps[a][k] || 0) - (ps[b][k] || 0))));
 }
 function shTable() {

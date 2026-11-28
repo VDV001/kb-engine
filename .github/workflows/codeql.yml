@@ -23,7 +23,7 @@ jobs:
 
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
-          go-version: "1.26"
+          go-version: "1.27"
           check-latest: true
 
       # Autobuild runs a plain `go build`, which reads the embedded bundle from
