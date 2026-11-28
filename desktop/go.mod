@@ -1,6 +1,6 @@
 module github.com/daniil/kb-engine/desktop
 
-go 1.27.0
+go 1.27.4
 
 require (
 	github.com/daniil/kb-engine v0.0.0

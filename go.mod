@@ -1,6 +1,6 @@
 module github.com/daniil/kb-engine
 
-go 1.27.0
+go 1.27.4
 
 require (
 	github.com/charmbracelet/bubbletea v1.3.10
