@@ -176,8 +176,7 @@ func decodeStrict(w http.ResponseWriter, r *http.Request, v any) error {
 // writeBodyError answers a body that could not be read: слишком большое —
 // 413, чтобы клиент понял, что дело в размере, а не в содержании.
 func writeBodyError(w http.ResponseWriter, err error) {
-	var tooBig *http.MaxBytesError
-	if errors.As(err, &tooBig) {
+	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		http.Error(w, fmt.Sprintf("body over %d bytes", maxWriteBody), http.StatusRequestEntityTooLarge)
 		return
 	}

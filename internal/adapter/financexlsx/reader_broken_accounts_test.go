@@ -61,13 +61,12 @@ func TestRead_brokenAccountsSheetIsSilentInExcelize(t *testing.T) {
 	}
 
 	// Контроль: отсутствие листа excelize называет типизированной ошибкой,
-	// то есть errors.As в readAccounts различает именно тот случай, ради
+	// то есть errors.AsType в readAccounts различает именно тот случай, ради
 	// которого глотание и было написано.
 	if _, err := f.GetRows("НетТакогоЛиста"); err == nil {
 		t.Fatal("отсутствие листа обязано быть ошибкой")
 	} else {
-		var missing excelize.ErrSheetNotExist
-		if !errors.As(err, &missing) {
+		if _, ok := errors.AsType[excelize.ErrSheetNotExist](err); !ok {
 			t.Errorf("тип ошибки %T, ожидался excelize.ErrSheetNotExist", err)
 		}
 	}

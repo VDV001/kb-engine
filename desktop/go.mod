@@ -1,11 +1,12 @@
 module github.com/daniil/kb-engine/desktop
 
-go 1.26.3
+go 1.27.0
 
 require (
 	github.com/daniil/kb-engine v0.0.0
 	github.com/wailsapp/wails/v2 v2.17.0
 	github.com/xuri/excelize/v2 v2.11.1
+	golang.org/x/sys v0.50.0
 )
 
 require (
@@ -41,7 +42,6 @@ require (
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	golang.org/x/crypto v0.59.0 // indirect
 	golang.org/x/net v0.63.0 // indirect
-	golang.org/x/sys v0.50.0
 	golang.org/x/text v0.44.0 // indirect
 )
 

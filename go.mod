@@ -1,6 +1,6 @@
 module github.com/daniil/kb-engine
 
-go 1.26.3
+go 1.27.0
 
 require (
 	github.com/charmbracelet/bubbletea v1.3.10
@@ -10,9 +10,6 @@ require (
 	// ponytail: коммит master, а не релиз — v2.11.0 несет GO-2026-6684/6685/6688/6689 и CVE-2026-107211, тега с исправлением нет (23.10).
 	// Потолок: 45 невыпущенных коммитов. Путь: заменить на v2.11.1 (или новее), когда тег выйдет.
 	github.com/xuri/excelize/v2 v2.11.1
-)
-
-require (
 	golang.org/x/net v0.63.0
 	golang.org/x/text v0.44.0
 	golang.org/x/time v0.16.0

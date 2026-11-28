@@ -78,8 +78,7 @@ func runAdd(args []string, stdout, stderr io.Writer) int {
 	}
 	added, rep, err := plan(cat, []domain.EntryParams{params}, time.Now())
 	if err != nil {
-		var undeclared *ingest.UndeclaredCategoryError
-		if errors.As(err, &undeclared) {
+		if undeclared, ok := errors.AsType[*ingest.UndeclaredCategoryError](err); ok {
 			fmt.Fprintf(stderr, "add: %v\n", categoryRefusal(undeclared))
 			return 2
 		}

@@ -192,9 +192,8 @@ func TestVisitsConcurrentPollsWriteOnce(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second): // второй опрос пишет тоже и ждет ту же запись
 		close(s.hold)
-		<-first
-		<-second
-		t.Fatalf("second poll of the same phone writes too: %d writes", s.writes())
+		firstErr, secondErr := <-first, <-second
+		t.Fatalf("second poll of the same phone writes too: %d writes (first: %v, second: %v)", s.writes(), firstErr, secondErr)
 	}
 	close(s.hold)
 	if err := <-first; err != nil {
