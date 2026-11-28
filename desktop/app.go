@@ -536,7 +536,7 @@ func (a *App) PickFolder() (string, error) {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-	if a.update != nil { // проверка выпуска при запуске и раз в сутки (#651)
+	if a.update != nil { // проверка выпуска при запуске и по таймеру (#651)
 		tick := time.NewTicker(updateEvery)
 		go func() {
 			defer tick.Stop()

@@ -187,7 +187,7 @@ func (d *updateDesk) install(ctx context.Context, o selfupdate.Offer) error {
 }
 
 // updateEvery is how often the window asks for a newer release.
-const updateEvery = 24 * time.Hour
+const updateEvery = 5 * time.Minute
 
 // watchUpdates checks at once and on every tick, and tells the page each
 // outcome; ctx ends it with the window.
